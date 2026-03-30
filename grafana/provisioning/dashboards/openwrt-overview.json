@@ -1,7 +1,7 @@
 {
   "title": "OpenWRT \u2014 Overview",
   "uid": "openwrt-overview",
-  "description": "OpenWRT system health: CPU, memory, WAN throughput, NAT sessions, WiFi clients, and router temperature.",
+  "description": "OpenWRT system health: CPU, memory, WAN throughput, NAT sessions, router services, overlay usage, WiFi clients, and temperature.",
   "tags": [
     "openwrt",
     "overview"
@@ -476,6 +476,278 @@
       "pluginVersion": "12.4.0"
     },
     {
+      "type": "stat",
+      "id": 25,
+      "title": "Services Down",
+      "description": "Count of monitored router services that are currently down. Backed by the textfile service-health script.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "count(openwrt_service_up{job=\"openwrt\"} == 0)",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "stat",
+      "id": 26,
+      "title": "Overlay Used",
+      "description": "Persistent overlay storage usage. High usage is a common OpenWRT failure mode during upgrades and package installs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "openwrt_filesystem_used_percent{job=\"openwrt\", mount=\"/overlay\"}",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "stat",
+      "id": 27,
+      "title": "Router Temperature",
+      "description": "Preferred temperature signal from hwmon or thermal collectors. Install both if available on your router.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "max(node_hwmon_temp_celsius{job=\"openwrt\"}) or max(node_thermal_zone_temp{job=\"openwrt\"})",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "stat",
+      "id": 28,
+      "title": "WiFi Clients",
+      "description": "Associated WiFi clients across all access-point interfaces. Requires the wifi_stations collector.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(wifi_stations{job=\"openwrt\"})",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.4.0"
+    },
+    {
       "type": "timeseries",
       "id": 7,
       "title": "WAN Throughput (wan)",
@@ -580,7 +852,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 4,
+        "y": 8,
         "w": 12,
         "h": 9
       },
@@ -685,7 +957,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 4,
+        "y": 8,
         "w": 12,
         "h": 9
       },
@@ -791,7 +1063,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 13,
+        "y": 17,
         "w": 12,
         "h": 8
       },
@@ -913,7 +1185,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 13,
+        "y": 17,
         "w": 12,
         "h": 8
       },
@@ -1027,7 +1299,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 21,
+        "y": 25,
         "w": 24,
         "h": 8
       },
@@ -1057,7 +1329,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 29,
+        "y": 33,
         "w": 24,
         "h": 1
       }
@@ -1109,7 +1381,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 30,
+        "y": 34,
         "w": 24,
         "h": 4
       },
@@ -1196,7 +1468,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 38,
         "w": 12,
         "h": 4
       },
@@ -1234,8 +1506,8 @@
     {
       "type": "stat",
       "id": 23,
-      "title": "Router Temperature",
-      "description": "Preferred temperature signal from hwmon or thermal collectors. Install both if available on your router.",
+      "title": "Open File Descriptors",
+      "description": "File descriptor usage. High values indicate too many open connections or stuck processes.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1246,7 +1518,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "max(node_hwmon_temp_celsius{job=\"openwrt\"}) or max(node_thermal_zone_temp{job=\"openwrt\"})",
+          "expr": "node_filefd_allocated{job=\"openwrt\"} / node_filefd_maximum{job=\"openwrt\"}",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1266,21 +1538,21 @@
               },
               {
                 "color": "yellow",
-                "value": 70
+                "value": 0.7
               },
               {
                 "color": "red",
-                "value": 85
+                "value": 0.9
               }
             ]
           },
-          "unit": "celsius"
+          "unit": "percentunit"
         },
         "overrides": []
       },
       "gridPos": {
         "x": 12,
-        "y": 34,
+        "y": 38,
         "w": 6,
         "h": 4
       },
@@ -1304,8 +1576,8 @@
     {
       "type": "stat",
       "id": 24,
-      "title": "WiFi Clients",
-      "description": "Associated WiFi clients across all access-point interfaces. Requires the wifi_stations collector.",
+      "title": "Static Reservations",
+      "description": "Number of static DHCP reservations configured in UCI.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1316,7 +1588,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(wifi_stations{job=\"openwrt\"})",
+          "expr": "count(uci_dhcp_host{job=\"openwrt\"})",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1342,7 +1614,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 34,
+        "y": 38,
         "w": 6,
         "h": 4
       },

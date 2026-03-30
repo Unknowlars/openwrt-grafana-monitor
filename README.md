@@ -9,9 +9,9 @@ Full observability stack for OpenWRT routers — metrics, logs, and dashboards i
 | | |
 |---|---|
 | **CPU & memory** | Load average, memory usage %, free memory |
-| **Network** | Per-interface RX/TX (WAN/LAN/WiFi AP/Tailscale), DNS query rates, DHCP events |
+| **Network** | Per-interface RX/TX (WAN/LAN/WiFi AP/Tailscale), WAN latency/jitter/loss probes, DNS query rates, DHCP events |
 | **Devices** | Per-device online/offline status, NAT traffic top-10, DHCP lease table, static reservations |
-| **Router sensors** | Router temperature plus WiFi client counts and AP signal metrics when supported |
+| **Router health** | Router temperature, overlay/tmp usage, service health, WiFi client counts and signal metrics when supported |
 | **NAT** | Active conntrack sessions, limit usage |
 | **Logs** | All syslog events, DHCP assignments, firewall drops, kernel messages |
 
@@ -38,7 +38,7 @@ ssh root@192.168.0.1 "sh /tmp/openwrt/setup.sh 192.168.0.100"
 
 The router setup installs the official exporter packages, copies the bundled
 collector files from `openwrt/collectors/`, installs helper scripts from
-`openwrt/scripts/`, configures the exporter to listen on LAN, and enables
+`openwrt/scripts/`, enables the textfile collector for custom metrics, configures the exporter to listen on LAN, and enables
 remote syslog to the monitoring host over TCP.
 
 Manual install is still possible, but you must install the required packages,
@@ -78,7 +78,7 @@ All settings are in `.env`:
 
 ```
 OpenWRT Router
-├── prometheus-node-exporter-lua → :9100/metrics
+├── prometheus-node-exporter-lua + textfile metrics → :9100/metrics
 └── logd remote syslog → TCP :514
          │
          ▼

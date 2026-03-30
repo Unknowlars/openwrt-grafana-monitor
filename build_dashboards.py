@@ -23,6 +23,11 @@ Key metrics confirmed live:
   wifi_network_quality{ifname, ssid, device}
   wifi_network_signal_dbm{ifname, ssid, device}
   wifi_stations{ifname}
+  openwrt_filesystem_used_percent{mount}
+  openwrt_service_up{service}
+  openwrt_wan_probe_latency_milliseconds{target, address}
+  openwrt_wan_probe_jitter_milliseconds{target, address}
+  openwrt_wan_probe_packet_loss_percent{target, address}
   dnsmasq_*
   packet_loss
   wan_info{wanip, publicip}
@@ -314,6 +319,43 @@ def build_overview():
         ]))
     y += 4
 
+    panels.append(stat(25, "Services Down",
+        'count(openwrt_service_up{job="openwrt"} == 0)',
+        x=0, y=y, w=6, h=4, unit="short",
+        desc="Count of monitored router services that are currently down. Backed by the textfile service-health script.",
+        thresholds=[
+            {"color": "green",  "value": 0},
+            {"color": "yellow", "value": 1},
+            {"color": "red",    "value": 2},
+        ]))
+
+    panels.append(stat(26, "Overlay Used",
+        'openwrt_filesystem_used_percent{job="openwrt", mount="/overlay"}',
+        x=6, y=y, w=6, h=4, unit="percent",
+        desc="Persistent overlay storage usage. High usage is a common OpenWRT failure mode during upgrades and package installs.",
+        thresholds=[
+            {"color": "green",  "value": 0},
+            {"color": "yellow", "value": 70},
+            {"color": "red",    "value": 85},
+        ]))
+
+    panels.append(stat(27, "Router Temperature",
+        'max(node_hwmon_temp_celsius{job="openwrt"}) or max(node_thermal_zone_temp{job="openwrt"})',
+        x=12, y=y, w=6, h=4, unit="celsius",
+        desc="Preferred temperature signal from hwmon or thermal collectors. Install both if available on your router.",
+        thresholds=[
+            {"color": "green",  "value": 0},
+            {"color": "yellow", "value": 70},
+            {"color": "red",    "value": 85},
+        ]))
+
+    panels.append(stat(28, "WiFi Clients",
+        'sum(wifi_stations{job="openwrt"})',
+        x=18, y=y, w=6, h=4, unit="short",
+        desc="Associated WiFi clients across all access-point interfaces. Requires the wifi_stations collector.",
+        thresholds=[{"color": "blue", "value": 0}]))
+    y += 4
+
     # ── Tier 2: WAN throughput + CPU load ────────────────────────────────────
     panels.append(ts(7, "WAN Throughput (wan)",
         targets=[
@@ -430,26 +472,26 @@ def build_overview():
             }},
         ]))
 
-    panels.append(stat(23, "Router Temperature",
-        'max(node_hwmon_temp_celsius{job="openwrt"}) or max(node_thermal_zone_temp{job="openwrt"})',
-        x=12, y=y, w=6, h=4, unit="celsius",
-        desc="Preferred temperature signal from hwmon or thermal collectors. Install both if available on your router.",
+    panels.append(stat(23, "Open File Descriptors",
+        'node_filefd_allocated{job="openwrt"} / node_filefd_maximum{job="openwrt"}',
+        x=12, y=y, w=6, h=4, unit="percentunit",
+        desc="File descriptor usage. High values indicate too many open connections or stuck processes.",
         thresholds=[
-            {"color": "green", "value": 0},
-            {"color": "yellow", "value": 70},
-            {"color": "red", "value": 85},
+            {"color": "green",  "value": 0},
+            {"color": "yellow", "value": 0.7},
+            {"color": "red",    "value": 0.9},
         ]))
 
-    panels.append(stat(24, "WiFi Clients",
-        'sum(wifi_stations{job="openwrt"})',
+    panels.append(stat(24, "Static Reservations",
+        'count(uci_dhcp_host{job="openwrt"})',
         x=18, y=y, w=6, h=4, unit="short",
-        desc="Associated WiFi clients across all access-point interfaces. Requires the wifi_stations collector.",
+        desc="Number of static DHCP reservations configured in UCI.",
         thresholds=[{"color": "blue", "value": 0}]))
 
     return make_dashboard(
         uid="openwrt-overview",
         title="OpenWRT — Overview",
-        description="OpenWRT system health: CPU, memory, WAN throughput, NAT sessions, WiFi clients, and router temperature.",
+        description="OpenWRT system health: CPU, memory, WAN throughput, NAT sessions, router services, overlay usage, WiFi clients, and temperature.",
         panels=panels,
         tags=["openwrt", "overview"],
     )
@@ -512,6 +554,24 @@ def build_network():
             {"matcher": {"id": "byName", "options": "TX errors"},
              "properties": [{"id": "color", "value": {"fixedColor": "#FF9830", "mode": "fixed"}}]},
         ]))
+    y += 7
+
+    panels.append(ts(6, "WAN Probe Latency & Jitter",
+        targets=[
+            tgt('openwrt_wan_probe_latency_milliseconds{job="openwrt"}',
+                'latency {{target}} ({{address}})', "A"),
+            tgt('openwrt_wan_probe_jitter_milliseconds{job="openwrt"}',
+                'jitter {{target}} ({{address}})', "B"),
+        ],
+        x=0, y=y, w=12, h=7, unit="ms",
+        desc="Latency and jitter from router-side probes to the gateway, upstream resolver, and public internet. Backed by the textfile WAN-quality script."))
+
+    panels.append(ts(7, "WAN Probe Packet Loss",
+        targets=[tgt(
+            'openwrt_wan_probe_packet_loss_percent{job="openwrt"}',
+            '{{target}} ({{address}})', "A")],
+        x=12, y=y, w=12, h=7, unit="percent",
+        desc="Packet loss from the same router-side probes. Useful to separate local gateway issues from upstream internet loss."))
     y += 7
 
     # ── WiFi section ─────────────────────────────────────────────────────────
@@ -619,6 +679,28 @@ def build_network():
         desc="DHCP handshake events. Many 'Discover' events indicate devices frequently reconnecting."))
     y += 8
 
+    panels.append(row_panel(45, "Router Health (Textfile Metrics)", y))
+    y += 1
+
+    panels.append(ts(46, "Filesystem Used %",
+        targets=[tgt(
+            'openwrt_filesystem_used_percent{job="openwrt"}',
+            '{{mount}}', "A")],
+        x=0, y=y, w=12, h=7, unit="percent",
+        desc="Router storage pressure on persistent overlay storage and tmpfs. High overlay usage often breaks upgrades and package installs."))
+
+    panels.append(bargauge(47, "Service Status",
+        targets=[tgt(
+            'openwrt_service_up{job="openwrt"}',
+            '{{service}}', "A")],
+        x=12, y=y, w=12, h=7, unit="short", min=0, max=1,
+        desc="Current status of key router daemons collected by the textfile service-health script.",
+        thresholds=[
+            {"color": "red",   "value": 0},
+            {"color": "green", "value": 1},
+        ]))
+    y += 7
+
     # ── Interface summary table ────────────────────────────────────────────────
     panels.append(row_panel(50, "Interface Summary", y))
     y += 1
@@ -655,7 +737,7 @@ def build_network():
     return make_dashboard(
         uid="openwrt-network",
         title="OpenWRT — Network",
-        description="WAN throughput, WiFi AP traffic and client counts, Tailscale VPN, LAN interfaces, DNS/DHCP stats.",
+        description="WAN throughput and quality, WiFi AP traffic and client counts, Tailscale VPN, router storage/service health, LAN interfaces, DNS/DHCP stats.",
         panels=panels,
         tags=["openwrt", "network"],
     )
@@ -748,6 +830,29 @@ def build_devices():
         ],
         x=0, y=y, w=24, h=8, unit="Bps",
         desc="Traffic on the WiFi AP interfaces. 2.4 GHz (phy0-ap0) and 5 GHz (phy1-ap0)."))
+    y += 8
+
+    panels.append(bargauge(12, "WiFi Client Signal",
+        targets=[tgt(
+            'sort_desc(wifi_station_signal_dbm{job="openwrt"})',
+            '{{mac}} {{ifname}}', "A")],
+        x=0, y=y, w=12, h=8, unit="dBm", min=-95, max=-30,
+        desc="Current WiFi client signal strength per station. Stronger signals are closer to -40 dBm; weaker clients trend toward -80 dBm or below.",
+        thresholds=[
+            {"color": "red",    "value": -95},
+            {"color": "yellow", "value": -75},
+            {"color": "green",  "value": -60},
+        ]))
+
+    panels.append(ts(13, "WiFi Client Aggregate Bitrate",
+        targets=[
+            tgt('1000 * sum by(ifname) (wifi_station_receive_kilobits_per_second{job="openwrt"})',
+                '{{ifname}} RX', "A"),
+            tgt('1000 * sum by(ifname) (wifi_station_transmit_kilobits_per_second{job="openwrt"})',
+                '{{ifname}} TX', "B"),
+        ],
+        x=12, y=y, w=12, h=8, unit="bps",
+        desc="Aggregate current WiFi client receive and transmit bitrate per AP interface. Requires the wifi_stations collector."))
     y += 8
 
     # ── Device tables ─────────────────────────────────────────────────────────

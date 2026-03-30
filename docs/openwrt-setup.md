@@ -5,7 +5,7 @@ This repo uses two kinds of router-side data:
 - Official `prometheus-node-exporter-lua` collectors from OpenWRT packages
 - Bundled custom collectors and helper scripts from this repo's `openwrt/` directory
 
-The dashboards expect both. If you only install the official packages, Grafana will still show core system metrics, but panels such as WAN/public IP, packet loss, DHCP lease expiry, and ping-based device presence will be empty.
+The dashboards expect both. If you only install the official packages, Grafana will still show core system metrics, but panels such as WAN/public IP, packet loss, DHCP lease expiry, ping-based device presence, WAN quality, filesystem usage, and service health will be empty.
 
 ## Requirements
 
@@ -27,10 +27,12 @@ The setup script does all of the following:
 
 - Installs the required exporter packages
 - Installs `hwmon` and `thermal` collectors when available on your router build
+- Installs the `textfile` collector used for custom script metrics
 - Configures `prometheus-node-exporter-lua` to listen on `lan:9100`
 - Copies bundled collectors into `/usr/lib/lua/prometheus-collectors/`
 - Copies helper scripts into `/usr/bin/`
-- Adds cron jobs for device status, WAN/public IP, and packet loss sampling
+- Creates `/var/prometheus/` for textfile metrics
+- Adds cron jobs for device status, WAN/public IP, packet loss, WAN quality, filesystem usage, and service health
 - Configures remote syslog to the monitoring host over TCP port `514`
 
 Bundled files installed by the script:
@@ -40,8 +42,11 @@ Bundled files installed by the script:
 - `/usr/lib/lua/prometheus-collectors/packet_loss.lua`
 - `/usr/lib/lua/prometheus-collectors/wan_info.lua`
 - `/usr/bin/openwrt-monitor-device-status.sh`
+- `/usr/bin/openwrt-monitor-filesystem.sh`
 - `/usr/bin/openwrt-monitor-packet-loss.sh`
+- `/usr/bin/openwrt-monitor-service-health.sh`
 - `/usr/bin/openwrt-monitor-wan-info.sh`
+- `/usr/bin/openwrt-monitor-wan-quality.sh`
 
 ## Required Packages
 
@@ -51,6 +56,7 @@ These are the packages the dashboards assume are present:
 opkg update
 opkg install \
   prometheus-node-exporter-lua \
+  prometheus-node-exporter-lua-textfile \
   prometheus-node-exporter-lua-openwrt \
   prometheus-node-exporter-lua-uci_dhcp_host \
   prometheus-node-exporter-lua-wifi \
@@ -112,8 +118,11 @@ On the router:
 ```sh
 cat >> /etc/crontabs/root <<'EOF'
 */1 * * * * /usr/bin/openwrt-monitor-device-status.sh
+*/1 * * * * /usr/bin/openwrt-monitor-service-health.sh
 */5 * * * * /usr/bin/openwrt-monitor-packet-loss.sh
 */5 * * * * /usr/bin/openwrt-monitor-wan-info.sh
+*/5 * * * * /usr/bin/openwrt-monitor-wan-quality.sh
+*/10 * * * * /usr/bin/openwrt-monitor-filesystem.sh
 EOF
 
 /etc/init.d/cron enable
@@ -124,8 +133,11 @@ Run the helper scripts once immediately so the custom metrics appear without wai
 
 ```sh
 /usr/bin/openwrt-monitor-device-status.sh
+/usr/bin/openwrt-monitor-service-health.sh
 /usr/bin/openwrt-monitor-packet-loss.sh
 /usr/bin/openwrt-monitor-wan-info.sh
+/usr/bin/openwrt-monitor-wan-quality.sh
+/usr/bin/openwrt-monitor-filesystem.sh
 ```
 
 ### 5. Configure remote syslog
@@ -162,7 +174,7 @@ wget -qO- http://127.0.0.1:9100/metrics | head -40
 Verify the custom metrics exist:
 
 ```sh
-wget -qO- http://127.0.0.1:9100/metrics | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info)'
+wget -qO- http://127.0.0.1:9100/metrics | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info|openwrt_service_up|openwrt_filesystem_used_percent|openwrt_wan_probe_latency_milliseconds)'
 ```
 
 Verify the exporter is scraping the collectors you expect:
@@ -183,6 +195,7 @@ Healthy examples include collectors such as:
 - `device_status`
 - `packet_loss`
 - `wan_info`
+- `textfile`
 
 ### On the monitoring host
 
@@ -196,6 +209,8 @@ curl 'http://localhost:3100/loki/api/v1/query?query={job="openwrt-syslog"}'
 
 - `router_device_up` is based on ICMP ping against DHCP leases. Some devices block ping and may appear offline even though they are connected.
 - `wan_info` depends on the helper script reaching an external public-IP service. If that request fails, the panel will still show the local WAN IP and set the public IP label to `unknown`.
+- The WAN quality metrics are synthetic probes run from the router itself. They are meant for trend and troubleshooting, not for precise SLA measurement.
+- The filesystem and service-health metrics are exported via the textfile collector from files in `/var/prometheus/*.prom`.
 - `wifi` and `wifi_stations` should expose `wifi_*` metrics automatically once the packages are installed. If they do not, check `node_scrape_collector_success` first.
 - Temperature panels prefer `hwmon` and `thermal`. Some routers expose one, some both, some neither.
 
@@ -208,7 +223,10 @@ These repo-local files are part of the supported setup and should be treated as 
 - `openwrt/collectors/packet_loss.lua`
 - `openwrt/collectors/wan_info.lua`
 - `openwrt/scripts/openwrt-monitor-device-status.sh`
+- `openwrt/scripts/openwrt-monitor-filesystem.sh`
 - `openwrt/scripts/openwrt-monitor-packet-loss.sh`
+- `openwrt/scripts/openwrt-monitor-service-health.sh`
 - `openwrt/scripts/openwrt-monitor-wan-info.sh`
+- `openwrt/scripts/openwrt-monitor-wan-quality.sh`
 
 If you skip these files, the dashboards will only be partially populated.

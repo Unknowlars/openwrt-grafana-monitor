@@ -85,6 +85,7 @@ opkg update
 echo "==> Installing required Prometheus exporters..."
 opkg install \
   prometheus-node-exporter-lua \
+  prometheus-node-exporter-lua-textfile \
   prometheus-node-exporter-lua-uci_dhcp_host \
   prometheus-node-exporter-lua-openwrt \
   prometheus-node-exporter-lua-wifi \
@@ -106,6 +107,7 @@ fi
 echo "==> Installing bundled collector files and helper scripts..."
 ensure_dir /usr/lib/lua/prometheus-collectors
 ensure_dir /usr/bin
+ensure_dir /var/prometheus
 
 install_file "$COLLECTOR_SRC_DIR/dnsmasq.lua" /usr/lib/lua/prometheus-collectors/dnsmasq.lua 0644
 install_file "$COLLECTOR_SRC_DIR/device_status.lua" /usr/lib/lua/prometheus-collectors/device_status.lua 0644
@@ -115,6 +117,9 @@ install_file "$COLLECTOR_SRC_DIR/wan_info.lua" /usr/lib/lua/prometheus-collector
 install_file "$HELPER_SRC_DIR/openwrt-monitor-device-status.sh" /usr/bin/openwrt-monitor-device-status.sh 0755
 install_file "$HELPER_SRC_DIR/openwrt-monitor-packet-loss.sh" /usr/bin/openwrt-monitor-packet-loss.sh 0755
 install_file "$HELPER_SRC_DIR/openwrt-monitor-wan-info.sh" /usr/bin/openwrt-monitor-wan-info.sh 0755
+install_file "$HELPER_SRC_DIR/openwrt-monitor-filesystem.sh" /usr/bin/openwrt-monitor-filesystem.sh 0755
+install_file "$HELPER_SRC_DIR/openwrt-monitor-service-health.sh" /usr/bin/openwrt-monitor-service-health.sh 0755
+install_file "$HELPER_SRC_DIR/openwrt-monitor-wan-quality.sh" /usr/bin/openwrt-monitor-wan-quality.sh 0755
 
 # ── Configure exporter listener ────────────────────────────────────────────────
 
@@ -127,13 +132,19 @@ uci commit prometheus-node-exporter-lua
 
 echo "==> Configuring helper cron jobs..."
 ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-device-status.sh'
+ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-service-health.sh'
 ensure_cron_line '*/5 * * * * /usr/bin/openwrt-monitor-packet-loss.sh'
 ensure_cron_line '*/5 * * * * /usr/bin/openwrt-monitor-wan-info.sh'
+ensure_cron_line '*/5 * * * * /usr/bin/openwrt-monitor-wan-quality.sh'
+ensure_cron_line '*/10 * * * * /usr/bin/openwrt-monitor-filesystem.sh'
 
 echo "==> Running helper scripts once so custom metrics appear immediately..."
 /usr/bin/openwrt-monitor-device-status.sh
+/usr/bin/openwrt-monitor-service-health.sh
 /usr/bin/openwrt-monitor-packet-loss.sh
 /usr/bin/openwrt-monitor-wan-info.sh
+/usr/bin/openwrt-monitor-wan-quality.sh
+/usr/bin/openwrt-monitor-filesystem.sh
 
 # ── Start and enable the exporter ─────────────────────────────────────────────
 
@@ -176,7 +187,7 @@ echo "==> Setup complete!"
 echo ""
 echo "    Metrics:  http://$(uci get network.lan.ipaddr 2>/dev/null || printf '%s' '<ROUTER_IP>'):9100/metrics"
 echo "    Syslog:   → $MONITORING_HOST:514 (TCP)"
-echo "    Helpers:  device status, packet loss, WAN/public IP"
+echo "    Helpers:  device status, packet loss, WAN/public IP, WAN quality, filesystem, service health"
 echo ""
 echo "    Now start the Docker stack on $MONITORING_HOST:"
 echo "    docker compose up -d"

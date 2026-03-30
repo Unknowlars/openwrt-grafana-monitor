@@ -9,6 +9,8 @@ The dashboards in this repo expect the router to be set up with both:
 - official `prometheus-node-exporter-lua` packages
 - the bundled custom collectors and helper scripts installed by `openwrt/setup.sh`
 
+That includes custom textfile metrics for WAN quality, filesystem usage, and service health in addition to the Lua-based custom collectors.
+
 ## Requirements
 
 - Docker 24+ and Docker Compose v2

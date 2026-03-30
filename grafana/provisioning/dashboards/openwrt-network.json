@@ -1,7 +1,7 @@
 {
   "title": "OpenWRT \u2014 Network",
   "uid": "openwrt-network",
-  "description": "WAN throughput, WiFi AP traffic and client counts, Tailscale VPN, LAN interfaces, DNS/DHCP stats.",
+  "description": "WAN throughput and quality, WiFi AP traffic and client counts, Tailscale VPN, router storage/service health, LAN interfaces, DNS/DHCP stats.",
   "tags": [
     "openwrt",
     "network"
@@ -515,6 +515,189 @@
       "pluginVersion": "12.4.0"
     },
     {
+      "type": "timeseries",
+      "id": 6,
+      "title": "WAN Probe Latency & Jitter",
+      "description": "Latency and jitter from router-side probes to the gateway, upstream resolver, and public internet. Backed by the textfile WAN-quality script.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "openwrt_wan_probe_latency_milliseconds{job=\"openwrt\"}",
+          "legendFormat": "latency {{target}} ({{address}})",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "openwrt_wan_probe_jitter_milliseconds{job=\"openwrt\"}",
+          "legendFormat": "jitter {{target}} ({{address}})",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 7
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [],
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "timeseries",
+      "id": 7,
+      "title": "WAN Probe Packet Loss",
+      "description": "Packet loss from the same router-side probes. Useful to separate local gateway issues from upstream internet loss.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "openwrt_wan_probe_packet_loss_percent{job=\"openwrt\"}",
+          "legendFormat": "{{target}} ({{address}})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 7
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [],
+      "pluginVersion": "12.4.0"
+    },
+    {
       "type": "row",
       "id": 10,
       "title": "WiFi \u2014 phy0-ap0 (2.4 GHz) + phy1-ap0 (5 GHz)",
@@ -522,7 +705,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 16,
+        "y": 23,
         "w": 24,
         "h": 1
       }
@@ -619,7 +802,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 17,
+        "y": 24,
         "w": 24,
         "h": 8
       },
@@ -706,7 +889,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 32,
         "w": 12,
         "h": 7
       },
@@ -793,7 +976,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 25,
+        "y": 32,
         "w": 12,
         "h": 7
       },
@@ -823,7 +1006,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 32,
+        "y": 39,
         "w": 24,
         "h": 1
       }
@@ -893,7 +1076,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 33,
+        "y": 40,
         "w": 12,
         "h": 8
       },
@@ -980,7 +1163,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 33,
+        "y": 40,
         "w": 12,
         "h": 8
       },
@@ -1010,7 +1193,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 41,
+        "y": 48,
         "w": 24,
         "h": 1
       }
@@ -1089,7 +1272,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 42,
+        "y": 49,
         "w": 12,
         "h": 7
       },
@@ -1185,7 +1368,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 42,
+        "y": 49,
         "w": 12,
         "h": 7
       },
@@ -1215,7 +1398,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 56,
         "w": 24,
         "h": 1
       }
@@ -1303,7 +1486,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 50,
+        "y": 57,
         "w": 12,
         "h": 8
       },
@@ -1408,7 +1591,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 50,
+        "y": 57,
         "w": 12,
         "h": 8
       },
@@ -1432,13 +1615,191 @@
     },
     {
       "type": "row",
+      "id": 45,
+      "title": "Router Health (Textfile Metrics)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 65,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 46,
+      "title": "Filesystem Used %",
+      "description": "Router storage pressure on persistent overlay storage and tmpfs. High overlay usage often breaks upgrades and package installs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "openwrt_filesystem_used_percent{job=\"openwrt\"}",
+          "legendFormat": "{{mount}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 66,
+        "w": 12,
+        "h": 7
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [],
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "bargauge",
+      "id": 47,
+      "title": "Service Status",
+      "description": "Current status of key router daemons collected by the textfile service-health script.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "openwrt_service_up{job=\"openwrt\"}",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short",
+          "max": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 66,
+        "w": 12,
+        "h": 7
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "namePlacement": "auto",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 300,
+        "minVizWidth": 8,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        }
+      },
+      "transformations": [],
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "row",
       "id": 50,
       "title": "Interface Summary",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 58,
+        "y": 73,
         "w": 24,
         "h": 1
       }
@@ -1540,7 +1901,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 59,
+        "y": 74,
         "w": 24,
         "h": 8
       },

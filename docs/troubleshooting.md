@@ -25,6 +25,8 @@ curl http://192.168.0.1:9100/metrics | grep '^node_scrape_collector_success'
 
 You should see success entries for collectors such as `openwrt`, `wifi`, `wifi_stations`, `nat_traffic`, `netstat`, `uci_dhcp_host`, plus the bundled custom collectors `dnsmasq`, `device_status`, `packet_loss`, and `wan_info`.
 
+If you enabled the newer helper scripts, you should also see the `textfile` collector succeed.
+
 If a package is installed but a collector does not appear here, the exporter is not loading it successfully.
 
 ### 2. Check Alloy is scraping
@@ -50,7 +52,7 @@ If empty, Alloy isn't writing to Prometheus. Check the `prometheus.remote_write`
 The repo's dashboards also expect these router-side custom metrics:
 
 ```sh
-curl http://192.168.0.1:9100/metrics | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info)'
+curl http://192.168.0.1:9100/metrics | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info|openwrt_service_up|openwrt_filesystem_used_percent|openwrt_wan_probe_latency_milliseconds)'
 ```
 
 If these are missing, you probably copied only `openwrt/setup.sh` instead of the whole `openwrt/` directory, or the helper cron jobs are not running.
@@ -156,13 +158,17 @@ The setup script installs helper scripts that populate:
 - `/tmp/device-status.out`
 - `/tmp/packetloss.out`
 - `/tmp/wanip.out`
+- `/var/prometheus/openwrt_filesystem.prom`
+- `/var/prometheus/openwrt_services.prom`
+- `/var/prometheus/openwrt_wan_quality.prom`
 
 Check that the files exist and contain fresh data:
 
 ```sh
-ls -l /tmp/device-status.out /tmp/packetloss.out /tmp/wanip.out
+ls -l /tmp/device-status.out /tmp/packetloss.out /tmp/wanip.out /var/prometheus/*.prom
 cat /tmp/packetloss.out
 cat /tmp/wanip.out
+cat /var/prometheus/openwrt_services.prom
 ```
 
 Then check the cron file:
@@ -175,9 +181,14 @@ And force a manual refresh:
 
 ```sh
 /usr/bin/openwrt-monitor-device-status.sh
+/usr/bin/openwrt-monitor-service-health.sh
 /usr/bin/openwrt-monitor-packet-loss.sh
 /usr/bin/openwrt-monitor-wan-info.sh
+/usr/bin/openwrt-monitor-wan-quality.sh
+/usr/bin/openwrt-monitor-filesystem.sh
 ```
+
+If the files are present but Prometheus still does not show the metrics, verify that `prometheus-node-exporter-lua-textfile` is installed and that the exporter reports `node_scrape_collector_success{collector="textfile"} 1`.
 
 ---
 
@@ -223,7 +234,7 @@ Find your WAN interface:
 ssh root@192.168.0.1 "ip route | grep default"
 ```
 
-Then in Grafana, edit the "WAN Throughput" panel and replace `eth0` with your interface name.
+Then in Grafana, edit the WAN panels and replace `wan` with your interface name if your router exposes a different label.
 
 ---
 
