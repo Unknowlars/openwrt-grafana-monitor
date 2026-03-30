@@ -118,7 +118,6 @@ Monitoring Host (Docker)
     └── Grafana    :3000  ← you're here
 ```
 
-See [PLAN.md](PLAN.md) for the full architecture and design decisions.
 
 ## Docs
 
