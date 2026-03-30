@@ -1,7 +1,7 @@
 {
   "title": "OpenWRT \u2014 Devices",
   "uid": "openwrt-devices",
-  "description": "LAN device tracking via router_device_up: online/offline counts, NAT traffic per device, DHCP leases, WiFi AP throughput.",
+  "description": "LAN device tracking via ping-based presence, NAT traffic per device, DHCP leases, static reservations, and WiFi AP throughput.",
   "tags": [
     "openwrt",
     "devices"
@@ -887,7 +887,7 @@
       "gridPos": {
         "x": 0,
         "y": 34,
-        "w": 24,
+        "w": 12,
         "h": 10
       },
       "options": {
@@ -917,6 +917,90 @@
               "mac": "MAC Address",
               "ip": "IP Address",
               "Value": "Lease Expires (unix)"
+            }
+          }
+        }
+      ],
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "table",
+      "id": 23,
+      "title": "Static DHCP Reservations",
+      "description": "Static DHCP host reservations from UCI. Helpful for mapping device names to fixed IPs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "uci_dhcp_host{job=\"openwrt\"}",
+          "legendFormat": "",
+          "refId": "A",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 34,
+        "w": 12,
+        "h": 10
+      },
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "Value": true
+            },
+            "renameByName": {
+              "name": "Hostname",
+              "mac": "MAC Address",
+              "ip": "Reserved IP",
+              "dns": "Register DNS"
             }
           }
         }

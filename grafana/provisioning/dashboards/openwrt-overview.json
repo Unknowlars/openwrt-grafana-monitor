@@ -1,7 +1,7 @@
 {
   "title": "OpenWRT \u2014 Overview",
   "uid": "openwrt-overview",
-  "description": "ASUS RT-AX53U system health: CPU, memory, WAN throughput, NAT sessions, and device counts.",
+  "description": "OpenWRT system health: CPU, memory, WAN throughput, NAT sessions, WiFi clients, and router temperature.",
   "tags": [
     "openwrt",
     "overview"
@@ -1234,8 +1234,8 @@
     {
       "type": "stat",
       "id": 23,
-      "title": "Open File Descriptors",
-      "description": "File descriptor usage. High values indicate too many open connections/files.",
+      "title": "Router Temperature",
+      "description": "Preferred temperature signal from hwmon or thermal collectors. Install both if available on your router.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1246,7 +1246,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_filefd_allocated{job=\"openwrt\"} / node_filefd_maximum{job=\"openwrt\"}",
+          "expr": "max(node_hwmon_temp_celsius{job=\"openwrt\"}) or max(node_thermal_zone_temp{job=\"openwrt\"})",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1266,15 +1266,15 @@
               },
               {
                 "color": "yellow",
-                "value": 0.7
+                "value": 70
               },
               {
                 "color": "red",
-                "value": 0.9
+                "value": 85
               }
             ]
           },
-          "unit": "percentunit"
+          "unit": "celsius"
         },
         "overrides": []
       },
@@ -1304,8 +1304,8 @@
     {
       "type": "stat",
       "id": 24,
-      "title": "DHCP Leases Active",
-      "description": "Number of active DHCP leases (devices with an IP from the router)",
+      "title": "WiFi Clients",
+      "description": "Associated WiFi clients across all access-point interfaces. Requires the wifi_stations collector.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1316,7 +1316,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "count(dhcp_lease{job=\"openwrt\"})",
+          "expr": "sum(wifi_stations{job=\"openwrt\"})",
           "legendFormat": "",
           "refId": "A"
         }

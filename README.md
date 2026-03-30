@@ -10,7 +10,8 @@ Full observability stack for OpenWRT routers — metrics, logs, and dashboards i
 |---|---|
 | **CPU & memory** | Load average, memory usage %, free memory |
 | **Network** | Per-interface RX/TX (WAN/LAN/WiFi AP/Tailscale), DNS query rates, DHCP events |
-| **Devices** | Per-device online/offline status, NAT traffic top-10, DHCP lease table |
+| **Devices** | Per-device online/offline status, NAT traffic top-10, DHCP lease table, static reservations |
+| **Router sensors** | Router temperature plus WiFi client counts and AP signal metrics when supported |
 | **NAT** | Active conntrack sessions, limit usage |
 | **Logs** | All syslog events, DHCP assignments, firewall drops, kernel messages |
 
@@ -28,31 +29,21 @@ Full observability stack for OpenWRT routers — metrics, logs, and dashboards i
 
 ### Step 1 — Router (SSH in)
 
-```sh
-opkg update && opkg install \
-  prometheus-node-exporter-lua \
-  prometheus-node-exporter-lua-openwrt \
-  prometheus-node-exporter-lua-wifi \
-  prometheus-node-exporter-lua-wifi_stations \
-  prometheus-node-exporter-lua-nat_traffic \
-  prometheus-node-exporter-lua-netstat
-
-/etc/init.d/prometheus-node-exporter-lua enable
-/etc/init.d/prometheus-node-exporter-lua start
-
-# Send logs to monitoring host (replace IP):
-uci set system.@system[0].log_ip=192.168.0.100
-uci set system.@system[0].log_port=514
-uci set system.@system[0].log_proto=udp
-uci commit system && /etc/init.d/log restart
-```
-
-Or use the setup script:
+Recommended: copy the bundled router directory and run the setup script:
 
 ```sh
-scp openwrt/setup.sh root@192.168.0.1:/tmp/
-ssh root@192.168.0.1 "sh /tmp/setup.sh 192.168.0.100"
+scp -r openwrt root@192.168.0.1:/tmp/
+ssh root@192.168.0.1 "sh /tmp/openwrt/setup.sh 192.168.0.100"
 ```
+
+The router setup installs the official exporter packages, copies the bundled
+collector files from `openwrt/collectors/`, installs helper scripts from
+`openwrt/scripts/`, configures the exporter to listen on LAN, and enables
+remote syslog to the monitoring host over TCP.
+
+Manual install is still possible, but you must install the required packages,
+set `prometheus-node-exporter-lua.main.listen_interface='lan'`, and copy the
+bundled router-side files yourself. See `docs/openwrt-setup.md`.
 
 ### Step 2 — Monitoring host
 
@@ -88,7 +79,7 @@ All settings are in `.env`:
 ```
 OpenWRT Router
 ├── prometheus-node-exporter-lua → :9100/metrics
-└── logd remote syslog → UDP :514
+└── logd remote syslog → TCP :514
          │
          ▼
 Monitoring Host (Docker)
@@ -129,7 +120,9 @@ See [PLAN.md](PLAN.md) for the full architecture and design decisions.
 │           ├── openwrt-devices.json
 │           └── openwrt-logs.json
 ├── openwrt/
-│   └── setup.sh                 # One-command router setup
+│   ├── setup.sh                 # Router setup and installer for bundled files
+│   ├── collectors/              # Custom Lua collectors used by the dashboards
+│   └── scripts/                 # Router helper scripts called by cron
 └── docs/                        # Detailed guides
 ```
 

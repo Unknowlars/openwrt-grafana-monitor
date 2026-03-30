@@ -16,8 +16,13 @@ Key metrics confirmed live:
   node_load1/5/15
   node_nf_conntrack_entries / node_nf_conntrack_entries_limit
   node_network_*_total{device}
+  node_hwmon_temp_celsius / node_thermal_zone_temp
   router_device_up{device, status, mac, ip}
   dhcp_lease{mac, hostname, ip}
+  uci_dhcp_host{name, mac, ip}
+  wifi_network_quality{ifname, ssid, device}
+  wifi_network_signal_dbm{ifname, ssid, device}
+  wifi_stations{ifname}
   dnsmasq_*
   packet_loss
   wan_info{wanip, publicip}
@@ -425,26 +430,26 @@ def build_overview():
             }},
         ]))
 
-    panels.append(stat(23, "Open File Descriptors",
-        'node_filefd_allocated{job="openwrt"} / node_filefd_maximum{job="openwrt"}',
-        x=12, y=y, w=6, h=4, unit="percentunit",
-        desc="File descriptor usage. High values indicate too many open connections/files.",
+    panels.append(stat(23, "Router Temperature",
+        'max(node_hwmon_temp_celsius{job="openwrt"}) or max(node_thermal_zone_temp{job="openwrt"})',
+        x=12, y=y, w=6, h=4, unit="celsius",
+        desc="Preferred temperature signal from hwmon or thermal collectors. Install both if available on your router.",
         thresholds=[
             {"color": "green", "value": 0},
-            {"color": "yellow", "value": 0.7},
-            {"color": "red", "value": 0.9},
+            {"color": "yellow", "value": 70},
+            {"color": "red", "value": 85},
         ]))
 
-    panels.append(stat(24, "DHCP Leases Active",
-        'count(dhcp_lease{job="openwrt"})',
+    panels.append(stat(24, "WiFi Clients",
+        'sum(wifi_stations{job="openwrt"})',
         x=18, y=y, w=6, h=4, unit="short",
-        desc="Number of active DHCP leases (devices with an IP from the router)",
+        desc="Associated WiFi clients across all access-point interfaces. Requires the wifi_stations collector.",
         thresholds=[{"color": "blue", "value": 0}]))
 
     return make_dashboard(
         uid="openwrt-overview",
         title="OpenWRT — Overview",
-        description="ASUS RT-AX53U system health: CPU, memory, WAN throughput, NAT sessions, and device counts.",
+        description="OpenWRT system health: CPU, memory, WAN throughput, NAT sessions, WiFi clients, and router temperature.",
         panels=panels,
         tags=["openwrt", "overview"],
     )
@@ -527,6 +532,21 @@ def build_network():
         x=0, y=y, w=24, h=8, unit="Bps",
         desc="Traffic on the 2.4 GHz (phy0-ap0) and 5 GHz (phy1-ap0) WiFi access point interfaces"))
     y += 8
+
+    panels.append(ts(12, "WiFi Clients by AP",
+        targets=[tgt(
+            'wifi_stations{job="openwrt"}',
+            '{{ifname}}', "A")],
+        x=0, y=y, w=12, h=7, unit="short",
+        desc="Associated WiFi client count per AP interface. Requires the wifi_stations collector."))
+
+    panels.append(ts(13, "WiFi Signal by AP",
+        targets=[tgt(
+            'wifi_network_signal_dbm{job="openwrt"}',
+            '{{ifname}} {{ssid}}', "A")],
+        x=12, y=y, w=12, h=7, unit="dBm",
+        desc="Reported signal level per WiFi AP interface. Requires the wifi collector."))
+    y += 7
 
     # ── LAN section ──────────────────────────────────────────────────────────
     panels.append(row_panel(20, "LAN & Internal Interfaces", y))
@@ -635,14 +655,14 @@ def build_network():
     return make_dashboard(
         uid="openwrt-network",
         title="OpenWRT — Network",
-        description="WAN throughput, WiFi AP traffic (phy0-ap0/phy1-ap0), Tailscale VPN, LAN interfaces, DNS/DHCP stats.",
+        description="WAN throughput, WiFi AP traffic and client counts, Tailscale VPN, LAN interfaces, DNS/DHCP stats.",
         panels=panels,
         tags=["openwrt", "network"],
     )
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# DASHBOARD 3 — DEVICES (replaces WiFi dashboard)
-# Uses router_device_up and dhcp_lease since wifi_station_* yields no data
+# DASHBOARD 3 — DEVICES
+# Uses bundled lease/presence collectors and optional WiFi station metrics
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def build_devices():
@@ -777,7 +797,7 @@ def build_devices():
             'dhcp_lease{job="openwrt"}',
             "", "A", fmt="table", instant=True,
         )],
-        x=0, y=y, w=24, h=10,
+        x=0, y=y, w=12, h=10,
         desc="Current DHCP leases. Value is Unix timestamp of lease expiry. Filter by hostname to find a device.",
         transforms=[
             {"id": "organize", "options": {
@@ -791,10 +811,29 @@ def build_devices():
             }},
         ]))
 
+    panels.append(table(23, "Static DHCP Reservations",
+        targets=[tgt(
+            'uci_dhcp_host{job="openwrt"}',
+            "", "A", fmt="table", instant=True,
+        )],
+        x=12, y=y, w=12, h=10,
+        desc="Static DHCP host reservations from UCI. Helpful for mapping device names to fixed IPs.",
+        transforms=[
+            {"id": "organize", "options": {
+                "excludeByName": {"Time": True, "__name__": True, "job": True, "Value": True},
+                "renameByName": {
+                    "name": "Hostname",
+                    "mac": "MAC Address",
+                    "ip": "Reserved IP",
+                    "dns": "Register DNS",
+                },
+            }},
+        ]))
+
     return make_dashboard(
         uid="openwrt-devices",
         title="OpenWRT — Devices",
-        description="LAN device tracking via router_device_up: online/offline counts, NAT traffic per device, DHCP leases, WiFi AP throughput.",
+        description="LAN device tracking via ping-based presence, NAT traffic per device, DHCP leases, static reservations, and WiFi AP throughput.",
         panels=panels,
         tags=["openwrt", "devices"],
     )
@@ -935,9 +974,13 @@ def build_logs():
     y += 4
 
     # Log rate over time
-    panels.append(loki_ts(7, "Log Rate by Type",
-        'sum by(level) (rate({job="openwrt-syslog"}[$__rate_interval]))',
-        x=0, y=y, w=24, h=7, desc="Rate of log lines over time, grouped by severity level"))
+    panels.append(loki_ts(7, "Log Rate by Severity",
+        'sum by(message_severity) (rate({job="openwrt-syslog"}[$__rate_interval]))',
+        x=0, y=y, w=12, h=7, desc="Rate of log lines over time, grouped by syslog severity."))
+
+    panels.append(loki_ts(13, "Log Rate by App",
+        'sum by(message_app_name) (rate({job="openwrt-syslog"}[$__rate_interval]))',
+        x=12, y=y, w=12, h=7, desc="Which daemons are emitting the most logs over time. Requires the syslog app-name label to be preserved."))
     y += 7
 
     # All logs

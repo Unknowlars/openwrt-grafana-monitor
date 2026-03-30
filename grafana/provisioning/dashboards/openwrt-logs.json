@@ -450,8 +450,8 @@
     {
       "type": "timeseries",
       "id": 7,
-      "title": "Log Rate by Type",
-      "description": "Rate of log lines over time, grouped by severity level",
+      "title": "Log Rate by Severity",
+      "description": "Rate of log lines over time, grouped by syslog severity.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -462,7 +462,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "sum by(level) (rate({job=\"openwrt-syslog\"}[$__rate_interval]))",
+          "expr": "sum by(message_severity) (rate({job=\"openwrt-syslog\"}[$__rate_interval]))",
           "refId": "A",
           "queryType": "range"
         }
@@ -491,7 +491,67 @@
       "gridPos": {
         "x": 0,
         "y": 4,
-        "w": 24,
+        "w": 12,
+        "h": 7
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "timeseries",
+      "id": 13,
+      "title": "Log Rate by App",
+      "description": "Which daemons are emitting the most logs over time. Requires the syslog app-name label to be preserved.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "sum by(message_app_name) (rate({job=\"openwrt-syslog\"}[$__rate_interval]))",
+          "refId": "A",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
         "h": 7
       },
       "options": {

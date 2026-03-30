@@ -28,7 +28,7 @@ services:
     image: grafana/alloy:latest
     container_name: alloy
     ports:
-      - "12345:12345"            # Alloy UI (http://localhost:12345)
+      - "1234:12345"            # Alloy UI (http://localhost:12345)
       - "${SYSLOG_PORT:-514}:514/udp"  # Syslog receiver UDP
       - "${SYSLOG_PORT:-514}:514/tcp"  # Syslog receiver TCP
     volumes:
