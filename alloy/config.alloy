@@ -9,10 +9,10 @@
 //   4. Forwards logs to Loki in the otel-lgtm container
 //
 // Environment variables (set via docker-compose):
-//   ROUTER_IP           — IP of the OpenWRT router (default: 192.168.0.1)
-//   ROUTER_NAME         — Label value for the router (default: openwrt)
-//   ROUTER_METRICS_PORT — Port of prometheus-node-exporter-lua (default: 9100)
-//   SCRAPE_INTERVAL     — How often to scrape metrics (default: 30s)
+//   ROUTER_IP           — IP of the OpenWRT router
+//   ROUTER_NAME         — Label value for the router
+//   ROUTER_METRICS_PORT — Port of prometheus-node-exporter-lua
+//   SCRAPE_INTERVAL     — How often to scrape metrics
 // ============================================================================
 
 // ── Prometheus: scrape OpenWRT metrics ──────────────────────────────────────
@@ -20,13 +20,13 @@
 prometheus.scrape "openwrt" {
   targets = [
     {
-      __address__ = env("ROUTER_IP") + ":" + env("ROUTER_METRICS_PORT"),
-      router      = env("ROUTER_NAME"),
+      __address__ = sys.env("ROUTER_IP") + ":" + sys.env("ROUTER_METRICS_PORT"),
+      router      = sys.env("ROUTER_NAME"),
       job         = "openwrt",
     },
   ]
 
-  scrape_interval = env("SCRAPE_INTERVAL")
+  scrape_interval = sys.env("SCRAPE_INTERVAL")
   metrics_path    = "/metrics"
 
   forward_to = [prometheus.remote_write.lgtm.receiver]
@@ -40,32 +40,58 @@ prometheus.remote_write "lgtm" {
   }
 }
 
+// ── Loki: relabel rules for syslog metadata preservation ────────────────────
+//
+// loki.source.syslog adds internal labels like __syslog_message_hostname,
+// __syslog_message_severity, etc. Those __-prefixed labels are removed unless
+// they are renamed through relabel_rules before forwarding.
+
+loki.relabel "openwrt_syslog" {
+  forward_to = [loki.write.lgtm.receiver]
+
+  rule {
+    action = "labelmap"
+    regex  = "__syslog_(.+)"
+  }
+}
+
 // ── Loki: receive syslog from OpenWRT logd ──────────────────────────────────
 //
-// OpenWRT's logd sends RFC3164/RFC5424 syslog to the IP/port configured via:
-//   uci set system.@system[0].log_ip=<MONITORING_HOST_IP>
-//   uci set system.@system[0].log_port=514
+// Alloy defaults syslog_format to rfc5424.
+// OpenWRT remote syslog in your case is behaving like rfc3164,
+// which is why Alloy complained about a missing RFC5424 version field.
 
 loki.source.syslog "openwrt" {
   listener {
     address  = "0.0.0.0:514"
     protocol = "udp"
+
+    syslog_format                   = "rfc3164"
+    use_incoming_timestamp          = true
+    rfc3164_default_to_current_year = true
+
     labels = {
       job    = "openwrt-syslog",
-      router = env("ROUTER_NAME"),
+      router = sys.env("ROUTER_NAME"),
     }
   }
 
   listener {
     address  = "0.0.0.0:514"
     protocol = "tcp"
+
+    syslog_format                   = "rfc3164"
+    use_incoming_timestamp          = true
+    rfc3164_default_to_current_year = true
+
     labels = {
       job    = "openwrt-syslog",
-      router = env("ROUTER_NAME"),
+      router = sys.env("ROUTER_NAME"),
     }
   }
 
-  forward_to = [loki.write.lgtm.receiver]
+  relabel_rules = loki.relabel.openwrt_syslog.rules
+  forward_to    = [loki.write.lgtm.receiver]
 }
 
 // ── Loki: forward to otel-lgtm ──────────────────────────────────────────────
@@ -76,14 +102,12 @@ loki.write "lgtm" {
   }
 }
 
-// ── Alloy internal health metrics (optional) ─────────────────────────────────
-//
-// Exposes Alloy's own metrics at http://alloy:12345/metrics
-// Useful for checking if scraping is working via the Alloy UI.
+// ── Alloy internal health metrics (optional) ────────────────────────────────
 
 prometheus.exporter.self "alloy" {}
 
 prometheus.scrape "alloy_self" {
-  targets    = prometheus.exporter.self.alloy.targets
-  forward_to = [prometheus.remote_write.lgtm.receiver]
+  targets         = prometheus.exporter.self.alloy.targets
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.lgtm.receiver]
 }
