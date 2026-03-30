@@ -1,25 +1,4 @@
 {
-  "title": "OpenWRT \u2014 Logs",
-  "uid": "openwrt-logs",
-  "description": "System logs from OpenWRT's logd via remote syslog \u2192 Loki: DHCP events, firewall drops, kernel messages.",
-  "tags": [
-    "openwrt",
-    "logs"
-  ],
-  "schemaVersion": 42,
-  "version": 1,
-  "refresh": "30s",
-  "timezone": "browser",
-  "graphTooltip": 1,
-  "time": {
-    "from": "now-3h",
-    "to": "now"
-  },
-  "timepicker": {},
-  "weekStart": "",
-  "fiscalYearStartMonth": 0,
-  "preload": false,
-  "editable": true,
   "annotations": {
     "list": [
       {
@@ -36,47 +15,37 @@
       }
     ]
   },
+  "description": "System logs from OpenWRT's logd via remote syslog → Loki: DHCP events, firewall drops, kernel messages.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
   "links": [
     {
+      "icon": "external link",
       "title": "Overview",
-      "url": "/d/openwrt-overview",
       "type": "link",
-      "icon": "external link"
+      "url": "/d/openwrt-overview"
     },
     {
+      "icon": "external link",
       "title": "Network",
-      "url": "/d/openwrt-network",
       "type": "link",
-      "icon": "external link"
+      "url": "/d/openwrt-network"
     },
     {
+      "icon": "external link",
       "title": "Devices",
-      "url": "/d/openwrt-devices",
       "type": "link",
-      "icon": "external link"
+      "url": "/d/openwrt-devices"
     }
   ],
   "panels": [
     {
-      "type": "stat",
-      "id": 1,
-      "title": "Errors (1h)",
-      "description": "Log lines containing 'error' in the last hour",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
       },
-      "targets": [
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
-          "expr": "count_over_time({job=\"openwrt-syslog\"} |~ \"(?i)error|err\" [1h])",
-          "refId": "A",
-          "queryType": "range"
-        }
-      ],
+      "description": "Log lines containing 'error' in the last hour",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -105,16 +74,18 @@
         "overrides": []
       },
       "gridPos": {
-        "x": 0,
-        "y": 0,
+        "h": 4,
         "w": 4,
-        "h": 4
+        "x": 0,
+        "y": 0
       },
+      "id": 1,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "sum"
@@ -122,30 +93,31 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
-      "pluginVersion": "12.4.0"
-    },
-    {
-      "type": "stat",
-      "id": 2,
-      "title": "Warnings (1h)",
-      "description": "Log lines containing 'warn' in the last hour",
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\"} |~ \"(?i)warn\" [1h])",
-          "refId": "A",
-          "queryType": "range"
+          "expr": "count_over_time({job=\"openwrt-syslog\"} |~ \"(?i)error|err\" [1h])",
+          "queryType": "range",
+          "refId": "A"
         }
       ],
+      "title": "Errors (1h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "description": "Log lines containing 'warn' in the last hour",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -174,16 +146,18 @@
         "overrides": []
       },
       "gridPos": {
-        "x": 4,
-        "y": 0,
+        "h": 4,
         "w": 4,
-        "h": 4
+        "x": 4,
+        "y": 0
       },
+      "id": 2,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "sum"
@@ -191,30 +165,31 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
-      "pluginVersion": "12.4.0"
-    },
-    {
-      "type": "stat",
-      "id": 3,
-      "title": "DHCP Events (1h)",
-      "description": "DHCP-related log events in the last hour",
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\"} |= \"DHCP\" [1h])",
-          "refId": "A",
-          "queryType": "range"
+          "expr": "count_over_time({job=\"openwrt-syslog\"} |~ \"(?i)warn\" [1h])",
+          "queryType": "range",
+          "refId": "A"
         }
       ],
+      "title": "Warnings (1h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "description": "DHCP-related log events in the last hour",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -235,16 +210,18 @@
         "overrides": []
       },
       "gridPos": {
-        "x": 8,
-        "y": 0,
+        "h": 4,
         "w": 4,
-        "h": 4
+        "x": 8,
+        "y": 0
       },
+      "id": 3,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "sum"
@@ -252,30 +229,31 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
-      "pluginVersion": "12.4.0"
-    },
-    {
-      "type": "stat",
-      "id": 4,
-      "title": "Firewall Drops (1h)",
-      "description": "Firewall drop/reject events in the last hour",
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\"} |~ \"DROP|REJECT\" [1h])",
-          "refId": "A",
-          "queryType": "range"
+          "expr": "count_over_time({job=\"openwrt-syslog\"} |= \"DHCP\" [1h])",
+          "queryType": "range",
+          "refId": "A"
         }
       ],
+      "title": "DHCP Events (1h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "description": "Firewall drop/reject events in the last hour",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -304,16 +282,18 @@
         "overrides": []
       },
       "gridPos": {
-        "x": 12,
-        "y": 0,
+        "h": 4,
         "w": 4,
-        "h": 4
+        "x": 12,
+        "y": 0
       },
+      "id": 4,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "sum"
@@ -321,30 +301,31 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
-      "pluginVersion": "12.4.0"
-    },
-    {
-      "type": "stat",
-      "id": 5,
-      "title": "Total Log Lines (1h)",
-      "description": "Total log lines received from the router in the last hour",
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\"} [1h])",
-          "refId": "A",
-          "queryType": "range"
+          "expr": "count_over_time({job=\"openwrt-syslog\"} |~ \"DROP|REJECT\" [1h])",
+          "queryType": "range",
+          "refId": "A"
         }
       ],
+      "title": "Firewall Drops (1h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "description": "Total log lines received from the router in the last hour",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -365,16 +346,18 @@
         "overrides": []
       },
       "gridPos": {
-        "x": 16,
-        "y": 0,
+        "h": 4,
         "w": 4,
-        "h": 4
+        "x": 16,
+        "y": 0
       },
+      "id": 5,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "sum"
@@ -382,30 +365,31 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
-      "pluginVersion": "12.4.0"
-    },
-    {
-      "type": "stat",
-      "id": 6,
-      "title": "Kernel Messages (1h)",
-      "description": "Kernel log messages (interface changes, OOM, driver events)",
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\"} |= \"kernel\" [1h])",
-          "refId": "A",
-          "queryType": "range"
+          "expr": "count_over_time({job=\"openwrt-syslog\"} [1h])",
+          "queryType": "range",
+          "refId": "A"
         }
       ],
+      "title": "Total Log Lines (1h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "description": "Kernel log messages (interface changes, OOM, driver events)",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -426,16 +410,18 @@
         "overrides": []
       },
       "gridPos": {
-        "x": 20,
-        "y": 0,
+        "h": 4,
         "w": 4,
-        "h": 4
+        "x": 20,
+        "y": 0
       },
+      "id": 6,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "sum"
@@ -443,139 +429,258 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
-      "pluginVersion": "12.4.0"
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "count_over_time({job=\"openwrt-syslog\"} |= \"kernel\" [1h])",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Kernel Messages (1h)",
+      "type": "stat"
     },
     {
-      "type": "timeseries",
-      "id": 7,
-      "title": "Log Rate by Severity",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
       "description": "Rate of log lines over time, grouped by syslog severity.",
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
-          "expr": "sum by(message_severity) (rate({job=\"openwrt-syslog\"}[$__rate_interval]))",
-          "refId": "A",
-          "queryType": "range"
-        }
-      ],
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "bars",
-            "lineWidth": 1,
             "fillOpacity": 80,
             "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
               "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
             }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
           },
           "unit": "short"
         },
         "overrides": []
       },
       "gridPos": {
+        "h": 7,
+        "w": 12,
         "x": 0,
-        "y": 4,
-        "w": 12,
-        "h": 7
+        "y": 4
       },
+      "id": 7,
       "options": {
         "legend": {
+          "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "none"
         }
       },
-      "pluginVersion": "12.4.0"
-    },
-    {
-      "type": "timeseries",
-      "id": 13,
-      "title": "Log Rate by App",
-      "description": "Which daemons are emitting the most logs over time. Requires the syslog app-name label to be preserved.",
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "sum by(message_app_name) (rate({job=\"openwrt-syslog\"}[$__rate_interval]))",
-          "refId": "A",
-          "queryType": "range"
+          "direction": "backward",
+          "editorMode": "code",
+          "expr": "sum by(message_severity) (rate({job=\"openwrt-syslog\"}[$__interval]))",
+          "legendFormat": "{{message_severity}}",
+          "queryType": "range",
+          "refId": "A"
         }
       ],
+      "title": "Log Rate by Severity",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "description": "Which daemons are emitting the most logs over time. Requires the syslog app-name label to be preserved.",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "bars",
-            "lineWidth": 1,
             "fillOpacity": 80,
             "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
               "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
             }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
           },
           "unit": "short"
         },
         "overrides": []
       },
       "gridPos": {
-        "x": 12,
-        "y": 4,
+        "h": 7,
         "w": 12,
-        "h": 7
+        "x": 12,
+        "y": 4
       },
+      "id": 13,
       "options": {
         "legend": {
+          "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "none"
         }
       },
-      "pluginVersion": "12.4.0"
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "direction": "backward",
+          "editorMode": "code",
+          "expr": "sum by(message_app_name) (rate({job=\"openwrt-syslog\"}[$__interval]))",
+          "legendFormat": "{{message_app_name}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Log Rate by App",
+      "type": "timeseries"
     },
     {
-      "type": "logs",
-      "id": 8,
-      "title": "All System Logs",
-      "description": "Full log stream from OpenWRT's logd. Use the search bar to filter by keyword.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
       },
+      "description": "Full log stream from OpenWRT's logd. Use the search bar to filter by keyword.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "id": 8,
+      "options": {
+        "dedupStrategy": "none",
+        "enableInfiniteScrolling": false,
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showControls": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "unwrappedColumns": false,
+        "wrapLogMessage": true
+      },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -583,37 +688,44 @@
             "uid": "${DS_LOKI}"
           },
           "expr": "{job=\"openwrt-syslog\"}",
-          "refId": "A",
-          "queryType": "range"
+          "queryType": "range",
+          "refId": "A"
         }
       ],
-      "gridPos": {
-        "x": 0,
-        "y": 11,
-        "w": 24,
-        "h": 14
-      },
-      "options": {
-        "dedupStrategy": "none",
-        "enableLogDetails": true,
-        "prettifyLogMessage": false,
-        "showCommonLabels": false,
-        "showLabels": false,
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": true
-      },
-      "pluginVersion": "12.4.0"
+      "title": "All System Logs",
+      "type": "logs"
     },
     {
-      "type": "logs",
-      "id": 9,
-      "title": "DHCP Events",
-      "description": "DHCP lease assignments, renewals, and releases. Shows which devices got IPs and when.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
       },
+      "description": "DHCP lease assignments, renewals, and releases. Shows which devices got IPs and when.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 25
+      },
+      "id": 9,
+      "options": {
+        "dedupStrategy": "none",
+        "enableInfiniteScrolling": false,
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showControls": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "unwrappedColumns": false,
+        "wrapLogMessage": true
+      },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -621,37 +733,44 @@
             "uid": "${DS_LOKI}"
           },
           "expr": "{job=\"openwrt-syslog\"} |= \"DHCP\"",
-          "refId": "A",
-          "queryType": "range"
+          "queryType": "range",
+          "refId": "A"
         }
       ],
-      "gridPos": {
-        "x": 0,
-        "y": 25,
-        "w": 12,
-        "h": 10
-      },
-      "options": {
-        "dedupStrategy": "none",
-        "enableLogDetails": true,
-        "prettifyLogMessage": false,
-        "showCommonLabels": false,
-        "showLabels": false,
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": true
-      },
-      "pluginVersion": "12.4.0"
+      "title": "DHCP Events",
+      "type": "logs"
     },
     {
-      "type": "logs",
-      "id": 10,
-      "title": "Firewall Events (DROP / REJECT)",
-      "description": "Firewall blocked connections. Enable firewall logging with 'option log 1' in /etc/config/firewall.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
       },
+      "description": "Firewall blocked connections. Enable firewall logging with 'option log 1' in /etc/config/firewall.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 25
+      },
+      "id": 10,
+      "options": {
+        "dedupStrategy": "none",
+        "enableInfiniteScrolling": false,
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showControls": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "unwrappedColumns": false,
+        "wrapLogMessage": true
+      },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -659,16 +778,30 @@
             "uid": "${DS_LOKI}"
           },
           "expr": "{job=\"openwrt-syslog\"} |~ \"DROP|REJECT\"",
-          "refId": "A",
-          "queryType": "range"
+          "queryType": "range",
+          "refId": "A"
         }
       ],
-      "gridPos": {
-        "x": 12,
-        "y": 25,
-        "w": 12,
-        "h": 10
+      "title": "Firewall Events (DROP / REJECT)",
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
       },
+      "description": "Kernel events: network interface state changes, driver errors, OOM events.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "id": 11,
       "options": {
         "dedupStrategy": "none",
         "enableLogDetails": true,
@@ -679,17 +812,7 @@
         "sortOrder": "Descending",
         "wrapLogMessage": true
       },
-      "pluginVersion": "12.4.0"
-    },
-    {
-      "type": "logs",
-      "id": 11,
-      "title": "Kernel Messages",
-      "description": "Kernel events: network interface state changes, driver errors, OOM events.",
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
+      "pluginVersion": "12.4.0",
       "targets": [
         {
           "datasource": {
@@ -697,16 +820,30 @@
             "uid": "${DS_LOKI}"
           },
           "expr": "{job=\"openwrt-syslog\"} |= \"kernel\"",
-          "refId": "A",
-          "queryType": "range"
+          "queryType": "range",
+          "refId": "A"
         }
       ],
-      "gridPos": {
-        "x": 0,
-        "y": 35,
-        "w": 12,
-        "h": 10
+      "title": "Kernel Messages",
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
       },
+      "description": "All log lines containing error, warning, fail, or critical keywords.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
+      "id": 12,
       "options": {
         "dedupStrategy": "none",
         "enableLogDetails": true,
@@ -717,17 +854,7 @@
         "sortOrder": "Descending",
         "wrapLogMessage": true
       },
-      "pluginVersion": "12.4.0"
-    },
-    {
-      "type": "logs",
-      "id": 12,
-      "title": "Error & Warning Events",
-      "description": "All log lines containing error, warning, fail, or critical keywords.",
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
+      "pluginVersion": "12.4.0",
       "targets": [
         {
           "datasource": {
@@ -735,46 +862,47 @@
             "uid": "${DS_LOKI}"
           },
           "expr": "{job=\"openwrt-syslog\"} |~ \"(?i)error|warn|fail|critical\"",
-          "refId": "A",
-          "queryType": "range"
+          "queryType": "range",
+          "refId": "A"
         }
       ],
-      "gridPos": {
-        "x": 12,
-        "y": 35,
-        "w": 12,
-        "h": 10
-      },
-      "options": {
-        "dedupStrategy": "none",
-        "enableLogDetails": true,
-        "prettifyLogMessage": false,
-        "showCommonLabels": false,
-        "showLabels": false,
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": true
-      },
-      "pluginVersion": "12.4.0"
+      "title": "Error & Warning Events",
+      "type": "logs"
     }
+  ],
+  "preload": false,
+  "refresh": "30s",
+  "schemaVersion": 42,
+  "tags": [
+    "openwrt",
+    "logs"
   ],
   "templating": {
     "list": [
       {
-        "name": "DS_LOKI",
-        "type": "datasource",
-        "query": "loki",
-        "refresh": 1,
-        "includeAll": false,
-        "options": [],
-        "regex": "",
         "current": {
           "text": "Loki",
           "value": "loki"
         },
-        "hide": 0,
-        "label": "Loki"
+        "includeAll": false,
+        "label": "Loki",
+        "name": "DS_LOKI",
+        "options": [],
+        "query": "loki",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
       }
     ]
-  }
+  },
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "OpenWRT — Logs",
+  "uid": "openwrt-logs23",
+  "version": 2,
+  "weekStart": ""
 }
