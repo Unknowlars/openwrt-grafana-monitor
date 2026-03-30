@@ -9,12 +9,14 @@ Full observability stack for OpenWRT routers — metrics, logs, and dashboards i
 | | |
 |---|---|
 | **CPU & memory** | Load average, memory usage %, free memory |
-| **Network** | Per-interface RX/TX throughput, packets, errors, drops |
-| **WiFi** | Client count, per-client RSSI, 2.4/5 GHz split |
+| **Network** | Per-interface RX/TX (WAN/LAN/WiFi AP/Tailscale), DNS query rates, DHCP events |
+| **Devices** | Per-device online/offline status, NAT traffic top-10, DHCP lease table |
 | **NAT** | Active conntrack sessions, limit usage |
-| **Logs** | All syslog events, DHCP assignments, firewall drops |
+| **Logs** | All syslog events, DHCP assignments, firewall drops, kernel messages |
 
-4 pre-built dashboards: Overview · Network · WiFi · Logs
+4 pre-built dashboards: Overview · Network · Devices · Logs
+
+> Tested on **ASUS RT-AX53U** (MediaTek MT7621, OpenWRT 24.10.3). WAN interface: `wan`. WiFi APs: `phy0-ap0` / `phy1-ap0`.
 
 ## Prerequisites
 
@@ -115,13 +117,22 @@ See [PLAN.md](PLAN.md) for the full architecture and design decisions.
 .
 ├── docker-compose.yml           # Stack: otel-lgtm + Alloy
 ├── .env.example                 # Configuration template
+├── build_dashboards.py          # Python script that generates dashboard JSON
 ├── alloy/
 │   └── config.alloy             # Alloy: scrape + syslog + forward
 ├── grafana/
 │   └── provisioning/
-│       ├── datasources/         # Auto-configured data sources
-│       └── dashboards/          # 4 pre-built dashboards (JSON)
+│       ├── datasources/         # Auto-configured Prometheus + Loki + Tempo
+│       └── dashboards/          # 4 pre-built dashboards (generated JSON)
+│           ├── openwrt-overview.json
+│           ├── openwrt-network.json
+│           ├── openwrt-devices.json
+│           └── openwrt-logs.json
 ├── openwrt/
 │   └── setup.sh                 # One-command router setup
 └── docs/                        # Detailed guides
 ```
+
+## Adapting to your router
+
+Edit `build_dashboards.py` and run `python3 build_dashboards.py` to regenerate dashboards if your router uses different interface names. Key variables are near the top of the file.

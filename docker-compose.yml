@@ -17,19 +17,20 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
       - GF_SECURITY_ADMIN_USER=admin
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/openwrt-overview.json
+      # Note: WAN interface on this setup is 'wan'. Edit alloy/config.alloy if your router uses a different name.
       - GF_USERS_DEFAULT_THEME=dark
       # Reduce internal component log noise
-      - ENABLE_LOGS_GRAFANA=false
+      - ENABLE_LOGS_GRAFANA=true
       - ENABLE_LOGS_LOKI=false
       - ENABLE_LOGS_PROMETHEUS=false
       - ENABLE_LOGS_TEMPO=false
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+    #healthcheck:
+    #  test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+    #  interval: 30s
+    #  timeout: 10s
+    #  retries: 5
+    #  start_period: 60s
 
   alloy:
     image: grafana/alloy:latest
