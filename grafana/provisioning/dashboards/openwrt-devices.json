@@ -837,6 +837,168 @@
       "pluginVersion": "12.4.0"
     },
     {
+      "type": "bargauge",
+      "id": 14,
+      "title": "Top WiFi Stations by Packet Rate",
+      "description": "Most active WiFi stations by combined packet rate. Uses the station RX and TX packet counters exposed by the wifi_stations collector.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "topk(10, rate(wifi_station_receive_packets_total{job=\"openwrt\"}[$__rate_interval]) + rate(wifi_station_transmit_packets_total{job=\"openwrt\"}[$__rate_interval]))",
+          "legendFormat": "{{mac}} {{ifname}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 500
+              }
+            ]
+          },
+          "unit": "pps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "namePlacement": "auto",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 300,
+        "minVizWidth": 8,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        }
+      },
+      "transformations": [],
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "bargauge",
+      "id": 15,
+      "title": "Most Inactive WiFi Stations",
+      "description": "Current inactivity timer for each WiFi client. Larger values mean the station has been quiet for longer.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sort_desc(wifi_station_inactive_milliseconds{job=\"openwrt\"})",
+          "legendFormat": "{{mac}} {{ifname}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 5000
+              },
+              {
+                "color": "red",
+                "value": 30000
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "namePlacement": "auto",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 300,
+        "minVizWidth": 8,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        }
+      },
+      "transformations": [],
+      "pluginVersion": "12.4.0"
+    },
+    {
       "type": "row",
       "id": 20,
       "title": "Device Details",
@@ -844,7 +1006,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 29,
+        "y": 37,
         "w": 24,
         "h": 1
       }
@@ -975,7 +1137,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 30,
+        "y": 38,
         "w": 24,
         "h": 12
       },
@@ -1064,7 +1226,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 42,
+        "y": 50,
         "w": 12,
         "h": 10
       },
@@ -1148,7 +1310,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 42,
+        "y": 50,
         "w": 12,
         "h": 10
       },

@@ -1577,7 +1577,7 @@
       "type": "stat",
       "id": 24,
       "title": "Static Reservations",
-      "description": "Number of static DHCP reservations configured in UCI.",
+      "description": "Age in seconds of the oldest helper-generated textfile metric. Rising values mean one of the router-side scripts stopped updating.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1588,7 +1588,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "count(uci_dhcp_host{job=\"openwrt\"})",
+          "expr": "max(time() - node_textfile_mtime_seconds{job=\"openwrt\"})",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1603,8 +1603,16 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
+                "color": "green",
                 "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 900
+              },
+              {
+                "color": "red",
+                "value": 1800
               }
             ]
           },

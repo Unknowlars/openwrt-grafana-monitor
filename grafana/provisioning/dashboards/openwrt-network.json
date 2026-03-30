@@ -999,6 +999,180 @@
       "pluginVersion": "12.4.0"
     },
     {
+      "type": "timeseries",
+      "id": 14,
+      "title": "WiFi AP Quality",
+      "description": "WiFi quality score reported by iwinfo for each access point interface.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "wifi_network_quality{job=\"openwrt\"}",
+          "legendFormat": "{{ifname}} {{ssid}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 12,
+        "h": 7
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [],
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "timeseries",
+      "id": 15,
+      "title": "WiFi AP Link Bitrate",
+      "description": "Configured WiFi AP bitrate per radio. Useful for spotting unexpected band or mode changes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "1000 * wifi_network_bitrate{job=\"openwrt\"}",
+          "legendFormat": "{{ifname}} {{ssid}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "unit": "bps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 39,
+        "w": 12,
+        "h": 7
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [],
+      "pluginVersion": "12.4.0"
+    },
+    {
       "type": "row",
       "id": 20,
       "title": "LAN & Internal Interfaces",
@@ -1006,7 +1180,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 39,
+        "y": 46,
         "w": 24,
         "h": 1
       }
@@ -1076,7 +1250,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 40,
+        "y": 47,
         "w": 12,
         "h": 8
       },
@@ -1163,7 +1337,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 40,
+        "y": 47,
         "w": 12,
         "h": 8
       },
@@ -1193,7 +1367,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 48,
+        "y": 55,
         "w": 24,
         "h": 1
       }
@@ -1272,7 +1446,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 56,
         "w": 12,
         "h": 7
       },
@@ -1368,7 +1542,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 49,
+        "y": 56,
         "w": 12,
         "h": 7
       },
@@ -1398,7 +1572,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 56,
+        "y": 63,
         "w": 24,
         "h": 1
       }
@@ -1486,7 +1660,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 57,
+        "y": 64,
         "w": 12,
         "h": 8
       },
@@ -1591,7 +1765,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 57,
+        "y": 64,
         "w": 12,
         "h": 8
       },
@@ -1621,7 +1795,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 65,
+        "y": 72,
         "w": 24,
         "h": 1
       }
@@ -1691,7 +1865,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 66,
+        "y": 73,
         "w": 12,
         "h": 7
       },
@@ -1760,7 +1934,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 66,
+        "y": 73,
         "w": 12,
         "h": 7
       },
@@ -1793,20 +1967,249 @@
     },
     {
       "type": "row",
-      "id": 50,
-      "title": "Interface Summary",
+      "id": 48,
+      "title": "Automation Health",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 73,
+        "y": 80,
         "w": 24,
         "h": 1
       }
     },
     {
       "type": "table",
-      "id": 51,
+      "id": 49,
+      "title": "Helper Metric Freshness",
+      "description": "Age in seconds of each textfile metric. Larger values mean the matching helper script has stopped updating.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "time() - node_textfile_mtime_seconds{job=\"openwrt\"}",
+          "legendFormat": "",
+          "refId": "A",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 81,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Age Seconds"
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true,
+              "router": true
+            },
+            "renameByName": {
+              "file": "Metric File",
+              "Value": "Age Seconds"
+            }
+          }
+        }
+      ],
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "table",
+      "id": 50,
+      "title": "Service Enablement",
+      "description": "Whether each monitored init service is enabled at boot. A running service with Enabled=0 is typically started indirectly or manually.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "openwrt_service_enabled{job=\"openwrt\"}",
+          "legendFormat": "",
+          "refId": "A",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Enabled"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "color": "#1a9e3a",
+                        "text": "enabled",
+                        "index": 0
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "color": "#808080",
+                        "text": "disabled",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 81,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Service"
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true,
+              "router": true
+            },
+            "renameByName": {
+              "service": "Service",
+              "Value": "Enabled"
+            }
+          }
+        }
+      ],
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "row",
+      "id": 60,
+      "title": "Interface Summary",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 89,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "table",
+      "id": 61,
       "title": "Network Interface Status",
       "description": "Current state of all network interfaces",
       "datasource": {
@@ -1901,7 +2304,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 74,
+        "y": 90,
         "w": 24,
         "h": 8
       },
