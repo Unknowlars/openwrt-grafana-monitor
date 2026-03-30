@@ -4,6 +4,11 @@ The monitoring host is any Linux machine on the same network as your router. It 
 - **grafana/otel-lgtm** — all-in-one Grafana + Prometheus + Loki + Tempo
 - **Grafana Alloy** — metrics scraper and syslog receiver
 
+The dashboards in this repo expect the router to be set up with both:
+
+- official `prometheus-node-exporter-lua` packages
+- the bundled custom collectors and helper scripts installed by `openwrt/setup.sh`
+
 ## Requirements
 
 - Docker 24+ and Docker Compose v2
@@ -56,6 +61,8 @@ Login: `admin` / value from `GRAFANA_ADMIN_PASSWORD` in `.env`
 
 The OpenWRT dashboards load automatically from `grafana/provisioning/dashboards/`.
 
+For a complete dashboard, make sure you ran the router-side setup by copying the whole `openwrt/` directory and executing `openwrt/setup.sh`, not just by installing the base exporter packages.
+
 ---
 
 ## Port reference
@@ -63,8 +70,8 @@ The OpenWRT dashboards load automatically from `grafana/provisioning/dashboards/
 | Port | Service | Purpose |
 |------|---------|---------|
 | 3000 | Grafana | Web UI |
-| 514/UDP | Alloy | Syslog receiver from router |
-| 514/TCP | Alloy | Syslog receiver (TCP fallback) |
+| 514/UDP | Alloy | Syslog receiver (supported) |
+| 514/TCP | Alloy | Recommended router syslog transport |
 | 9090 | Prometheus | Metrics database (also used by Alloy remote_write) |
 | 3100 | Loki | Logs database |
 | 3200 | Tempo | Traces database |

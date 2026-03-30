@@ -12,7 +12,20 @@ curl http://192.168.0.1:9100/metrics
 
 If this fails:
 - Is prometheus-node-exporter-lua running? `ssh root@192.168.0.1 "/etc/init.d/prometheus-node-exporter-lua status"`
-- Is port 9100 blocked by the router firewall? Try from the router itself: `curl http://127.0.0.1:9100/metrics`
+- Is port 9100 blocked by the router firewall? Try from the router itself: `wget -qO- http://127.0.0.1:9100/metrics`
+- Is the exporter still bound to loopback only? Check `uci get prometheus-node-exporter-lua.main.listen_interface` and make sure it is `lan`
+
+### 1a. Check which collectors are actually succeeding
+
+From the router or the monitoring host:
+
+```sh
+curl http://192.168.0.1:9100/metrics | grep '^node_scrape_collector_success'
+```
+
+You should see success entries for collectors such as `openwrt`, `wifi`, `wifi_stations`, `nat_traffic`, `netstat`, `uci_dhcp_host`, plus the bundled custom collectors `dnsmasq`, `device_status`, `packet_loss`, and `wan_info`.
+
+If a package is installed but a collector does not appear here, the exporter is not loading it successfully.
 
 ### 2. Check Alloy is scraping
 
@@ -31,6 +44,16 @@ curl 'http://localhost:9090/api/v1/query?query=node_load1{job="openwrt"}' | pyth
 ```
 
 If empty, Alloy isn't writing to Prometheus. Check the `prometheus.remote_write` target in Alloy UI.
+
+### 3a. Check the custom dashboard metrics directly
+
+The repo's dashboards also expect these router-side custom metrics:
+
+```sh
+curl http://192.168.0.1:9100/metrics | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info)'
+```
+
+If these are missing, you probably copied only `openwrt/setup.sh` instead of the whole `openwrt/` directory, or the helper cron jobs are not running.
 
 ### 4. Verify the ROUTER_IP env var reached Alloy
 
@@ -68,13 +91,13 @@ docker logs alloy --tail 50 | grep -i "syslog\|514"
 
 ```sh
 # From the monitoring host (listening):
-sudo tcpdump -i any udp port 514 -n
+sudo tcpdump -i any port 514 -n
 
 # From the router (sending):
 logger "test"
 ```
 
-If nothing arrives, check if something else is using port 514 on the host (`ss -ulnp | grep 514`).
+If nothing arrives, check if something else is using port 514 on the host (`ss -lntup | grep 514`).
 
 If running Linux with systemd-journald, port 514 may be in use by rsyslog or systemd-journal-remote.
 
@@ -107,6 +130,54 @@ docker port alloy
 ```
 
 Alternative: use port 1514 in `.env` and on the router.
+
+## WiFi metrics missing
+
+If the dashboards show no `wifi_*` metrics even though the packages are installed:
+
+```sh
+curl http://192.168.0.1:9100/metrics | grep '^node_scrape_collector_success{collector="wifi"'
+curl http://192.168.0.1:9100/metrics | grep '^node_scrape_collector_success{collector="wifi_stations"'
+curl http://192.168.0.1:9100/metrics | grep '^wifi_'
+```
+
+Common causes:
+
+- The packages are not actually installed on the router build you are using
+- The radio interface names differ from `phy0-ap0` and `phy1-ap0`
+- The collector is installed but failing internally, so it never emits metrics
+
+The first thing to trust is `node_scrape_collector_success`, not the package list alone.
+
+## Custom helper metrics missing
+
+The setup script installs helper scripts that populate:
+
+- `/tmp/device-status.out`
+- `/tmp/packetloss.out`
+- `/tmp/wanip.out`
+
+Check that the files exist and contain fresh data:
+
+```sh
+ls -l /tmp/device-status.out /tmp/packetloss.out /tmp/wanip.out
+cat /tmp/packetloss.out
+cat /tmp/wanip.out
+```
+
+Then check the cron file:
+
+```sh
+grep 'openwrt-monitor-' /etc/crontabs/root
+```
+
+And force a manual refresh:
+
+```sh
+/usr/bin/openwrt-monitor-device-status.sh
+/usr/bin/openwrt-monitor-packet-loss.sh
+/usr/bin/openwrt-monitor-wan-info.sh
+```
 
 ---
 
@@ -144,7 +215,7 @@ Common causes:
 
 ## WAN throughput panel shows wrong interface
 
-The default dashboard uses `eth0`. Your WAN interface may be different (e.g. `eth1`, `pppoe-wan`).
+The default dashboard uses `wan`. Your router may expose a different logical or physical WAN interface.
 
 Find your WAN interface:
 

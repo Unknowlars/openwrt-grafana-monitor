@@ -1,162 +1,214 @@
 # OpenWRT Router Setup
 
-This guide walks through everything needed on the router side.
+This repo uses two kinds of router-side data:
+
+- Official `prometheus-node-exporter-lua` collectors from OpenWRT packages
+- Bundled custom collectors and helper scripts from this repo's `openwrt/` directory
+
+The dashboards expect both. If you only install the official packages, Grafana will still show core system metrics, but panels such as WAN/public IP, packet loss, DHCP lease expiry, and ping-based device presence will be empty.
 
 ## Requirements
 
-- OpenWRT 21.02 or newer (22.03+ recommended)
-- At least 8 MB flash free (check with `df -h`)
-- At least 32 MB RAM free (check with `free`)
+- OpenWRT 21.02 or newer
 - SSH access to the router
+- Enough free flash for the exporter packages plus a few small helper scripts
+- A monitoring host on the same LAN running this repo's Docker stack
 
-## Quick setup (script)
+## Recommended Setup
+
+Copy the whole `openwrt/` directory, not just `setup.sh`:
 
 ```sh
-# From your local machine:
-scp openwrt/setup.sh root@192.168.0.1:/tmp/
-ssh root@192.168.0.1 "sh /tmp/setup.sh 192.168.0.100"
-#                                        ^^^^^^^^^^^^ IP of monitoring host
+scp -r openwrt root@192.168.0.1:/tmp/
+ssh root@192.168.0.1 "sh /tmp/openwrt/setup.sh 192.168.0.100"
 ```
 
-That's it. The script handles everything below automatically.
+The setup script does all of the following:
 
----
+- Installs the required exporter packages
+- Installs `hwmon` and `thermal` collectors when available on your router build
+- Configures `prometheus-node-exporter-lua` to listen on `lan:9100`
+- Copies bundled collectors into `/usr/lib/lua/prometheus-collectors/`
+- Copies helper scripts into `/usr/bin/`
+- Adds cron jobs for device status, WAN/public IP, and packet loss sampling
+- Configures remote syslog to the monitoring host over TCP port `514`
 
-## Manual setup
+Bundled files installed by the script:
 
-### 1. Install prometheus-node-exporter-lua
+- `/usr/lib/lua/prometheus-collectors/dnsmasq.lua`
+- `/usr/lib/lua/prometheus-collectors/device_status.lua`
+- `/usr/lib/lua/prometheus-collectors/packet_loss.lua`
+- `/usr/lib/lua/prometheus-collectors/wan_info.lua`
+- `/usr/bin/openwrt-monitor-device-status.sh`
+- `/usr/bin/openwrt-monitor-packet-loss.sh`
+- `/usr/bin/openwrt-monitor-wan-info.sh`
+
+## Required Packages
+
+These are the packages the dashboards assume are present:
 
 ```sh
 opkg update
 opkg install \
   prometheus-node-exporter-lua \
   prometheus-node-exporter-lua-openwrt \
+  prometheus-node-exporter-lua-uci_dhcp_host \
   prometheus-node-exporter-lua-wifi \
   prometheus-node-exporter-lua-wifi_stations \
   prometheus-node-exporter-lua-nat_traffic \
   prometheus-node-exporter-lua-netstat
 ```
 
-Enable and start:
+Recommended when available:
 
 ```sh
-/etc/init.d/prometheus-node-exporter-lua enable
-/etc/init.d/prometheus-node-exporter-lua start
+opkg install \
+  prometheus-node-exporter-lua-hwmon \
+  prometheus-node-exporter-lua-thermal
 ```
 
-Verify it's working:
+## Optional Packages
+
+These are useful depending on your router and feature set:
+
+- `prometheus-node-exporter-lua-mwan3`: multi-WAN status
+- `prometheus-node-exporter-lua-snmp6`: IPv6 stack counters
+- `prometheus-node-exporter-lua-nft-counters`: nftables counters on newer OpenWRT releases
+- `prometheus-node-exporter-lua-hostapd_ubus_stations`: extra WiFi client capability metadata
+- `prometheus-node-exporter-lua-ethtool`: lower-level Ethernet/NIC stats
+
+## Manual Setup
+
+Use the script if possible. Manual setup is mostly useful when you want to inspect or customize the router-side files.
+
+### 1. Install exporter packages
+
+Run the commands from the Required Packages section above.
+
+### 2. Configure the exporter to listen on LAN
+
+By default, the OpenWRT package usually listens on loopback only. Change it so the monitoring host can scrape it:
 
 ```sh
-curl http://127.0.0.1:9100/metrics | head -40
+uci set prometheus-node-exporter-lua.main.listen_interface='lan'
+uci set prometheus-node-exporter-lua.main.listen_port='9100'
+uci commit prometheus-node-exporter-lua
 ```
 
-You should see lines like:
-```
-node_memory_MemTotal_bytes 134217728
-node_load1 0.05
-wifi_stations_associated{ifname="wlan0"} 3
+### 3. Copy the bundled collectors and scripts
+
+From your local machine:
+
+```sh
+scp openwrt/collectors/*.lua root@192.168.0.1:/usr/lib/lua/prometheus-collectors/
+scp openwrt/scripts/*.sh root@192.168.0.1:/usr/bin/
+ssh root@192.168.0.1 "chmod +x /usr/bin/openwrt-monitor-*.sh"
 ```
 
-### 2. Configure remote syslog
+### 4. Add the helper cron jobs
 
-Replace `192.168.0.100` with the IP of the machine running Docker:
+On the router:
+
+```sh
+cat >> /etc/crontabs/root <<'EOF'
+*/1 * * * * /usr/bin/openwrt-monitor-device-status.sh
+*/5 * * * * /usr/bin/openwrt-monitor-packet-loss.sh
+*/5 * * * * /usr/bin/openwrt-monitor-wan-info.sh
+EOF
+
+/etc/init.d/cron enable
+/etc/init.d/cron restart
+```
+
+Run the helper scripts once immediately so the custom metrics appear without waiting for cron:
+
+```sh
+/usr/bin/openwrt-monitor-device-status.sh
+/usr/bin/openwrt-monitor-packet-loss.sh
+/usr/bin/openwrt-monitor-wan-info.sh
+```
+
+### 5. Configure remote syslog
+
+The monitoring stack listens on both UDP and TCP, but TCP is recommended for reliability:
 
 ```sh
 uci set system.@system[0].log_ip=192.168.0.100
+uci set system.@system[0].log_remote='1'
 uci set system.@system[0].log_port=514
-uci set system.@system[0].log_proto=udp
+uci set system.@system[0].log_proto=tcp
+uci set system.@system[0].log_hostname="$(uci get system.@system[0].hostname 2>/dev/null || echo openwrt)"
 uci commit system
+```
+
+### 6. Restart services
+
+```sh
+/etc/init.d/prometheus-node-exporter-lua enable
+/etc/init.d/prometheus-node-exporter-lua restart
 /etc/init.d/log restart
 ```
 
-Verify logs are flowing (on the monitoring host):
+## Verification
+
+### On the router
+
+Check the raw metrics endpoint:
 
 ```sh
-# Should show OpenWRT syslog lines:
-docker logs alloy 2>&1 | grep -i syslog
+wget -qO- http://127.0.0.1:9100/metrics | head -40
 ```
 
-### 3. Optional: MWAN3 metrics
-
-If you use mwan3 for multi-WAN failover:
+Verify the custom metrics exist:
 
 ```sh
-opkg install prometheus-node-exporter-lua-mwan3
+wget -qO- http://127.0.0.1:9100/metrics | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info)'
 ```
 
-The exporter picks it up automatically — no restart needed.
-
-### 4. Optional: Enable firewall logging
-
-To see firewall DROP events in the Logs dashboard, enable logging in `/etc/config/firewall`:
+Verify the exporter is scraping the collectors you expect:
 
 ```sh
-# Log all forwarded traffic that gets dropped:
-uci set firewall.@defaults[0].drop_invalid=1
-uci commit firewall
-/etc/init.d/firewall restart
+wget -qO- http://127.0.0.1:9100/metrics | grep '^node_scrape_collector_success'
 ```
 
-Or add `option log 1` to specific rules in `/etc/config/firewall`.
+Healthy examples include collectors such as:
 
----
+- `openwrt`
+- `wifi`
+- `wifi_stations`
+- `nat_traffic`
+- `netstat`
+- `uci_dhcp_host`
+- `dnsmasq`
+- `device_status`
+- `packet_loss`
+- `wan_info`
 
-## Checking flash/RAM usage
-
-Before installing, check available space:
+### On the monitoring host
 
 ```sh
-df -h /overlay    # Flash space
-free              # RAM
+curl http://192.168.0.1:9100/metrics | head -20
+curl 'http://localhost:9090/api/v1/query?query=node_load1{job="openwrt"}'
+curl 'http://localhost:3100/loki/api/v1/query?query={job="openwrt-syslog"}'
 ```
 
-Typical package sizes:
-- `prometheus-node-exporter-lua` base: ~20 KB
-- Each collector module: ~5-15 KB
-- Total for all recommended modules: ~100-150 KB
+## Important Notes
 
----
+- `router_device_up` is based on ICMP ping against DHCP leases. Some devices block ping and may appear offline even though they are connected.
+- `wan_info` depends on the helper script reaching an external public-IP service. If that request fails, the panel will still show the local WAN IP and set the public IP label to `unknown`.
+- `wifi` and `wifi_stations` should expose `wifi_*` metrics automatically once the packages are installed. If they do not, check `node_scrape_collector_success` first.
+- Temperature panels prefer `hwmon` and `thermal`. Some routers expose one, some both, some neither.
 
-## Verifying the setup
+## Files This Repo Adds To The Router
 
-After setup, confirm from the router:
+These repo-local files are part of the supported setup and should be treated as part of the router install surface:
 
-```sh
-# Metrics endpoint up?
-curl -s http://127.0.0.1:9100/metrics | grep "^node_" | head -5
+- `openwrt/collectors/dnsmasq.lua`
+- `openwrt/collectors/device_status.lua`
+- `openwrt/collectors/packet_loss.lua`
+- `openwrt/collectors/wan_info.lua`
+- `openwrt/scripts/openwrt-monitor-device-status.sh`
+- `openwrt/scripts/openwrt-monitor-packet-loss.sh`
+- `openwrt/scripts/openwrt-monitor-wan-info.sh`
 
-# Syslog configured?
-uci show system | grep log_
-
-# Exporter service running?
-/etc/init.d/prometheus-node-exporter-lua status
-```
-
-From the monitoring host:
-
-```sh
-# Can we scrape the router?
-curl http://192.168.0.1:9100/metrics | head -5
-
-# Are logs arriving in Alloy?
-docker logs alloy --tail 20
-```
-
----
-
-## WAN interface name
-
-The WAN interface name varies by router. Common names:
-- `eth0` or `eth1` (most routers)
-- `pppoe-wan` (PPPoE connections)
-- `wwan0` (4G/LTE routers)
-
-Check yours:
-
-```sh
-ip route | grep default
-# or
-cat /proc/net/dev | grep -v "lo\|br\|wlan"
-```
-
-Update the WAN interface in the dashboard panels if needed. The default dashboards use `eth0`.
+If you skip these files, the dashboards will only be partially populated.
