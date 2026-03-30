@@ -44,6 +44,21 @@ ensure_cron_line() {
   fi
 }
 
+ensure_dir() {
+  dir="$1"
+
+  mkdir -p "$dir"
+}
+
+install_file() {
+  src="$1"
+  dest="$2"
+  mode="$3"
+
+  cp "$src" "$dest"
+  chmod "$mode" "$dest"
+}
+
 # ── Validate ──────────────────────────────────────────────────────────────────
 
 if [ -z "$MONITORING_HOST" ]; then
@@ -89,17 +104,17 @@ fi
 # ── Install bundled helper files ───────────────────────────────────────────────
 
 echo "==> Installing bundled collector files and helper scripts..."
-install -d /usr/lib/lua/prometheus-collectors
-install -d /usr/bin
+ensure_dir /usr/lib/lua/prometheus-collectors
+ensure_dir /usr/bin
 
-install -m 0644 "$COLLECTOR_SRC_DIR/dnsmasq.lua" /usr/lib/lua/prometheus-collectors/dnsmasq.lua
-install -m 0644 "$COLLECTOR_SRC_DIR/device_status.lua" /usr/lib/lua/prometheus-collectors/device_status.lua
-install -m 0644 "$COLLECTOR_SRC_DIR/packet_loss.lua" /usr/lib/lua/prometheus-collectors/packet_loss.lua
-install -m 0644 "$COLLECTOR_SRC_DIR/wan_info.lua" /usr/lib/lua/prometheus-collectors/wan_info.lua
+install_file "$COLLECTOR_SRC_DIR/dnsmasq.lua" /usr/lib/lua/prometheus-collectors/dnsmasq.lua 0644
+install_file "$COLLECTOR_SRC_DIR/device_status.lua" /usr/lib/lua/prometheus-collectors/device_status.lua 0644
+install_file "$COLLECTOR_SRC_DIR/packet_loss.lua" /usr/lib/lua/prometheus-collectors/packet_loss.lua 0644
+install_file "$COLLECTOR_SRC_DIR/wan_info.lua" /usr/lib/lua/prometheus-collectors/wan_info.lua 0644
 
-install -m 0755 "$HELPER_SRC_DIR/openwrt-monitor-device-status.sh" /usr/bin/openwrt-monitor-device-status.sh
-install -m 0755 "$HELPER_SRC_DIR/openwrt-monitor-packet-loss.sh" /usr/bin/openwrt-monitor-packet-loss.sh
-install -m 0755 "$HELPER_SRC_DIR/openwrt-monitor-wan-info.sh" /usr/bin/openwrt-monitor-wan-info.sh
+install_file "$HELPER_SRC_DIR/openwrt-monitor-device-status.sh" /usr/bin/openwrt-monitor-device-status.sh 0755
+install_file "$HELPER_SRC_DIR/openwrt-monitor-packet-loss.sh" /usr/bin/openwrt-monitor-packet-loss.sh 0755
+install_file "$HELPER_SRC_DIR/openwrt-monitor-wan-info.sh" /usr/bin/openwrt-monitor-wan-info.sh 0755
 
 # ── Configure exporter listener ────────────────────────────────────────────────
 
