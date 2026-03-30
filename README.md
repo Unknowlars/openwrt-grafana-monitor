@@ -19,6 +19,31 @@ Full observability stack for OpenWRT routers — metrics, logs, and dashboards i
 
 > Tested on **ASUS RT-AX53U** (MediaTek MT7621, OpenWRT 24.10.3). WAN interface: `wan`. WiFi APs: `phy0-ap0` / `phy1-ap0`.
 
+## Dashboard previews
+
+### Overview
+
+| | |
+|---|---|
+| ![OpenWRT Overview dashboard screenshot 1](docs/screenshots/overview_1.png) | ![OpenWRT Overview dashboard screenshot 2](docs/screenshots/overview_2.png) |
+
+### Network
+
+| | |
+|---|---|
+| ![OpenWRT Network dashboard screenshot 1](docs/screenshots/network_1.png) | ![OpenWRT Network dashboard screenshot 2](docs/screenshots/network_2.png) |
+| ![OpenWRT Network dashboard screenshot 3](docs/screenshots/network_3.png) | ![OpenWRT Network dashboard screenshot 4](docs/screenshots/network_4.png) |
+
+### Devices
+
+| | |
+|---|---|
+| ![OpenWRT Devices dashboard screenshot 1](docs/screenshots/OpenWRT_Devices_1.png) | ![OpenWRT Devices dashboard screenshot 2](docs/screenshots/OpenWRT_Devices_2.png) |
+
+### Logs
+
+![OpenWRT Logs dashboard screenshot](docs/screenshots/logs.png)
+
 ## Prerequisites
 
 - OpenWRT 21.02+ router

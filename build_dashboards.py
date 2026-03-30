@@ -483,10 +483,14 @@ def build_overview():
         ]))
 
     panels.append(stat(24, "Static Reservations",
-        'count(uci_dhcp_host{job="openwrt"})',
+        'max(time() - node_textfile_mtime_seconds{job="openwrt"})',
         x=18, y=y, w=6, h=4, unit="short",
-        desc="Number of static DHCP reservations configured in UCI.",
-        thresholds=[{"color": "blue", "value": 0}]))
+        desc="Age in seconds of the oldest helper-generated textfile metric. Rising values mean one of the router-side scripts stopped updating.",
+        thresholds=[
+            {"color": "green",  "value": 0},
+            {"color": "yellow", "value": 900},
+            {"color": "red",    "value": 1800},
+        ]))
 
     return make_dashboard(
         uid="openwrt-overview",
@@ -608,6 +612,21 @@ def build_network():
         desc="Reported signal level per WiFi AP interface. Requires the wifi collector."))
     y += 7
 
+    panels.append(ts(14, "WiFi AP Quality",
+        targets=[tgt(
+            'wifi_network_quality{job="openwrt"}',
+            '{{ifname}} {{ssid}}', "A")],
+        x=0, y=y, w=12, h=7, unit="percent",
+        desc="WiFi quality score reported by iwinfo for each access point interface."))
+
+    panels.append(ts(15, "WiFi AP Link Bitrate",
+        targets=[tgt(
+            '1000 * wifi_network_bitrate{job="openwrt"}',
+            '{{ifname}} {{ssid}}', "A")],
+        x=12, y=y, w=12, h=7, unit="bps",
+        desc="Configured WiFi AP bitrate per radio. Useful for spotting unexpected band or mode changes."))
+    y += 7
+
     # ── LAN section ──────────────────────────────────────────────────────────
     panels.append(row_panel(20, "LAN & Internal Interfaces", y))
     y += 1
@@ -701,11 +720,60 @@ def build_network():
         ]))
     y += 7
 
-    # ── Interface summary table ────────────────────────────────────────────────
-    panels.append(row_panel(50, "Interface Summary", y))
+    panels.append(row_panel(48, "Automation Health", y))
     y += 1
 
-    panels.append(table(51, "Network Interface Status",
+    panels.append(table(49, "Helper Metric Freshness",
+        targets=[tgt(
+            'time() - node_textfile_mtime_seconds{job="openwrt"}',
+            "", "A", fmt="table", instant=True,
+        )],
+        x=0, y=y, w=12, h=8,
+        desc="Age in seconds of each textfile metric. Larger values mean the matching helper script has stopped updating.",
+        transforms=[
+            {"id": "organize", "options": {
+                "excludeByName": {"Time": True, "__name__": True, "job": True, "instance": True, "router": True},
+                "renameByName": {
+                    "file": "Metric File",
+                    "Value": "Age Seconds",
+                },
+            }},
+        ],
+        sort_col="Age Seconds", sort_desc=True))
+
+    panels.append(table(50, "Service Enablement",
+        targets=[tgt(
+            'openwrt_service_enabled{job="openwrt"}',
+            "", "A", fmt="table", instant=True,
+        )],
+        x=12, y=y, w=12, h=8,
+        desc="Whether each monitored init service is enabled at boot. A running service with Enabled=0 is typically started indirectly or manually.",
+        transforms=[
+            {"id": "organize", "options": {
+                "excludeByName": {"Time": True, "__name__": True, "job": True, "instance": True, "router": True},
+                "renameByName": {
+                    "service": "Service",
+                    "Value": "Enabled",
+                },
+            }},
+        ],
+        overrides=[
+            {"matcher": {"id": "byName", "options": "Enabled"}, "properties": [
+                {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+                {"id": "mappings", "value": [
+                    {"type": "value", "options": {"1": {"color": "#1a9e3a", "text": "enabled", "index": 0}}},
+                    {"type": "value", "options": {"0": {"color": "#808080", "text": "disabled", "index": 1}}},
+                ]},
+            ]},
+        ],
+        sort_col="Service", sort_desc=False))
+    y += 8
+
+    # ── Interface summary table ────────────────────────────────────────────────
+    panels.append(row_panel(60, "Interface Summary", y))
+    y += 1
+
+    panels.append(table(61, "Network Interface Status",
         targets=[
             tgt('node_network_info{job="openwrt"}', "", "A", fmt="table", instant=True),
         ],
@@ -853,6 +921,31 @@ def build_devices():
         ],
         x=12, y=y, w=12, h=8, unit="bps",
         desc="Aggregate current WiFi client receive and transmit bitrate per AP interface. Requires the wifi_stations collector."))
+    y += 8
+
+    panels.append(bargauge(14, "Top WiFi Stations by Packet Rate",
+        targets=[tgt(
+            'topk(10, rate(wifi_station_receive_packets_total{job="openwrt"}[$__rate_interval]) + rate(wifi_station_transmit_packets_total{job="openwrt"}[$__rate_interval]))',
+            '{{mac}} {{ifname}}', "A")],
+        x=0, y=y, w=12, h=8, unit="pps",
+        desc="Most active WiFi stations by combined packet rate. Uses the station RX and TX packet counters exposed by the wifi_stations collector.",
+        thresholds=[
+            {"color": "green",  "value": 0},
+            {"color": "yellow", "value": 100},
+            {"color": "red",    "value": 500},
+        ]))
+
+    panels.append(bargauge(15, "Most Inactive WiFi Stations",
+        targets=[tgt(
+            'sort_desc(wifi_station_inactive_milliseconds{job="openwrt"})',
+            '{{mac}} {{ifname}}', "A")],
+        x=12, y=y, w=12, h=8, unit="ms",
+        desc="Current inactivity timer for each WiFi client. Larger values mean the station has been quiet for longer.",
+        thresholds=[
+            {"color": "green",  "value": 0},
+            {"color": "yellow", "value": 5000},
+            {"color": "red",    "value": 30000},
+        ]))
     y += 8
 
     # ── Device tables ─────────────────────────────────────────────────────────
