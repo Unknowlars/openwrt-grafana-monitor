@@ -1,0 +1,56 @@
+services:
+  otel-lgtm:
+    image: grafana/otel-lgtm:latest
+    container_name: otel-lgtm
+    ports:
+      - "3000:3000"    # Grafana UI
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP
+      - "9090:9090"    # Prometheus
+      - "3100:3100"    # Loki
+      - "3200:3200"    # Tempo
+      - "3500:3500"    # Pyroscope
+    volumes:
+      - lgtm-data:/data
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/openwrt-overview.json
+      - GF_USERS_DEFAULT_THEME=dark
+      # Reduce internal component log noise
+      - ENABLE_LOGS_GRAFANA=false
+      - ENABLE_LOGS_LOKI=false
+      - ENABLE_LOGS_PROMETHEUS=false
+      - ENABLE_LOGS_TEMPO=false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  alloy:
+    image: grafana/alloy:latest
+    container_name: alloy
+    ports:
+      - "12345:12345"            # Alloy UI (http://localhost:12345)
+      - "${SYSLOG_PORT:-514}:514/udp"  # Syslog receiver UDP
+      - "${SYSLOG_PORT:-514}:514/tcp"  # Syslog receiver TCP
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+    command: run /etc/alloy/config.alloy
+    environment:
+      - ROUTER_IP=${ROUTER_IP:-192.168.0.1}
+      - ROUTER_NAME=${ROUTER_NAME:-openwrt}
+      - ROUTER_METRICS_PORT=${ROUTER_METRICS_PORT:-9100}
+      - SCRAPE_INTERVAL=${SCRAPE_INTERVAL:-30s}
+    depends_on:
+      otel-lgtm:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  lgtm-data:
+    driver: local

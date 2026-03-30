@@ -1,0 +1,29 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    url: http://localhost:9090
+    access: proxy
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 30s
+      httpMethod: POST
+
+  - name: Loki
+    type: loki
+    uid: loki
+    url: http://localhost:3100
+    access: proxy
+    editable: false
+    jsonData:
+      maxLines: 1000
+
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    url: http://localhost:3200
+    access: proxy
+    editable: false

@@ -1,0 +1,89 @@
+// ============================================================================
+// OpenWRT Grafana Monitor — Grafana Alloy Configuration
+// ============================================================================
+//
+// This config:
+//   1. Scrapes Prometheus metrics from prometheus-node-exporter-lua on the router
+//   2. Receives syslog from OpenWRT's logd over UDP/TCP on port 514
+//   3. Forwards metrics to Prometheus in the otel-lgtm container
+//   4. Forwards logs to Loki in the otel-lgtm container
+//
+// Environment variables (set via docker-compose):
+//   ROUTER_IP           — IP of the OpenWRT router (default: 192.168.0.1)
+//   ROUTER_NAME         — Label value for the router (default: openwrt)
+//   ROUTER_METRICS_PORT — Port of prometheus-node-exporter-lua (default: 9100)
+//   SCRAPE_INTERVAL     — How often to scrape metrics (default: 30s)
+// ============================================================================
+
+// ── Prometheus: scrape OpenWRT metrics ──────────────────────────────────────
+
+prometheus.scrape "openwrt" {
+  targets = [
+    {
+      __address__ = env("ROUTER_IP") + ":" + env("ROUTER_METRICS_PORT"),
+      router      = env("ROUTER_NAME"),
+      job         = "openwrt",
+    },
+  ]
+
+  scrape_interval = env("SCRAPE_INTERVAL")
+  metrics_path    = "/metrics"
+
+  forward_to = [prometheus.remote_write.lgtm.receiver]
+}
+
+// ── Prometheus: forward to otel-lgtm ────────────────────────────────────────
+
+prometheus.remote_write "lgtm" {
+  endpoint {
+    url = "http://otel-lgtm:9090/api/v1/write"
+  }
+}
+
+// ── Loki: receive syslog from OpenWRT logd ──────────────────────────────────
+//
+// OpenWRT's logd sends RFC3164/RFC5424 syslog to the IP/port configured via:
+//   uci set system.@system[0].log_ip=<MONITORING_HOST_IP>
+//   uci set system.@system[0].log_port=514
+
+loki.source.syslog "openwrt" {
+  listener {
+    address  = "0.0.0.0:514"
+    protocol = "udp"
+    labels = {
+      job    = "openwrt-syslog",
+      router = env("ROUTER_NAME"),
+    }
+  }
+
+  listener {
+    address  = "0.0.0.0:514"
+    protocol = "tcp"
+    labels = {
+      job    = "openwrt-syslog",
+      router = env("ROUTER_NAME"),
+    }
+  }
+
+  forward_to = [loki.write.lgtm.receiver]
+}
+
+// ── Loki: forward to otel-lgtm ──────────────────────────────────────────────
+
+loki.write "lgtm" {
+  endpoint {
+    url = "http://otel-lgtm:3100/loki/api/v1/push"
+  }
+}
+
+// ── Alloy internal health metrics (optional) ─────────────────────────────────
+//
+// Exposes Alloy's own metrics at http://alloy:12345/metrics
+// Useful for checking if scraping is working via the Alloy UI.
+
+prometheus.exporter.self "alloy" {}
+
+prometheus.scrape "alloy_self" {
+  targets    = prometheus.exporter.self.alloy.targets
+  forward_to = [prometheus.remote_write.lgtm.receiver]
+}

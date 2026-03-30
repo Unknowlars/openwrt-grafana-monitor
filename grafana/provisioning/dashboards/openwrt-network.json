@@ -1,0 +1,195 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": { "list": [] },
+  "description": "OpenWRT Router — Network Interface Deep Dive",
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Interface RX Throughput",
+      "id": 1,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", device!~\"lo|sit.*\"}[$__rate_interval])",
+          "legendFormat": "{{ device }}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Interface TX Throughput",
+      "id": 2,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", device!~\"lo|sit.*\"}[$__rate_interval])",
+          "legendFormat": "{{ device }}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "RX Packet Errors & Drops",
+      "id": 3,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "rate(node_network_receive_errs_total{job=\"openwrt\", device!~\"lo\"}[$__rate_interval])",
+          "legendFormat": "errors {{ device }}",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(node_network_receive_drop_total{job=\"openwrt\", device!~\"lo\"}[$__rate_interval])",
+          "legendFormat": "drops {{ device }}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "TX Packet Errors & Drops",
+      "id": 4,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "rate(node_network_transmit_errs_total{job=\"openwrt\", device!~\"lo\"}[$__rate_interval])",
+          "legendFormat": "errors {{ device }}",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(node_network_transmit_drop_total{job=\"openwrt\", device!~\"lo\"}[$__rate_interval])",
+          "legendFormat": "drops {{ device }}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "RX / TX Packets per Second",
+      "id": 5,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "rate(node_network_receive_packets_total{job=\"openwrt\", device!~\"lo|sit.*\"}[$__rate_interval])",
+          "legendFormat": "RX {{ device }}",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(node_network_transmit_packets_total{job=\"openwrt\", device!~\"lo|sit.*\"}[$__rate_interval])",
+          "legendFormat": "TX {{ device }}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "NAT Conntrack — Sessions & Limit",
+      "id": 6,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "min": 0
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "node_nf_conntrack_entries{job=\"openwrt\"}",
+          "legendFormat": "Active sessions",
+          "refId": "A"
+        },
+        {
+          "expr": "node_nf_conntrack_entries_limit{job=\"openwrt\"}",
+          "legendFormat": "Maximum limit",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Network Interfaces — Current Stats",
+      "id": 7,
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "device" }, "properties": [{ "id": "unit", "value": "string" }] },
+          { "matcher": { "id": "byName", "options": "Up" }, "properties": [{ "id": "unit", "value": "bool" }] }
+        ]
+      },
+      "options": { "sortBy": [{ "desc": true, "displayName": "RX Total" }] },
+      "targets": [
+        {
+          "expr": "node_network_receive_bytes_total{job=\"openwrt\", device!~\"lo\"}",
+          "legendFormat": "{{ device }}",
+          "refId": "A",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "renameByName": { "device": "Interface", "Value": "RX Total" } } }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["openwrt"],
+  "templating": { "list": [] },
+  "time": { "from": "now-3h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "OpenWRT — Network",
+  "uid": "openwrt-network",
+  "version": 1
+}
