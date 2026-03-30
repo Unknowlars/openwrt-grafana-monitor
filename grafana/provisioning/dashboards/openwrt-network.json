@@ -8,7 +8,7 @@
   ],
   "schemaVersion": 42,
   "version": 1,
-  "refresh": "30s",
+  "refresh": "1m",
   "timezone": "browser",
   "graphTooltip": 1,
   "time": {
