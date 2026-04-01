@@ -9,9 +9,10 @@ Full observability stack for OpenWRT routers — metrics, logs, and dashboards i
 | | |
 |---|---|
 | **CPU & memory** | Load average, memory usage %, free memory |
-| **Network** | Per-interface RX/TX (WAN/LAN/WiFi AP/Tailscale), WAN latency/jitter/loss probes, DNS query rates, DHCP events |
+| **Network** | Per-interface RX/TX (WAN/LAN/WiFi AP/Tailscale), WAN latency/jitter/loss probes, DNS query rates, DHCP events, firewall counters, link state/speed, softnet saturation, optional SQM/qdisc stats |
 | **Devices** | Per-device online/offline status, NAT traffic top-10, DHCP lease table, static reservations |
-| **Router health** | Router temperature, overlay/tmp usage, service health, WiFi client counts and signal metrics when supported |
+| **Router health** | Router temperature, overlay/tmp usage, inode usage, service health, DHCP pool utilization, IPv6 WAN health, WiFi radio metrics when supported |
+| **WiFi clients** | Per-station signal strength, TX/RX bitrate, packet rate, inactivity timer — requires `prometheus-node-exporter-lua-wifi_stations` |
 | **NAT** | Active conntrack sessions, limit usage |
 | **Logs** | All syslog events, DHCP assignments, firewall drops, kernel messages |
 
@@ -46,7 +47,7 @@ Full observability stack for OpenWRT routers — metrics, logs, and dashboards i
 
 ## Prerequisites
 
-- OpenWRT 21.02+ router
+- OpenWRT 23.05+ router
 - A Linux machine on the LAN (runs Docker)
 - Docker 24+ and Docker Compose v2
 
@@ -64,7 +65,10 @@ ssh root@192.168.0.1 "sh /tmp/openwrt/setup.sh 192.168.0.100"
 The router setup installs the official exporter packages, copies the bundled
 collector files from `openwrt/collectors/`, installs helper scripts from
 `openwrt/scripts/`, enables the textfile collector for custom metrics, configures the exporter to listen on LAN, and enables
-remote syslog to the monitoring host over TCP.
+remote syslog to the monitoring host over TCP. The helper scripts include
+service/device health, WAN probes, DHCP pool metrics, link health, softnet
+stats, IPv6 WAN health, inode pressure, firewall counters, SQM/qdisc stats,
+and WiFi radio details.
 
 Manual install is still possible, but you must install the required packages,
 set `prometheus-node-exporter-lua.main.listen_interface='lan'`, and copy the
@@ -73,7 +77,7 @@ bundled router-side files yourself. See `docs/openwrt-setup.md`.
 ### Step 2 — Monitoring host
 
 ```sh
-git clone https://github.com/your-username/openwrt-grafana-monitor
+git clone <your-repo-url>
 cd openwrt-grafana-monitor
 cp .env.example .env
 # Edit .env: set ROUTER_IP and MONITORING_HOST_IP
@@ -124,7 +128,6 @@ Monitoring Host (Docker)
 - [OpenWRT setup guide](docs/openwrt-setup.md)
 - [Monitoring host setup](docs/monitoring-host-setup.md)
 - [Troubleshooting](docs/troubleshooting.md)
-- [Full implementation plan](PLAN.md)
 
 ## Repo structure
 
@@ -152,4 +155,14 @@ Monitoring Host (Docker)
 
 ## Adapting to your router
 
-Edit `build_dashboards.py` and run `python3 build_dashboards.py` to regenerate dashboards if your router uses different interface names. Key variables are near the top of the file.
+Edit `build_dashboards.py` and run `python3 build_dashboards.py` to regenerate dashboards if your router uses different interface names. The interface names hardcoded in the builder are listed at the top of the file:
+
+| Variable | Default | Description |
+|---|---|---|
+| WAN interface | `wan` | Your WAN uplink interface name |
+| 2.4 GHz WiFi AP | `phy0-ap0` | First WiFi AP interface |
+| 5 GHz WiFi AP | `phy1-ap0` | Second WiFi AP interface |
+| Tailscale VPN | `tailscale0` | VPN tunnel interface (omit panels if not used) |
+| LAN bridge | `br-lan` | LAN bridge interface |
+
+WiFi AP interface names follow OpenWRT's `phy<radio>-ap<vap>` convention. Run `ip link show` on your router to find the actual names — they appear after `openwrt` interface setup completes. If you only have one WiFi radio, remove the `phy1-ap0` targets from the WiFi panels.

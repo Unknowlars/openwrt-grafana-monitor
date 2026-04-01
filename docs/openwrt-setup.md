@@ -5,7 +5,7 @@ This repo uses two kinds of router-side data:
 - Official `prometheus-node-exporter-lua` collectors from OpenWRT packages
 - Bundled custom collectors and helper scripts from this repo's `openwrt/` directory
 
-The dashboards expect both. If you only install the official packages, Grafana will still show core system metrics, but panels such as WAN/public IP, packet loss, DHCP lease expiry, ping-based device presence, WAN quality, filesystem usage, and service health will be empty.
+The dashboards expect both. If you only install the official packages, Grafana will still show core system metrics, but panels such as WAN/public IP, packet loss, DHCP pool usage, ping-based device presence, WAN quality, filesystem/inode usage, link health, IPv6 WAN health, firewall counters, and service health will be empty.
 
 ## Requirements
 
@@ -32,7 +32,7 @@ The setup script does all of the following:
 - Copies bundled collectors into `/usr/lib/lua/prometheus-collectors/`
 - Copies helper scripts into `/usr/bin/`
 - Creates `/var/prometheus/` for textfile metrics
-- Adds cron jobs for device status, WAN/public IP, packet loss, WAN quality, filesystem usage, and service health
+- Adds cron jobs for device status, WAN/public IP, packet loss, WAN quality, filesystem and inode usage, service health, DHCP pool, link health, softnet counters, IPv6 health, firewall counters, SQM, and WiFi radio state
 - Configures remote syslog to the monitoring host over TCP port `514`
 
 Bundled files installed by the script:
@@ -47,6 +47,14 @@ Bundled files installed by the script:
 - `/usr/bin/openwrt-monitor-service-health.sh`
 - `/usr/bin/openwrt-monitor-wan-info.sh`
 - `/usr/bin/openwrt-monitor-wan-quality.sh`
+- `/usr/bin/openwrt-monitor-dhcp-pool.sh`
+- `/usr/bin/openwrt-monitor-link-health.sh`
+- `/usr/bin/openwrt-monitor-softnet.sh`
+- `/usr/bin/openwrt-monitor-ipv6-health.sh`
+- `/usr/bin/openwrt-monitor-inodes.sh`
+- `/usr/bin/openwrt-monitor-firewall-counters.sh`
+- `/usr/bin/openwrt-monitor-sqm.sh`
+- `/usr/bin/openwrt-monitor-wifi-radio.sh`
 
 ## Required Packages
 
@@ -82,6 +90,7 @@ These are useful depending on your router and feature set:
 - `prometheus-node-exporter-lua-nft-counters`: nftables counters on newer OpenWRT releases
 - `prometheus-node-exporter-lua-hostapd_ubus_stations`: extra WiFi client capability metadata
 - `prometheus-node-exporter-lua-ethtool`: lower-level Ethernet/NIC stats
+- `tc` (from `ip-full` on some builds): detailed SQM/qdisc counters used by `openwrt-monitor-sqm.sh`
 
 ## Manual Setup
 
@@ -123,6 +132,14 @@ cat >> /etc/crontabs/root <<'EOF'
 */5 * * * * /usr/bin/openwrt-monitor-wan-info.sh
 */5 * * * * /usr/bin/openwrt-monitor-wan-quality.sh
 */10 * * * * /usr/bin/openwrt-monitor-filesystem.sh
+*/1 * * * * /usr/bin/openwrt-monitor-dhcp-pool.sh
+*/1 * * * * /usr/bin/openwrt-monitor-link-health.sh
+*/1 * * * * /usr/bin/openwrt-monitor-softnet.sh
+*/5 * * * * /usr/bin/openwrt-monitor-ipv6-health.sh
+*/10 * * * * /usr/bin/openwrt-monitor-inodes.sh
+*/2 * * * * /usr/bin/openwrt-monitor-firewall-counters.sh
+*/1 * * * * /usr/bin/openwrt-monitor-sqm.sh
+*/2 * * * * /usr/bin/openwrt-monitor-wifi-radio.sh
 EOF
 
 /etc/init.d/cron enable
@@ -138,6 +155,14 @@ Run the helper scripts once immediately so the custom metrics appear without wai
 /usr/bin/openwrt-monitor-wan-info.sh
 /usr/bin/openwrt-monitor-wan-quality.sh
 /usr/bin/openwrt-monitor-filesystem.sh
+/usr/bin/openwrt-monitor-dhcp-pool.sh
+/usr/bin/openwrt-monitor-link-health.sh
+/usr/bin/openwrt-monitor-softnet.sh
+/usr/bin/openwrt-monitor-ipv6-health.sh
+/usr/bin/openwrt-monitor-inodes.sh
+/usr/bin/openwrt-monitor-firewall-counters.sh
+/usr/bin/openwrt-monitor-sqm.sh
+/usr/bin/openwrt-monitor-wifi-radio.sh
 ```
 
 ### 5. Configure remote syslog
@@ -174,7 +199,7 @@ wget -qO- http://127.0.0.1:9100/metrics | head -40
 Verify the custom metrics exist:
 
 ```sh
-wget -qO- http://127.0.0.1:9100/metrics | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info|openwrt_service_up|openwrt_filesystem_used_percent|openwrt_wan_probe_latency_milliseconds)'
+wget -qO- http://127.0.0.1:9100/metrics | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info|openwrt_service_up|openwrt_filesystem_used_percent|openwrt_wan_probe_latency_milliseconds|openwrt_dhcp_pool_size_total|openwrt_link_up|openwrt_softnet_dropped_total|openwrt_wan6_up|openwrt_filesystem_inode_used_percent|openwrt_firewall_chain_packets_total|openwrt_tc_available|openwrt_wifi_channel)'
 ```
 
 Verify the exporter is scraping the collectors you expect:
@@ -211,6 +236,7 @@ curl 'http://localhost:3100/loki/api/v1/query?query={job="openwrt-syslog"}'
 - `wan_info` depends on the helper script reaching an external public-IP service. If that request fails, the panel will still show the local WAN IP and set the public IP label to `unknown`.
 - The WAN quality metrics are synthetic probes run from the router itself. They are meant for trend and troubleshooting, not for precise SLA measurement.
 - The filesystem and service-health metrics are exported via the textfile collector from files in `/var/prometheus/*.prom`.
+- The newer helper scripts are also textfile metrics. They are safe to run even when optional tools are missing; affected scripts emit availability metrics such as `openwrt_tc_available` and `openwrt_wifi_radio_collector_available`.
 - `wifi` and `wifi_stations` should expose `wifi_*` metrics automatically once the packages are installed. If they do not, check `node_scrape_collector_success` first.
 - Temperature panels prefer `hwmon` and `thermal`. Some routers expose one, some both, some neither.
 
@@ -228,5 +254,13 @@ These repo-local files are part of the supported setup and should be treated as 
 - `openwrt/scripts/openwrt-monitor-service-health.sh`
 - `openwrt/scripts/openwrt-monitor-wan-info.sh`
 - `openwrt/scripts/openwrt-monitor-wan-quality.sh`
+- `openwrt/scripts/openwrt-monitor-dhcp-pool.sh`
+- `openwrt/scripts/openwrt-monitor-link-health.sh`
+- `openwrt/scripts/openwrt-monitor-softnet.sh`
+- `openwrt/scripts/openwrt-monitor-ipv6-health.sh`
+- `openwrt/scripts/openwrt-monitor-inodes.sh`
+- `openwrt/scripts/openwrt-monitor-firewall-counters.sh`
+- `openwrt/scripts/openwrt-monitor-sqm.sh`
+- `openwrt/scripts/openwrt-monitor-wifi-radio.sh`
 
 If you skip these files, the dashboards will only be partially populated.

@@ -120,6 +120,14 @@ install_file "$HELPER_SRC_DIR/openwrt-monitor-wan-info.sh" /usr/bin/openwrt-moni
 install_file "$HELPER_SRC_DIR/openwrt-monitor-filesystem.sh" /usr/bin/openwrt-monitor-filesystem.sh 0755
 install_file "$HELPER_SRC_DIR/openwrt-monitor-service-health.sh" /usr/bin/openwrt-monitor-service-health.sh 0755
 install_file "$HELPER_SRC_DIR/openwrt-monitor-wan-quality.sh" /usr/bin/openwrt-monitor-wan-quality.sh 0755
+install_file "$HELPER_SRC_DIR/openwrt-monitor-dhcp-pool.sh" /usr/bin/openwrt-monitor-dhcp-pool.sh 0755
+install_file "$HELPER_SRC_DIR/openwrt-monitor-link-health.sh" /usr/bin/openwrt-monitor-link-health.sh 0755
+install_file "$HELPER_SRC_DIR/openwrt-monitor-softnet.sh" /usr/bin/openwrt-monitor-softnet.sh 0755
+install_file "$HELPER_SRC_DIR/openwrt-monitor-ipv6-health.sh" /usr/bin/openwrt-monitor-ipv6-health.sh 0755
+install_file "$HELPER_SRC_DIR/openwrt-monitor-inodes.sh" /usr/bin/openwrt-monitor-inodes.sh 0755
+install_file "$HELPER_SRC_DIR/openwrt-monitor-firewall-counters.sh" /usr/bin/openwrt-monitor-firewall-counters.sh 0755
+install_file "$HELPER_SRC_DIR/openwrt-monitor-sqm.sh" /usr/bin/openwrt-monitor-sqm.sh 0755
+install_file "$HELPER_SRC_DIR/openwrt-monitor-wifi-radio.sh" /usr/bin/openwrt-monitor-wifi-radio.sh 0755
 
 # ── Configure exporter listener ────────────────────────────────────────────────
 
@@ -137,6 +145,14 @@ ensure_cron_line '*/5 * * * * /usr/bin/openwrt-monitor-packet-loss.sh'
 ensure_cron_line '*/5 * * * * /usr/bin/openwrt-monitor-wan-info.sh'
 ensure_cron_line '*/5 * * * * /usr/bin/openwrt-monitor-wan-quality.sh'
 ensure_cron_line '*/10 * * * * /usr/bin/openwrt-monitor-filesystem.sh'
+ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-dhcp-pool.sh'
+ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-link-health.sh'
+ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-softnet.sh'
+ensure_cron_line '*/5 * * * * /usr/bin/openwrt-monitor-ipv6-health.sh'
+ensure_cron_line '*/10 * * * * /usr/bin/openwrt-monitor-inodes.sh'
+ensure_cron_line '*/2 * * * * /usr/bin/openwrt-monitor-firewall-counters.sh'
+ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-sqm.sh'
+ensure_cron_line '*/2 * * * * /usr/bin/openwrt-monitor-wifi-radio.sh'
 
 echo "==> Running helper scripts once so custom metrics appear immediately..."
 /usr/bin/openwrt-monitor-device-status.sh
@@ -145,6 +161,14 @@ echo "==> Running helper scripts once so custom metrics appear immediately..."
 /usr/bin/openwrt-monitor-wan-info.sh
 /usr/bin/openwrt-monitor-wan-quality.sh
 /usr/bin/openwrt-monitor-filesystem.sh
+/usr/bin/openwrt-monitor-dhcp-pool.sh
+/usr/bin/openwrt-monitor-link-health.sh
+/usr/bin/openwrt-monitor-softnet.sh
+/usr/bin/openwrt-monitor-ipv6-health.sh
+/usr/bin/openwrt-monitor-inodes.sh
+/usr/bin/openwrt-monitor-firewall-counters.sh
+/usr/bin/openwrt-monitor-sqm.sh
+/usr/bin/openwrt-monitor-wifi-radio.sh
 
 # ── Start and enable the exporter ─────────────────────────────────────────────
 
@@ -188,6 +212,7 @@ echo ""
 echo "    Metrics:  http://$(uci get network.lan.ipaddr 2>/dev/null || printf '%s' '<ROUTER_IP>'):9100/metrics"
 echo "    Syslog:   → $MONITORING_HOST:514 (TCP)"
 echo "    Helpers:  device status, packet loss, WAN/public IP, WAN quality, filesystem, service health"
+echo "              DHCP pool, link health, softnet, IPv6 WAN health, inodes, firewall counters, SQM, WiFi radio"
 echo ""
 echo "    Now start the Docker stack on $MONITORING_HOST:"
 echo "    docker compose up -d"

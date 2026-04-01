@@ -52,7 +52,7 @@ If empty, Alloy isn't writing to Prometheus. Check the `prometheus.remote_write`
 The repo's dashboards also expect these router-side custom metrics:
 
 ```sh
-curl http://192.168.0.1:9100/metrics | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info|openwrt_service_up|openwrt_filesystem_used_percent|openwrt_wan_probe_latency_milliseconds)'
+curl http://192.168.0.1:9100/metrics | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info|openwrt_service_up|openwrt_filesystem_used_percent|openwrt_wan_probe_latency_milliseconds|openwrt_dhcp_pool_size_total|openwrt_link_up|openwrt_softnet_dropped_total|openwrt_wan6_up|openwrt_filesystem_inode_used_percent|openwrt_firewall_chain_packets_total|openwrt_tc_available|openwrt_wifi_channel)'
 ```
 
 If these are missing, you probably copied only `openwrt/setup.sh` instead of the whole `openwrt/` directory, or the helper cron jobs are not running.
