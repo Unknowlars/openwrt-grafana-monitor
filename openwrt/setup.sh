@@ -5,7 +5,7 @@
 #
 # Run this script ON your OpenWrt router via SSH:
 #
-#   scp openwrt/setup.sh root@192.168.0.1:/tmp/
+#   scp -O openwrt/setup.sh root@192.168.0.1:/tmp/
 #   ssh root@192.168.0.1 "sh /tmp/setup.sh <MONITORING_HOST_IP>"
 #
 # Optional environment variables:

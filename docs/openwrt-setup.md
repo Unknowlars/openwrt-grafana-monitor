@@ -15,10 +15,12 @@ This guide covers the router-side pieces for OpenWrt 24.10 and 25.12.
 From your local machine:
 
 ```sh
-scp openwrt/setup.sh root@192.168.0.1:/tmp/
+scp -O openwrt/setup.sh root@192.168.0.1:/tmp/
 ssh root@192.168.0.1 "sh /tmp/setup.sh 192.168.0.100"
 #                                        ^ monitoring host LAN IP
 ```
+
+`-O` forces legacy scp mode. OpenWrt's default SSH server often does not provide an SFTP server, and modern OpenSSH `scp` uses SFTP by default.
 
 The script detects the package manager:
 

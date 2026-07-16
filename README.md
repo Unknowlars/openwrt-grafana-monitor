@@ -38,11 +38,12 @@ Do not use `apk upgrade` on OpenWrt. Use sysupgrade/attended sysupgrade for firm
 Use the setup script from your workstation:
 
 ```sh
-scp openwrt/setup.sh root@192.168.0.1:/tmp/
+scp -O openwrt/setup.sh root@192.168.0.1:/tmp/
 ssh root@192.168.0.1 "sh /tmp/setup.sh 192.168.0.100"
 ```
 
 Replace `192.168.0.100` with the LAN IP of the monitoring host.
+The `-O` flag forces legacy scp mode for OpenWrt/dropbear systems without an SFTP server.
 
 The script:
 
