@@ -1,60 +1,76 @@
-# OpenWRT Grafana Monitor
+# OpenWrt Grafana Monitor
 
-Full observability stack for OpenWRT routers — metrics, logs, and dashboards in a single `docker compose up`.
+Full observability stack for OpenWrt routers: metrics, logs, and dashboards in a single `docker compose up`.
 
-**Stack**: [`grafana/otel-lgtm`](https://github.com/grafana/docker-otel-lgtm) (Grafana + Prometheus + Loki + Tempo) + Grafana Alloy
+**Stack**: [`grafana/otel-lgtm`](https://github.com/grafana/docker-otel-lgtm) (Grafana + Prometheus + Loki + Tempo) + Grafana Alloy.
 
-## What you get
+## What You Get
 
 | | |
 |---|---|
-| **CPU & memory** | Load average, memory usage %, free memory |
-| **Network** | Per-interface RX/TX (WAN/LAN/WiFi AP/Tailscale), DNS query rates, DHCP events |
-| **Devices** | Per-device online/offline status, NAT traffic top-10, DHCP lease table |
-| **NAT** | Active conntrack sessions, limit usage |
-| **Logs** | All syslog events, DHCP assignments, firewall drops, kernel messages |
+| **CPU & memory** | Load average, memory usage, free memory |
+| **System health** | CPU temperature, overlay flash usage, uptime, file descriptors |
+| **Network** | Per-interface RX/TX, WAN, LAN, WiFi AP, VPN, errors, drops, gateway packet loss |
+| **Devices** | Online device count, DHCP lease table, WiFi client signal, NAT traffic top-10 |
+| **NAT & firewall** | Active conntrack sessions, limit usage, optional named nftables counters |
+| **Logs** | Syslog stream, DHCP messages, firewall drops, failed SSH logins, kernel messages |
 
-4 pre-built dashboards: Overview · Network · Devices · Logs
+4 pre-built dashboards: Overview, Network, Devices, Logs.
 
-> Tested on **ASUS RT-AX53U** (MediaTek MT7621, OpenWRT 24.10.3). WAN interface: `wan`. WiFi APs: `phy0-ap0` / `phy1-ap0`.
+> Tested on ASUS RT-AX53U (MediaTek MT7621) with OpenWrt 24.10.3. Updated for OpenWrt 24.10/opkg and OpenWrt 25.12/apk compatibility.
+
+## OpenWrt 24 vs 25
+
+OpenWrt 24.10 uses `opkg`. OpenWrt 25.12 and newer use `apk`. The router setup script detects the available package manager and uses the right install commands automatically.
+
+Do not use `apk upgrade` on OpenWrt. Use sysupgrade/attended sysupgrade for firmware upgrades.
 
 ## Prerequisites
 
-- OpenWRT 21.02+ router
-- A Linux machine on the LAN (runs Docker)
+- OpenWrt 24.10 or 25.12 router
+- A Linux machine on the LAN for Docker
 - Docker 24+ and Docker Compose v2
 
-## Quick start
+## Quick Start
 
-### Step 1 — Router (SSH in)
+### Step 1 - Router
 
-```sh
-opkg update && opkg install \
-  prometheus-node-exporter-lua \
-  prometheus-node-exporter-lua-openwrt \
-  prometheus-node-exporter-lua-wifi \
-  prometheus-node-exporter-lua-wifi_stations \
-  prometheus-node-exporter-lua-nat_traffic \
-  prometheus-node-exporter-lua-netstat
-
-/etc/init.d/prometheus-node-exporter-lua enable
-/etc/init.d/prometheus-node-exporter-lua start
-
-# Send logs to monitoring host (replace IP):
-uci set system.@system[0].log_ip=192.168.0.100
-uci set system.@system[0].log_port=514
-uci set system.@system[0].log_proto=udp
-uci commit system && /etc/init.d/log restart
-```
-
-Or use the setup script:
+Use the setup script from your workstation:
 
 ```sh
 scp openwrt/setup.sh root@192.168.0.1:/tmp/
 ssh root@192.168.0.1 "sh /tmp/setup.sh 192.168.0.100"
 ```
 
-### Step 2 — Monitoring host
+Replace `192.168.0.100` with the LAN IP of the monitoring host.
+
+The script:
+
+- Installs `prometheus-node-exporter-lua` using `opkg` or `apk`.
+- Enables official exporter collectors plus the textfile collector.
+- Adds this repo's custom textfile metrics for DHCP leases, device status, WAN info, packet loss, gateway health, overlay usage, DHCPv6 lease count, and public IP change events.
+- Configures the exporter to listen on the LAN interface at `:9100`.
+- Configures OpenWrt remote syslog to the monitoring host.
+
+Manual package equivalents:
+
+```sh
+# OpenWrt 24.10
+opkg update
+opkg install prometheus-node-exporter-lua prometheus-node-exporter-lua-openwrt \
+  prometheus-node-exporter-lua-nat_traffic prometheus-node-exporter-lua-netstat \
+  prometheus-node-exporter-lua-textfile
+
+# OpenWrt 25.12+
+apk update
+apk add prometheus-node-exporter-lua prometheus-node-exporter-lua-openwrt \
+  prometheus-node-exporter-lua-nat_traffic prometheus-node-exporter-lua-netstat \
+  prometheus-node-exporter-lua-textfile
+```
+
+The setup script also attempts optional collectors as best effort: WiFi AP/client metrics, hostapd station quality, thermal/hwmon temperature, and nftables counters. If a package is unavailable on your OpenWrt feed, setup continues.
+
+### Step 2 - Monitoring Host
 
 ```sh
 git clone https://github.com/your-username/openwrt-grafana-monitor
@@ -64,75 +80,66 @@ cp .env.example .env
 docker compose up -d
 ```
 
-### Step 3 — Open Grafana
+### Step 3 - Open Grafana
 
-**http://localhost:3000** — login: `admin` / `changeme` (or your `GRAFANA_ADMIN_PASSWORD`)
-
----
+Open **http://localhost:3000** and log in with `admin` / `changeme` unless you changed `GRAFANA_ADMIN_PASSWORD`.
 
 ## Configuration
 
-All settings are in `.env`:
+All monitoring-host settings are in `.env`:
 
 | Variable | Default | Description |
 |---|---|---|
-| `ROUTER_IP` | `192.168.0.1` | Your OpenWRT router's IP |
-| `ROUTER_NAME` | `openwrt` | Label used in Grafana |
-| `MONITORING_HOST_IP` | `192.168.0.100` | This machine's IP (router sends syslog here) |
-| `SCRAPE_INTERVAL` | `30s` | How often to pull metrics |
+| `ROUTER_IP` | `192.168.0.1` | OpenWrt router IP |
+| `ROUTER_NAME` | `openwrt` | Router label used in Prometheus, Loki, and Grafana |
+| `ROUTER_METRICS_PORT` | `9100` | `prometheus-node-exporter-lua` port |
+| `MONITORING_HOST_IP` | `192.168.0.100` | Host IP used by the router for syslog |
+| `SCRAPE_INTERVAL` | `30s` | Metrics scrape interval |
 | `GRAFANA_ADMIN_PASSWORD` | `changeme` | Grafana admin password |
-| `SYSLOG_PORT` | `514` | Syslog listener port |
+| `SYSLOG_PORT` | `514` | Alloy syslog listener port |
+
+Router setup accepts these optional environment variables:
+
+```sh
+EXPORTER_LISTEN_INTERFACE=lan
+SYSLOG_PORT=514
+PING_TARGET=1.1.1.1
+PUBLIC_IP_LOOKUP=0
+PUBLIC_IP_URL=https://api.ipify.org
+PUBLIC_IP_CHECK_INTERVAL=900
+```
 
 ## Architecture
 
-```
-OpenWRT Router
-├── prometheus-node-exporter-lua → :9100/metrics
-└── logd remote syslog → UDP :514
-         │
-         ▼
+```text
+OpenWrt Router
+├── prometheus-node-exporter-lua -> :9100/metrics
+│   └── textfile collector -> /var/prometheus/openwrt-grafana-monitor.prom
+└── logd remote syslog -> UDP :514
+         |
+         v
 Monitoring Host (Docker)
 ├── Grafana Alloy
-│   ├── scrapes :9100 → Prometheus
-│   └── receives syslog → Loki
+│   ├── scrapes :9100 -> Prometheus
+│   └── receives syslog -> Loki
 └── grafana/otel-lgtm
     ├── Prometheus :9090
     ├── Loki       :3100
     ├── Tempo      :3200
-    └── Grafana    :3000  ← you're here
+    └── Grafana    :3000
 ```
-
-See [PLAN.md](PLAN.md) for the full architecture and design decisions.
 
 ## Docs
 
-- [OpenWRT setup guide](docs/openwrt-setup.md)
+- [OpenWrt setup guide](docs/openwrt-setup.md)
 - [Monitoring host setup](docs/monitoring-host-setup.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Full implementation plan](PLAN.md)
 
-## Repo structure
+## Adapting to Your Router
 
+Dashboards have Grafana variables for router name, WAN interface, WiFi interfaces, and VPN interface. Change them in the dashboard variable controls first. If you want different defaults, edit `build_dashboards.py` and run:
+
+```sh
+python3 build_dashboards.py
 ```
-.
-├── docker-compose.yml           # Stack: otel-lgtm + Alloy
-├── .env.example                 # Configuration template
-├── build_dashboards.py          # Python script that generates dashboard JSON
-├── alloy/
-│   └── config.alloy             # Alloy: scrape + syslog + forward
-├── grafana/
-│   └── provisioning/
-│       ├── datasources/         # Auto-configured Prometheus + Loki + Tempo
-│       └── dashboards/          # 4 pre-built dashboards (generated JSON)
-│           ├── openwrt-overview.json
-│           ├── openwrt-network.json
-│           ├── openwrt-devices.json
-│           └── openwrt-logs.json
-├── openwrt/
-│   └── setup.sh                 # One-command router setup
-└── docs/                        # Detailed guides
-```
-
-## Adapting to your router
-
-Edit `build_dashboards.py` and run `python3 build_dashboards.py` to regenerate dashboards if your router uses different interface names. Key variables are near the top of the file.

@@ -78,7 +78,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_time_seconds{job=\"openwrt\"} - node_boot_time_seconds{job=\"openwrt\"}",
+          "expr": "node_time_seconds{job=\"openwrt\", router=\"$router\"} - node_boot_time_seconds{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "",
           "refId": "A"
         }
@@ -148,7 +148,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "1 - (node_memory_MemAvailable_bytes{job=\"openwrt\"} / node_memory_MemTotal_bytes{job=\"openwrt\"})",
+          "expr": "1 - (node_memory_MemAvailable_bytes{job=\"openwrt\", router=\"$router\"} / node_memory_MemTotal_bytes{job=\"openwrt\", router=\"$router\"})",
           "legendFormat": "",
           "refId": "A"
         }
@@ -218,7 +218,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "1 - avg(rate(node_cpu_seconds_total{job=\"openwrt\", mode=\"idle\"}[$__rate_interval]))",
+          "expr": "1 - avg(rate(node_cpu_seconds_total{job=\"openwrt\", router=\"$router\", mode=\"idle\"}[$__rate_interval]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -288,7 +288,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "count(router_device_up{job=\"openwrt\"} == 1)",
+          "expr": "count(router_device_up{job=\"openwrt\", router=\"$router\"} == 1)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -350,7 +350,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_nf_conntrack_entries{job=\"openwrt\"}",
+          "expr": "node_nf_conntrack_entries{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "",
           "refId": "A"
         }
@@ -420,7 +420,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "packet_loss{job=\"openwrt\"}",
+          "expr": "packet_loss{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "",
           "refId": "A"
         }
@@ -478,7 +478,7 @@
     {
       "type": "timeseries",
       "id": 7,
-      "title": "WAN Throughput (wan)",
+      "title": "WAN Throughput",
       "description": "Real-time WAN download and upload throughput",
       "datasource": {
         "type": "prometheus",
@@ -490,7 +490,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", device=\"wan\"}[$__rate_interval])",
+          "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", router=\"$router\", device=\"$wan_interface\"}[$__rate_interval])",
           "legendFormat": "Download (RX)",
           "refId": "A"
         },
@@ -499,7 +499,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", device=\"wan\"}[$__rate_interval])",
+          "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", router=\"$router\", device=\"$wan_interface\"}[$__rate_interval])",
           "legendFormat": "Upload (TX)",
           "refId": "B"
         }
@@ -617,7 +617,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_load1{job=\"openwrt\"}",
+          "expr": "node_load1{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "1 min",
           "refId": "A"
         },
@@ -626,7 +626,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_load5{job=\"openwrt\"}",
+          "expr": "node_load5{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "5 min",
           "refId": "B"
         },
@@ -635,7 +635,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_load15{job=\"openwrt\"}",
+          "expr": "node_load15{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "15 min",
           "refId": "C"
         }
@@ -723,7 +723,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_memory_MemTotal_bytes{job=\"openwrt\"} - node_memory_MemAvailable_bytes{job=\"openwrt\"}",
+          "expr": "node_memory_MemTotal_bytes{job=\"openwrt\", router=\"$router\"} - node_memory_MemAvailable_bytes{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Used",
           "refId": "A"
         },
@@ -732,7 +732,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_memory_MemAvailable_bytes{job=\"openwrt\"}",
+          "expr": "node_memory_MemAvailable_bytes{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Available",
           "refId": "B"
         },
@@ -741,7 +741,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_memory_Buffers_bytes{job=\"openwrt\"} + node_memory_Cached_bytes{job=\"openwrt\"}",
+          "expr": "node_memory_Buffers_bytes{job=\"openwrt\", router=\"$router\"} + node_memory_Cached_bytes{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Buffers+Cache",
           "refId": "C"
         }
@@ -828,7 +828,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_nf_conntrack_entries{job=\"openwrt\"}",
+          "expr": "node_nf_conntrack_entries{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Active sessions",
           "refId": "A"
         },
@@ -837,7 +837,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_nf_conntrack_entries_limit{job=\"openwrt\"}",
+          "expr": "node_nf_conntrack_entries_limit{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Maximum limit",
           "refId": "B"
         }
@@ -950,7 +950,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(node_cpu_seconds_total{job=\"openwrt\", mode=\"user\"}[$__rate_interval]))",
+          "expr": "sum(rate(node_cpu_seconds_total{job=\"openwrt\", router=\"$router\", mode=\"user\"}[$__rate_interval]))",
           "legendFormat": "user",
           "refId": "A"
         },
@@ -959,7 +959,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(node_cpu_seconds_total{job=\"openwrt\", mode=\"system\"}[$__rate_interval]))",
+          "expr": "sum(rate(node_cpu_seconds_total{job=\"openwrt\", router=\"$router\", mode=\"system\"}[$__rate_interval]))",
           "legendFormat": "system",
           "refId": "B"
         },
@@ -968,7 +968,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(node_cpu_seconds_total{job=\"openwrt\", mode=\"softirq\"}[$__rate_interval]))",
+          "expr": "sum(rate(node_cpu_seconds_total{job=\"openwrt\", router=\"$router\", mode=\"softirq\"}[$__rate_interval]))",
           "legendFormat": "softirq",
           "refId": "C"
         },
@@ -977,7 +977,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(node_cpu_seconds_total{job=\"openwrt\", mode=\"iowait\"}[$__rate_interval]))",
+          "expr": "sum(rate(node_cpu_seconds_total{job=\"openwrt\", router=\"$router\", mode=\"iowait\"}[$__rate_interval]))",
           "legendFormat": "iowait",
           "refId": "D"
         }
@@ -1051,13 +1051,240 @@
     },
     {
       "type": "row",
+      "id": 12,
+      "title": "System Health",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "stat",
+      "id": 13,
+      "title": "CPU Temperature",
+      "description": "Firmware-reported temperature from thermal or hwmon collector. Optional collector availability is device-dependent.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "max(node_thermal_zone_temp{job=\"openwrt\", router=\"$router\"}) or max(node_hwmon_temp_celsius{job=\"openwrt\", router=\"$router\"})",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 75
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 8,
+        "h": 5
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "bargauge",
+      "id": 14,
+      "title": "Overlay Flash Usage",
+      "description": "Writable overlay/rootfs_data usage. A full overlay can break package installs and config writes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "overlay_bytes_used{job=\"openwrt\", router=\"$router\"} / overlay_bytes_total{job=\"openwrt\", router=\"$router\"}",
+          "legendFormat": "Overlay used",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 0.7
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
+          },
+          "unit": "percentunit",
+          "max": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 30,
+        "w": 8,
+        "h": 5
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "namePlacement": "auto",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 300,
+        "minVizWidth": 8,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        }
+      },
+      "transformations": [],
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "stat",
+      "id": 15,
+      "title": "DHCPv6 Leases",
+      "description": "Active DHCPv6/RA leases known to odhcpd, when odhcpd is in use.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "dhcpv6_lease_count{job=\"openwrt\", router=\"$router\"}",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 30,
+        "w": 8,
+        "h": 5
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "row",
       "id": 20,
       "title": "Router Info",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 29,
+        "y": 35,
         "w": 24,
         "h": 1
       }
@@ -1077,7 +1304,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_openwrt_info{job=\"openwrt\"}",
+          "expr": "node_openwrt_info{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "",
           "refId": "A",
           "format": "table",
@@ -1109,7 +1336,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 30,
+        "y": 36,
         "w": 24,
         "h": 4
       },
@@ -1164,7 +1391,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "wan_info{job=\"openwrt\"}",
+          "expr": "wan_info{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "",
           "refId": "A",
           "format": "table",
@@ -1196,7 +1423,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 40,
         "w": 12,
         "h": 4
       },
@@ -1246,7 +1473,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_filefd_allocated{job=\"openwrt\"} / node_filefd_maximum{job=\"openwrt\"}",
+          "expr": "node_filefd_allocated{job=\"openwrt\", router=\"$router\"} / node_filefd_maximum{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1280,7 +1507,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 34,
+        "y": 40,
         "w": 6,
         "h": 4
       },
@@ -1316,7 +1543,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "count(dhcp_lease{job=\"openwrt\"})",
+          "expr": "count(dhcp_lease{job=\"openwrt\", router=\"$router\"})",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1342,7 +1569,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 34,
+        "y": 40,
         "w": 6,
         "h": 4
       },
@@ -1380,6 +1607,61 @@
         },
         "hide": 0,
         "label": "Datasource"
+      },
+      {
+        "name": "router",
+        "type": "custom",
+        "query": "openwrt",
+        "current": {
+          "text": "openwrt",
+          "value": "openwrt"
+        },
+        "hide": 0,
+        "label": "Router"
+      },
+      {
+        "name": "wan_interface",
+        "type": "custom",
+        "query": "wan",
+        "current": {
+          "text": "wan",
+          "value": "wan"
+        },
+        "hide": 0,
+        "label": "WAN interface"
+      },
+      {
+        "name": "wifi24_interface",
+        "type": "custom",
+        "query": "phy0-ap0",
+        "current": {
+          "text": "phy0-ap0",
+          "value": "phy0-ap0"
+        },
+        "hide": 0,
+        "label": "2.4 GHz interface"
+      },
+      {
+        "name": "wifi5_interface",
+        "type": "custom",
+        "query": "phy1-ap0",
+        "current": {
+          "text": "phy1-ap0",
+          "value": "phy1-ap0"
+        },
+        "hide": 0,
+        "label": "5 GHz interface"
+      },
+      {
+        "name": "vpn_interface",
+        "type": "custom",
+        "query": "tailscale0",
+        "current": {
+          "text": "tailscale0",
+          "value": "tailscale0"
+        },
+        "hide": 0,
+        "label": "VPN interface"
       }
     ]
   }

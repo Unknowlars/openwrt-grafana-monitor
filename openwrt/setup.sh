@@ -1,97 +1,359 @@
 #!/bin/sh
 # =============================================================================
-# OpenWRT Grafana Monitor — Router Setup Script
+# OpenWrt Grafana Monitor - Router Setup Script
 # =============================================================================
 #
-# Run this script ON your OpenWRT router via SSH:
+# Run this script ON your OpenWrt router via SSH:
 #
 #   scp openwrt/setup.sh root@192.168.0.1:/tmp/
 #   ssh root@192.168.0.1 "sh /tmp/setup.sh <MONITORING_HOST_IP>"
 #
-# Or with wget directly on the router:
-#
-#   wget -O /tmp/setup.sh https://raw.githubusercontent.com/.../openwrt/setup.sh
-#   sh /tmp/setup.sh <MONITORING_HOST_IP>
-#
-# Arguments:
-#   $1  IP address of the machine running the Docker monitoring stack
-#       (required — the router will send syslog here)
+# Optional environment variables:
+#   EXPORTER_LISTEN_INTERFACE  Interface for :9100; default: lan
+#   SYSLOG_PORT                Remote syslog port; default: 514
+#   PING_TARGET                Packet-loss probe target; default: 1.1.1.1
+#   PUBLIC_IP_LOOKUP           Set to 1 to enable public IP lookup; default: 0
+#   PUBLIC_IP_URL              Public IP endpoint; default: https://api.ipify.org
+#   PUBLIC_IP_CHECK_INTERVAL   Public IP lookup interval in seconds; default: 900
 #
 # =============================================================================
 
-set -e
+set -eu
 
-MONITORING_HOST="${1}"
+MONITORING_HOST="${1:-}"
+EXPORTER_LISTEN_INTERFACE="${EXPORTER_LISTEN_INTERFACE:-lan}"
+SYSLOG_PORT="${SYSLOG_PORT:-514}"
+PING_TARGET="${PING_TARGET:-1.1.1.1}"
+PUBLIC_IP_LOOKUP="${PUBLIC_IP_LOOKUP:-0}"
+PUBLIC_IP_URL="${PUBLIC_IP_URL:-https://api.ipify.org}"
+PUBLIC_IP_CHECK_INTERVAL="${PUBLIC_IP_CHECK_INTERVAL:-900}"
 
-# ── Validate ──────────────────────────────────────────────────────────────────
+REQUIRED_PACKAGES="
+prometheus-node-exporter-lua
+prometheus-node-exporter-lua-openwrt
+prometheus-node-exporter-lua-nat_traffic
+prometheus-node-exporter-lua-netstat
+prometheus-node-exporter-lua-textfile
+"
+
+OPTIONAL_PACKAGES="
+prometheus-node-exporter-lua-wifi
+prometheus-node-exporter-lua-wifi_stations
+prometheus-node-exporter-lua-hostapd_stations
+prometheus-node-exporter-lua-thermal
+prometheus-node-exporter-lua-hwmon
+prometheus-node-exporter-lua-nft-counters
+"
+
+log() {
+  printf '%s\n' "$*"
+}
+
+die() {
+  log "ERROR: $*"
+  exit 1
+}
 
 if [ -z "$MONITORING_HOST" ]; then
-  echo "Usage: $0 <MONITORING_HOST_IP>"
-  echo "  Example: $0 192.168.0.100"
+  log "Usage: $0 <MONITORING_HOST_IP>"
+  log "  Example: $0 192.168.0.100"
   exit 1
 fi
 
-echo "==> OpenWRT Grafana Monitor setup"
-echo "    Monitoring host: $MONITORING_HOST"
-echo ""
-
-# ── Install packages ──────────────────────────────────────────────────────────
-
-echo "==> Updating package list..."
-opkg update
-
-echo "==> Installing prometheus-node-exporter-lua..."
-opkg install \
-  prometheus-node-exporter-lua \
-  prometheus-node-exporter-lua-openwrt \
-  prometheus-node-exporter-lua-wifi \
-  prometheus-node-exporter-lua-wifi_stations \
-  prometheus-node-exporter-lua-nat_traffic \
-  prometheus-node-exporter-lua-netstat
-
-# Install mwan3 exporter only if mwan3 is installed
-if opkg list-installed | grep -q "^mwan3 "; then
-  echo "==> mwan3 detected, installing mwan3 exporter..."
-  opkg install prometheus-node-exporter-lua-mwan3
+if command -v apk >/dev/null 2>&1; then
+  PKG_MANAGER="apk"
+elif command -v opkg >/dev/null 2>&1; then
+  PKG_MANAGER="opkg"
+else
+  die "neither apk nor opkg was found. This script supports OpenWrt 24.10/opkg and OpenWrt 25.12/apk."
 fi
 
-# ── Start and enable the exporter ─────────────────────────────────────────────
+pkg_update() {
+  case "$PKG_MANAGER" in
+    apk) apk update ;;
+    opkg) opkg update ;;
+  esac
+}
 
-echo "==> Enabling and starting prometheus-node-exporter-lua..."
+pkg_install_required() {
+  case "$PKG_MANAGER" in
+    apk) apk add "$@" ;;
+    opkg) opkg install "$@" ;;
+  esac
+}
+
+pkg_install_optional() {
+  case "$PKG_MANAGER" in
+    apk) apk add "$@" ;;
+    opkg) opkg install "$@" ;;
+  esac
+}
+
+pkg_installed() {
+  case "$PKG_MANAGER" in
+    apk) apk info "$1" >/dev/null 2>&1 ;;
+    opkg) opkg list-installed 2>/dev/null | grep -q "^$1 " ;;
+  esac
+}
+
+fetch_url() {
+  url="$1"
+  if command -v wget >/dev/null 2>&1; then
+    wget -qO- "$url"
+  elif command -v curl >/dev/null 2>&1; then
+    curl -fsS "$url"
+  else
+    return 1
+  fi
+}
+
+log "==> OpenWrt Grafana Monitor setup"
+log "    Monitoring host: $MONITORING_HOST"
+log "    Package manager: $PKG_MANAGER"
+log "    Exporter interface: $EXPORTER_LISTEN_INTERFACE"
+log ""
+
+log "==> Updating package list..."
+pkg_update
+
+log "==> Installing required exporter packages..."
+pkg_install_required $REQUIRED_PACKAGES
+
+for package in $OPTIONAL_PACKAGES; do
+  log "==> Installing optional package: $package"
+  if ! pkg_install_optional "$package"; then
+    log "    WARNING: optional package unavailable or failed to install: $package"
+  fi
+done
+
+if pkg_installed mwan3; then
+  log "==> mwan3 detected, installing mwan3 exporter..."
+  if ! pkg_install_optional prometheus-node-exporter-lua-mwan3; then
+    log "    WARNING: mwan3 exporter unavailable or failed to install"
+  fi
+fi
+
+log "==> Configuring prometheus-node-exporter-lua..."
+uci set prometheus-node-exporter-lua.main.listen_interface="$EXPORTER_LISTEN_INTERFACE"
+uci set prometheus-node-exporter-lua.main.listen_port='9100'
+uci commit prometheus-node-exporter-lua
+
+log "==> Installing custom textfile metrics..."
+mkdir -p /var/prometheus
+
+cat >/etc/openwrt-grafana-monitor.conf <<EOF
+PING_TARGET="$PING_TARGET"
+PUBLIC_IP_LOOKUP="$PUBLIC_IP_LOOKUP"
+PUBLIC_IP_URL="$PUBLIC_IP_URL"
+PUBLIC_IP_CHECK_INTERVAL="$PUBLIC_IP_CHECK_INTERVAL"
+EOF
+
+cat >/usr/bin/openwrt-grafana-monitor-metrics <<'EOF'
+#!/bin/sh
+set -eu
+
+CONF="/etc/openwrt-grafana-monitor.conf"
+OUT_DIR="/var/prometheus"
+OUT_FILE="$OUT_DIR/openwrt-grafana-monitor.prom"
+TMP_FILE="$OUT_FILE.$$"
+
+PING_TARGET="1.1.1.1"
+PUBLIC_IP_LOOKUP="0"
+PUBLIC_IP_URL="https://api.ipify.org"
+PUBLIC_IP_CHECK_INTERVAL="900"
+PUBLIC_IP_CACHE_FILE="/tmp/openwrt-grafana-monitor-public-ip"
+PUBLIC_IP_TS_FILE="/tmp/openwrt-grafana-monitor-public-ip-ts"
+PUBLIC_IP_LAST_FILE="/tmp/openwrt-grafana-monitor-last-public-ip"
+
+[ -r "$CONF" ] && . "$CONF"
+
+mkdir -p "$OUT_DIR"
+
+escape_label() {
+  printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+hostname="$(uci get system.@system[0].hostname 2>/dev/null || echo openwrt)"
+wan_iface="$(uci get network.wan.device 2>/dev/null || uci get network.wan.ifname 2>/dev/null || echo wan)"
+wan_ip="$(ip -4 addr show dev "$wan_iface" 2>/dev/null | awk '/inet / { sub(/\/.*/, "", $2); print $2; exit }')"
+public_ip=""
+wan_public_ip_changed="0"
+
+if [ "$PUBLIC_IP_LOOKUP" = "1" ]; then
+  now="$(date +%s 2>/dev/null || echo 0)"
+  last_check="0"
+  [ -r "$PUBLIC_IP_TS_FILE" ] && last_check="$(cat "$PUBLIC_IP_TS_FILE" 2>/dev/null || echo 0)"
+  [ -r "$PUBLIC_IP_CACHE_FILE" ] && public_ip="$(cat "$PUBLIC_IP_CACHE_FILE" 2>/dev/null || true)"
+
+  case "$PUBLIC_IP_CHECK_INTERVAL" in *[!0-9]*|"") PUBLIC_IP_CHECK_INTERVAL="900" ;; esac
+  case "$now" in *[!0-9]*|"") now="0" ;; esac
+  case "$last_check" in *[!0-9]*|"") last_check="0" ;; esac
+
+  should_check=1
+  if [ "$now" != "0" ] && [ $((now - last_check)) -lt "$PUBLIC_IP_CHECK_INTERVAL" ]; then
+    should_check=0
+  fi
+
+  if [ "$should_check" = "1" ]; then
+    fetched_ip=""
+    if command -v wget >/dev/null 2>&1; then
+      fetched_ip="$(wget -qO- "$PUBLIC_IP_URL" 2>/dev/null | tr -d '\r\n' || true)"
+    elif command -v curl >/dev/null 2>&1; then
+      fetched_ip="$(curl -fsS "$PUBLIC_IP_URL" 2>/dev/null | tr -d '\r\n' || true)"
+    fi
+
+    if [ -n "$fetched_ip" ]; then
+      last_ip=""
+      [ -r "$PUBLIC_IP_LAST_FILE" ] && last_ip="$(cat "$PUBLIC_IP_LAST_FILE" 2>/dev/null || true)"
+      if [ -n "$last_ip" ] && [ "$fetched_ip" != "$last_ip" ]; then
+        wan_public_ip_changed="1"
+      fi
+      public_ip="$fetched_ip"
+      printf '%s' "$public_ip" >"$PUBLIC_IP_CACHE_FILE"
+      printf '%s' "$public_ip" >"$PUBLIC_IP_LAST_FILE"
+    fi
+    [ "$now" != "0" ] && printf '%s' "$now" >"$PUBLIC_IP_TS_FILE"
+  fi
+fi
+
+{
+  echo '# HELP dhcp_lease Active DHCP lease expiry timestamp from /tmp/dhcp.leases.'
+  echo '# TYPE dhcp_lease gauge'
+  if [ -r /tmp/dhcp.leases ]; then
+    awk '
+      function esc(v) { gsub(/\\/,"\\\\",v); gsub(/"/,"\\\"",v); return v }
+      NF >= 4 {
+        hostname = $4
+        if (hostname == "*") hostname = ""
+        printf "dhcp_lease{mac=\"%s\",ip=\"%s\",hostname=\"%s\"} %s\n", esc(toupper($2)), esc($3), esc(hostname), $1
+      }
+    ' /tmp/dhcp.leases
+  fi
+
+  echo '# HELP router_device_up Device online status derived from active DHCP leases and static DHCP host config.'
+  echo '# TYPE router_device_up gauge'
+  if [ -r /tmp/dhcp.leases ]; then
+    awk '
+      function esc(v) { gsub(/\\/,"\\\\",v); gsub(/"/,"\\\"",v); return v }
+      NF >= 4 {
+        hostname = $4
+        if (hostname == "*") hostname = $3
+        printf "router_device_up{device=\"%s\",status=\"online\",mac=\"%s\",ip=\"%s\"} 1\n", esc(hostname), esc(toupper($2)), esc($3)
+      }
+    ' /tmp/dhcp.leases
+  fi
+
+  uci show dhcp 2>/dev/null | awk -F= '
+    BEGIN {
+      while ((getline line < "/tmp/dhcp.leases") > 0) {
+        split(line, fields, " ")
+        active[toupper(fields[2])] = 1
+      }
+      close("/tmp/dhcp.leases")
+    }
+    /^dhcp\.[^.]+\.name=/ { gsub(/\047/, "", $2); section=$1; sub(/\.name$/, "", section); name[section]=$2 }
+    /^dhcp\.[^.]+\.mac=/ { gsub(/\047/, "", $2); section=$1; sub(/\.mac$/, "", section); mac[section]=toupper($2) }
+    /^dhcp\.[^.]+\.ip=/ { gsub(/\047/, "", $2); section=$1; sub(/\.ip$/, "", section); ip[section]=$2 }
+    END {
+      for (section in mac) {
+        if (mac[section] in active) continue
+        device=name[section]; if (device == "") device=ip[section]; if (device == "") device=mac[section]
+        printf "router_device_up{device=\"%s\",status=\"offline\",mac=\"%s\",ip=\"%s\"} 0\n", device, mac[section], ip[section]
+      }
+    }
+  '
+
+  echo '# HELP wan_info WAN and optional public IP metadata.'
+  echo '# TYPE wan_info gauge'
+  printf 'wan_info{wanip="%s",publicip="%s",hostname="%s"} 1\n' \
+    "$(escape_label "$wan_ip")" "$(escape_label "$public_ip")" "$(escape_label "$hostname")"
+
+  echo '# HELP packet_loss Packet loss percentage to configured probe target.'
+  echo '# TYPE packet_loss gauge'
+  loss="0"
+  if command -v ping >/dev/null 2>&1; then
+    loss="$(ping -c 3 -W 2 "$PING_TARGET" 2>/dev/null | awk -F, '/packet loss/ { gsub(/[^0-9.]/, "", $3); print $3; found=1 } END { if (!found) print 100 }')"
+  fi
+  printf 'packet_loss{target="%s"} %s\n' "$(escape_label "$PING_TARGET")" "$loss"
+
+  echo '# HELP overlay_bytes_total Total overlay rootfs_data filesystem size in bytes.'
+  echo '# TYPE overlay_bytes_total gauge'
+  echo '# HELP overlay_bytes_used Used overlay rootfs_data filesystem bytes.'
+  echo '# TYPE overlay_bytes_used gauge'
+  overlay_line="$(df -P /overlay 2>/dev/null | awk 'NR==2')"
+  if [ -n "$overlay_line" ]; then
+    ov_total_kb="$(printf '%s\n' "$overlay_line" | awk '{print $2}')"
+    ov_used_kb="$(printf '%s\n' "$overlay_line" | awk '{print $3}')"
+    printf 'overlay_bytes_total %s\n' "$((ov_total_kb * 1024))"
+    printf 'overlay_bytes_used %s\n' "$((ov_used_kb * 1024))"
+  fi
+
+  echo '# HELP gateway_packet_loss Packet loss percentage to the IPv4 default gateway.'
+  echo '# TYPE gateway_packet_loss gauge'
+  gateway="$(ip -4 route show default 2>/dev/null | awk '/default/ {print $3; exit}')"
+  gateway_loss="100"
+  if [ -n "$gateway" ] && command -v ping >/dev/null 2>&1; then
+    gateway_loss="$(ping -c 3 -W 2 "$gateway" 2>/dev/null | awk -F, '/packet loss/ { gsub(/[^0-9.]/, "", $3); print $3; found=1 } END { if (!found) print 100 }')"
+  fi
+  printf 'gateway_packet_loss{gateway="%s"} %s\n' "$(escape_label "$gateway")" "$gateway_loss"
+
+  echo '# HELP wan_public_ip_changed 1 if public IP changed since the last successful lookup, else 0.'
+  echo '# TYPE wan_public_ip_changed gauge'
+  printf 'wan_public_ip_changed %s\n' "$wan_public_ip_changed"
+
+  echo '# HELP dhcpv6_lease_count Number of active DHCPv6/RA leases known to odhcpd.'
+  echo '# TYPE dhcpv6_lease_count gauge'
+  printf 'dhcpv6_lease_count %s\n' "$([ -r /tmp/hosts/odhcpd ] && wc -l < /tmp/hosts/odhcpd || echo 0)"
+} >"$TMP_FILE"
+
+mv "$TMP_FILE" "$OUT_FILE"
+EOF
+
+chmod 0755 /usr/bin/openwrt-grafana-monitor-metrics
+/usr/bin/openwrt-grafana-monitor-metrics
+
+if command -v crontab >/dev/null 2>&1; then
+  tmp_cron="/tmp/openwrt-grafana-monitor.cron.$$"
+  crontab -l 2>/dev/null | grep -v '/usr/bin/openwrt-grafana-monitor-metrics' >"$tmp_cron" || true
+  echo '* * * * * /usr/bin/openwrt-grafana-monitor-metrics >/dev/null 2>&1' >>"$tmp_cron"
+  crontab "$tmp_cron"
+  rm -f "$tmp_cron"
+  /etc/init.d/cron enable >/dev/null 2>&1 || true
+  /etc/init.d/cron restart >/dev/null 2>&1 || true
+fi
+
+log "==> Enabling and starting prometheus-node-exporter-lua..."
 /etc/init.d/prometheus-node-exporter-lua enable
-/etc/init.d/prometheus-node-exporter-lua start
+/etc/init.d/prometheus-node-exporter-lua restart
 
-# Give it a moment to start
 sleep 2
 
-# Verify it's running
-if curl -sf "http://127.0.0.1:9100/metrics" > /dev/null 2>&1; then
-  echo "    OK: metrics endpoint is up at :9100/metrics"
+if fetch_url "http://127.0.0.1:9100/metrics" >/dev/null 2>&1; then
+  log "    OK: metrics endpoint is up at 127.0.0.1:9100/metrics"
 else
-  echo "    WARNING: metrics endpoint not responding yet, check with:"
-  echo "    curl http://127.0.0.1:9100/metrics"
+  log "    WARNING: local metrics endpoint is not responding yet."
+  log "    Check with: wget -qO- http://127.0.0.1:9100/metrics | head"
 fi
 
-# ── Configure remote syslog ───────────────────────────────────────────────────
-
-echo "==> Configuring remote syslog → $MONITORING_HOST:514 ..."
+log "==> Configuring remote syslog to $MONITORING_HOST:$SYSLOG_PORT ..."
 uci set system.@system[0].log_ip="$MONITORING_HOST"
-uci set system.@system[0].log_port=514
-uci set system.@system[0].log_proto=udp
+uci set system.@system[0].log_port="$SYSLOG_PORT"
+uci set system.@system[0].log_proto='udp'
 uci set system.@system[0].log_hostname="$(uci get system.@system[0].hostname 2>/dev/null || echo openwrt)"
 uci commit system
 
 /etc/init.d/log restart
-echo "    OK: syslog configured"
+log "    OK: syslog configured"
 
-# ── Summary ───────────────────────────────────────────────────────────────────
+LAN_IP="$(uci get network.lan.ipaddr 2>/dev/null || echo '<ROUTER_IP>')"
 
-echo ""
-echo "==> Setup complete!"
-echo ""
-echo "    Metrics:  http://$(uci get network.lan.ipaddr 2>/dev/null || echo <ROUTER_IP>):9100/metrics"
-echo "    Syslog:   → $MONITORING_HOST:514 (UDP)"
-echo ""
-echo "    Now start the Docker stack on $MONITORING_HOST:"
-echo "    docker compose up -d"
-echo ""
+log ""
+log "==> Setup complete"
+log ""
+log "    Metrics:  http://$LAN_IP:9100/metrics"
+log "    Syslog:   $MONITORING_HOST:$SYSLOG_PORT/udp"
+log "    Textfile: /var/prometheus/openwrt-grafana-monitor.prom"
+log ""
+log "    Now start the Docker stack on $MONITORING_HOST:"
+log "    docker compose up -d"
+log ""

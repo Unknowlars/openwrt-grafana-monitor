@@ -79,7 +79,7 @@
 
 | Signal | Source | Collector | Destination |
 |--------|--------|-----------|-------------|
-| Metrics | prometheus-node-exporter-lua | Alloy `prometheus.scrape` | Prometheus in otel-lgtm |
+| Metrics | prometheus-node-exporter-lua + textfile metrics | Alloy `prometheus.scrape` | Prometheus in otel-lgtm |
 | Logs | logd remote syslog | Alloy `loki.source.syslog` | Loki in otel-lgtm |
 | Dashboards | — | — | Grafana in otel-lgtm |
 
@@ -89,10 +89,12 @@
 
 ### On the Router
 
-#### Metrics: `prometheus-node-exporter-lua` (chosen)
+#### Metrics: `prometheus-node-exporter-lua` + textfile metrics (chosen)
 
 The clear winner for OpenWRT metrics collection. Reasons:
-- Actively maintained in the official OpenWRT package feed (updated 2025-11-22)
+- Small OpenWrt-native exporter with OpenWrt-specific collectors.
+- OpenWrt 24.10 installs packages with `opkg`; OpenWrt 25.12+ installs packages with `apk`.
+- Textfile metrics fill gaps for DHCP leases, device status, WAN info, and packet loss.
 - Lua-based = tiny footprint, no extra runtime needed
 - Modular: install only the collectors you need
 - Exposes standard Prometheus text format at `:9100/metrics`
@@ -140,9 +142,12 @@ Perfect for home/self-hosted use. Not HA, not production-scale — but ideal for
 | Base system | `prometheus-node-exporter-lua` | CPU, memory, load, uptime, filesystem |
 | OpenWRT specifics | `prometheus-node-exporter-lua-openwrt` | Firmware version, board info |
 | WiFi stats | `prometheus-node-exporter-lua-wifi` | SSID, channel, signal, noise, bitrate |
-| WiFi clients | `prometheus-node-exporter-lua-wifi_stations` | Connected clients, MAC, RSSI per client |
+| WiFi clients | `prometheus-node-exporter-lua-hostapd_stations` | Connected clients, MAC, RSSI per client |
+| Temperature | `prometheus-node-exporter-lua-thermal`, `prometheus-node-exporter-lua-hwmon` | Firmware-reported SoC and board temperatures |
+| nftables counters | `prometheus-node-exporter-lua-nft-counters` | Optional named firewall counter totals |
 | Network interfaces | `prometheus-node-exporter-lua-netstat` | TCP/UDP connections, socket stats |
-| NAT traffic | `prometheus-node-exporter-lua-nat_traffic` | NAT conntrack sessions, bytes |
+| NAT traffic | `prometheus-node-exporter-lua-nat_traffic` | NAT conntrack bytes by source/destination |
+| Custom textfile | setup script | DHCP leases, device status, WAN info, packet loss, gateway loss, overlay usage |
 | MWAN3 | `prometheus-node-exporter-lua-mwan3` | Multi-WAN failover status (if using mwan3) |
 
 **Key dashboards we'll build around**:
@@ -199,7 +204,7 @@ openwrt-grafana-monitor/
 │   │       └── datasources.yaml # Pre-configured data sources
 │
 ├── openwrt/
-│   ├── setup.sh                 # Script to run ON the router (opkg installs)
+│   ├── setup.sh                 # Script to run ON the router (opkg/apk installs)
 │   └── configs/
 │       ├── uhttpd-prometheus     # uhttpd config snippet for metrics endpoint
 │       └── system-logging        # UCI config snippet for remote syslog
@@ -221,17 +226,30 @@ openwrt-grafana-monitor/
 SSH into the router and run:
 
 ```sh
+# OpenWrt 24.10
 opkg update
 opkg install \
   prometheus-node-exporter-lua \
   prometheus-node-exporter-lua-openwrt \
-  prometheus-node-exporter-lua-wifi \
-  prometheus-node-exporter-lua-wifi_stations \
   prometheus-node-exporter-lua-nat_traffic \
-  prometheus-node-exporter-lua-netstat
+  prometheus-node-exporter-lua-netstat \
+  prometheus-node-exporter-lua-textfile
+
+# OpenWrt 25.12+
+apk update
+apk add \
+  prometheus-node-exporter-lua \
+  prometheus-node-exporter-lua-openwrt \
+  prometheus-node-exporter-lua-nat_traffic \
+  prometheus-node-exporter-lua-netstat \
+  prometheus-node-exporter-lua-textfile
 ```
 
-The exporter starts automatically and listens on `:9100`. Verify:
+The setup script does this automatically and also installs custom textfile metrics.
+Do not run `apk upgrade` on OpenWrt; use sysupgrade or attended sysupgrade for
+firmware upgrades.
+
+The exporter listens on `:9100`. Verify:
 
 ```sh
 curl http://192.168.0.1:9100/metrics | head -30
@@ -267,15 +285,34 @@ uci commit firewall
 /etc/init.d/firewall restart
 ```
 
-### 5.4 (Optional) Enable MWAN3 Metrics
+### 5.4 Custom Textfile Metrics
+
+The setup script installs `/usr/bin/openwrt-grafana-monitor-metrics`, writes
+`/var/prometheus/openwrt-grafana-monitor.prom`, and refreshes it every minute
+with cron. These metrics support panels that official exporter modules do not
+provide directly:
+
+- `dhcp_lease`
+- `router_device_up`
+- `wan_info`
+- `packet_loss`
+- `overlay_bytes_total`
+- `overlay_bytes_used`
+- `gateway_packet_loss`
+- `wan_public_ip_changed`
+- `dhcpv6_lease_count`
+
+### 5.5 (Optional) Enable MWAN3 Metrics
 
 If using mwan3 for multi-WAN:
 
 ```sh
 opkg install prometheus-node-exporter-lua-mwan3
+# or on OpenWrt 25.12+
+apk add prometheus-node-exporter-lua-mwan3
 ```
 
-### 5.5 Firewall — Open Port 9100 for Scraping
+### 5.6 Firewall — Open Port 9100 for Scraping
 
 By default OpenWRT blocks WAN→LAN access but LAN access should work. If your monitoring host
 is on the LAN, no firewall changes needed. If scraping from a different network:
@@ -545,8 +582,9 @@ These are out of scope for the initial implementation but worth tracking:
 
 ### Key Findings
 
-1. **`prometheus-node-exporter-lua` is the right choice for OpenWRT metrics.**
-   It's in the official feed, actively maintained, tiny, and has all the modules we need.
+1. **`prometheus-node-exporter-lua` plus textfile metrics is the right choice for OpenWrt metrics.**
+   The official exporter is small and OpenWrt-native. The setup script adds a
+   textfile collector for DHCP leases, device status, WAN info, and packet loss.
    See: https://github.com/openwrt/packages/tree/master/utils/prometheus-node-exporter-lua
 
 2. **Grafana Alloy cannot run on OpenWRT** (MIPS/ARM unsupported).
@@ -564,10 +602,14 @@ These are out of scope for the initial implementation but worth tracking:
 5. **`collectd` with `write_prometheus` is a viable alternative to prometheus-node-exporter-lua**
    but has heavier dependencies and more complex configuration. Not chosen for simplicity.
 
-6. **Prometheus remote_write endpoint** in the otel-lgtm image is available at
+6. **OpenWrt 25.12 switched from opkg to apk.**
+   The router setup script detects the package manager. It must never call
+   `apk upgrade`; router firmware updates should use sysupgrade/attended sysupgrade.
+
+7. **Prometheus remote_write endpoint** in the otel-lgtm image is available at
    `http://host:9090/api/v1/write` — this is what Alloy writes metrics to.
 
-7. **Loki push endpoint** is at `http://host:3100/loki/api/v1/push`.
+8. **Loki push endpoint** is at `http://host:3100/loki/api/v1/push`.
 
 ### Reference Links
 

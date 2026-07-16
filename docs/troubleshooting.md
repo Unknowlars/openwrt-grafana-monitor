@@ -1,84 +1,162 @@
 # Troubleshooting
 
-## Metrics not appearing in Grafana
+## Package Install Fails
 
-### 1. Check the router's metrics endpoint
+Check which package manager your router uses:
+
+```sh
+command -v apk && apk --version
+command -v opkg && opkg --version
+```
+
+OpenWrt 24.10 uses `opkg`; OpenWrt 25.12 and newer use `apk`.
+
+Refresh indexes and retry:
+
+```sh
+# OpenWrt 24.10
+opkg update
+
+# OpenWrt 25.12+
+apk update
+```
+
+Do not run `apk upgrade` on OpenWrt. Use sysupgrade or attended sysupgrade for firmware upgrades.
+
+If an optional collector fails, the setup script continues. The required path is the base exporter plus `openwrt`, `nat_traffic`, `netstat`, and `textfile`.
+
+## Metrics Not Appearing in Grafana
+
+### 1. Check the router endpoint
+
+From the router:
+
+```sh
+wget -qO- http://127.0.0.1:9100/metrics | head
+/etc/init.d/prometheus-node-exporter-lua status
+```
 
 From the monitoring host:
 
 ```sh
-curl http://192.168.0.1:9100/metrics
+curl http://192.168.0.1:9100/metrics | head
 ```
 
-If this fails:
-- Is prometheus-node-exporter-lua running? `ssh root@192.168.0.1 "/etc/init.d/prometheus-node-exporter-lua status"`
-- Is port 9100 blocked by the router firewall? Try from the router itself: `curl http://127.0.0.1:9100/metrics`
+If it works locally but not from the monitoring host, check the exporter listen interface:
 
-### 2. Check Alloy is scraping
+```sh
+uci show prometheus-node-exporter-lua
+```
 
-Open the Alloy UI at http://localhost:12345 → Graph → look for `prometheus.scrape.openwrt`.
+The setup script sets:
 
-Or check Alloy logs:
+```sh
+prometheus-node-exporter-lua.main.listen_interface='lan'
+```
+
+Restart after changes:
+
+```sh
+/etc/init.d/prometheus-node-exporter-lua restart
+```
+
+### 2. Check custom textfile metrics
+
+The Devices and WAN info panels depend on this repo's textfile metrics:
+
+```sh
+/usr/bin/openwrt-grafana-monitor-metrics
+ls -l /var/prometheus
+cat /var/prometheus/openwrt-grafana-monitor.prom
+wget -qO- http://127.0.0.1:9100/metrics | grep -E 'node_textfile|dhcp_lease|router_device_up|wan_info|packet_loss|overlay_bytes|gateway_packet_loss|wan_public_ip_changed|dhcpv6_lease_count'
+```
+
+If `node_textfile_mtime_seconds` is missing, install the textfile collector package:
+
+```sh
+# OpenWrt 24.10
+opkg install prometheus-node-exporter-lua-textfile
+
+# OpenWrt 25.12+
+apk add prometheus-node-exporter-lua-textfile
+```
+
+### 3. Check optional collectors
+
+Panels for WiFi client signal, temperature, and nftables counters depend on optional packages. Missing metrics usually means the package is unavailable on your feed or the device does not expose that data.
+
+```sh
+wget -qO- http://127.0.0.1:9100/metrics | grep -E 'hostapd_station|node_thermal_zone_temp|node_hwmon_temp_celsius|nft_counter'
+```
+
+If the package is missing, install the collector that matches the panel:
+
+```sh
+# OpenWrt 24.10
+opkg install prometheus-node-exporter-lua-hostapd_stations prometheus-node-exporter-lua-thermal prometheus-node-exporter-lua-hwmon prometheus-node-exporter-lua-nft-counters
+
+# OpenWrt 25.12+
+apk add prometheus-node-exporter-lua-hostapd_stations prometheus-node-exporter-lua-thermal prometheus-node-exporter-lua-hwmon prometheus-node-exporter-lua-nft-counters
+```
+
+### 4. Check Alloy is scraping
+
+Open the Alloy UI at http://localhost:12345 and inspect `prometheus.scrape.openwrt`.
+
+Or check logs:
 
 ```sh
 docker logs alloy --tail 50 | grep -i "openwrt\|error\|scrape"
 ```
 
-### 3. Check Prometheus received data
+### 5. Check Prometheus received data
 
 ```sh
 curl 'http://localhost:9090/api/v1/query?query=node_load1{job="openwrt"}' | python3 -m json.tool
+curl 'http://localhost:9090/api/v1/query?query=router_device_up{job="openwrt"}' | python3 -m json.tool
 ```
 
-If empty, Alloy isn't writing to Prometheus. Check the `prometheus.remote_write` target in Alloy UI.
-
-### 4. Verify the ROUTER_IP env var reached Alloy
+### 6. Verify environment variables reached Alloy
 
 ```sh
 docker exec alloy env | grep ROUTER
 ```
 
----
+## Logs Not Appearing in Grafana
 
-## Logs not appearing in Grafana
-
-### 1. Check if logd is sending syslog
-
-On the router:
+### 1. Check router syslog config
 
 ```sh
 uci show system | grep log_
-# Should show: system.@system[0].log_ip='192.168.0.100'
-```
-
-Force a log message and watch if it arrives:
-
-```sh
-# On the router:
 logger "test message from openwrt"
 ```
 
-### 2. Check Alloy is receiving syslog
+Expected:
+
+```text
+system.@system[0].log_ip='192.168.0.100'
+system.@system[0].log_port='514'
+system.@system[0].log_proto='udp'
+```
+
+### 2. Check Alloy receives syslog
 
 ```sh
 docker logs alloy --tail 50 | grep -i "syslog\|514"
 ```
 
-### 3. Check port 514 is accessible
+### 3. Check port 514
 
 ```sh
-# From the monitoring host (listening):
 sudo tcpdump -i any udp port 514 -n
-
-# From the router (sending):
-logger "test"
+ss -ulnp | grep 514
 ```
 
-If nothing arrives, check if something else is using port 514 on the host (`ss -ulnp | grep 514`).
+If another process uses port 514, change `SYSLOG_PORT` in `.env` and rerun router setup with the same port:
 
-If running Linux with systemd-journald, port 514 may be in use by rsyslog or systemd-journal-remote.
-
-Fix: Change `SYSLOG_PORT` in `.env` to e.g. `1514` and update the router's `log_port` UCI setting.
+```sh
+SYSLOG_PORT=1514 sh /tmp/setup.sh 192.168.0.100
+```
 
 ### 4. Check Loki received logs
 
@@ -86,84 +164,80 @@ Fix: Change `SYSLOG_PORT` in `.env` to e.g. `1514` and update the router's `log_
 curl 'http://localhost:3100/loki/api/v1/query?query={job="openwrt-syslog"}' | python3 -m json.tool
 ```
 
----
+## Grafana Shows "No Data"
 
-## Grafana shows "No data"
+- Set the time range to "Last 1 hour".
+- Wait at least one scrape interval.
+- Confirm dashboard variables: `router`, `wan_interface`, `wifi24_interface`, `wifi5_interface`, `vpn_interface`.
+- Test Prometheus Explore with `node_load1{job="openwrt"}`.
+- Test Loki Explore with `{job="openwrt-syslog"}`.
 
-- Check the time range — set it to "Last 1 hour" and wait a scrape interval (30s)
-- Verify datasource URLs in Grafana → Connections → Data Sources (should be `http://localhost:9090` etc.)
-- Run a test query in Explore: `node_load1` in Prometheus, `{job="openwrt-syslog"}` in Loki
+## WAN or WiFi Panels Show No Data
 
----
+The default dashboard variables are common defaults, not guaranteed names:
 
-## Port 514 permission denied
+- WAN: `wan`
+- 2.4 GHz WiFi: `phy0-ap0`
+- 5 GHz WiFi: `phy1-ap0`
+- VPN: `tailscale0`
 
-On Linux, ports below 1024 require root or `CAP_NET_BIND_SERVICE`. Docker handles this for containers,
-but if you see permission errors:
+Find your interface names:
 
 ```sh
-# Check if the container started on 514:
-docker port alloy
+ssh root@192.168.0.1 "ip route | grep default; cat /proc/net/dev"
 ```
 
-Alternative: use port 1514 in `.env` and on the router.
+Then change the Grafana dashboard variables at the top of the dashboard.
 
----
+## Port 514 Permission Denied
 
-## Dashboards not loading
+Docker normally handles privileged host ports for containers. If Alloy cannot bind:
 
-Check provisioning loaded correctly:
+```sh
+docker port alloy
+ss -tulnp | grep ':514'
+```
+
+Use a high port such as `1514` if needed:
+
+```env
+SYSLOG_PORT=1514
+```
+
+Then update the router:
+
+```sh
+SYSLOG_PORT=1514 sh /tmp/setup.sh 192.168.0.100
+```
+
+## Dashboards Not Loading
 
 ```sh
 docker logs otel-lgtm 2>&1 | grep -i "dashboard\|provision"
-```
-
-Grafana reads the provisioning directory on startup. If you added dashboards after starting,
-restart the container:
-
-```sh
 docker compose restart otel-lgtm
 ```
 
----
+Regenerate dashboards after editing `build_dashboards.py`:
 
-## otel-lgtm container keeps restarting
+```sh
+python3 build_dashboards.py
+```
 
-Check logs:
+## otel-lgtm Container Keeps Restarting
 
 ```sh
 docker logs otel-lgtm --tail 50
 ```
 
 Common causes:
-- Port conflict (something else on 3000, 9090, etc.) — check with `ss -tlnp`
-- Insufficient memory — ensure at least 2 GB RAM available
-- Volume permission issue — try `docker compose down -v && docker compose up -d`
 
----
+- Port conflict on 3000, 9090, 3100, or 3200.
+- Insufficient memory.
+- Volume permission issue.
 
-## WAN throughput panel shows wrong interface
+## Alloy Cannot Connect to otel-lgtm
 
-The default dashboard uses `eth0`. Your WAN interface may be different (e.g. `eth1`, `pppoe-wan`).
-
-Find your WAN interface:
-
-```sh
-ssh root@192.168.0.1 "ip route | grep default"
-```
-
-Then in Grafana, edit the "WAN Throughput" panel and replace `eth0` with your interface name.
-
----
-
-## Alloy can't connect to otel-lgtm
-
-If Alloy starts before otel-lgtm is ready, it will retry. The `depends_on` with healthcheck in
-`docker-compose.yml` handles this, but the otel-lgtm healthcheck takes up to 60 seconds.
-
-Just wait 60-90 seconds after `docker compose up -d` for everything to stabilize.
-
-Check connectivity between containers:
+Wait 60-90 seconds after startup, then check:
 
 ```sh
 docker exec alloy wget -qO- http://otel-lgtm:9090/-/ready

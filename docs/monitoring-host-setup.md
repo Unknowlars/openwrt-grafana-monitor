@@ -56,6 +56,10 @@ Login: `admin` / value from `GRAFANA_ADMIN_PASSWORD` in `.env`
 
 The OpenWRT dashboards load automatically from `grafana/provisioning/dashboards/`.
 
+The dashboards include variables for `router`, `wan_interface`, `wifi24_interface`,
+`wifi5_interface`, and `vpn_interface`. Change those in Grafana first if your
+OpenWrt 24/25 router uses different interface names.
+
 ---
 
 ## Port reference
@@ -134,3 +138,7 @@ Useful for:
 docker compose pull
 docker compose up -d
 ```
+
+Router package updates are separate from this Docker stack. OpenWrt 24.10 uses
+`opkg`; OpenWrt 25.12 and newer use `apk`. Do not use `apk upgrade` on OpenWrt;
+upgrade router firmware with sysupgrade or attended sysupgrade.
