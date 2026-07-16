@@ -169,7 +169,7 @@ prometheus-node-exporter-lua-wifi_stations
 prometheus-node-exporter-lua-hostapd_stations
 ```
 
-`hostapd_stations` is preferred for per-client WiFi quality panels because it reads station data directly from hostapd. `wifi_stations` remains installed when available for compatibility, but it is driver-dependent and may return no data on some mt76 devices.
+`hostapd_stations` is preferred for per-client WiFi quality panels because it reads station data directly from hostapd. Some OpenWrt 25.x/driver combinations expose hostapd collector metadata but no station samples; the dashboards fall back to `wifi_station_*` metrics from `wifi_stations` for signal, link rates, packet rates, inactive time, and AP client counts. AP-level quality panels use `wifi_network_*` metrics from the `wifi` collector.
 
 Temperature and nftables collectors are also installed by the script as best-effort optional packages:
 
@@ -240,6 +240,7 @@ These metrics back dashboard panels that the official exporter does not provide 
 - `gateway_packet_loss{gateway}`
 - `wan_public_ip_changed`
 - `dhcpv6_lease_count`
+- `openwrt_wifi_station_connected_seconds{station,vif}`
 
 Check them on the router:
 
@@ -247,14 +248,14 @@ Check them on the router:
 /usr/bin/openwrt-grafana-monitor-metrics
 cat /var/prometheus/openwrt-grafana-monitor.prom
 LAN_IP="$(uci get network.lan.ipaddr)"
-wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'dhcp_lease|router_device_up|wan_info|packet_loss|dns_probe_success|dns_probe_duration_seconds|overlay_bytes|gateway_packet_loss|wan_public_ip_changed|dhcpv6_lease_count|node_textfile'
+wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'dhcp_lease|router_device_up|wan_info|packet_loss|dns_probe_success|dns_probe_duration_seconds|overlay_bytes|gateway_packet_loss|wan_public_ip_changed|dhcpv6_lease_count|openwrt_wifi_station_connected_seconds|node_textfile'
 ```
 
 Check optional collector metrics:
 
 ```sh
 LAN_IP="$(uci get network.lan.ipaddr)"
-wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'hostapd_station_(signal_dbm|receive_bytes_total|transmit_bytes_total|connected_seconds_total|inactive_seconds)|node_thermal_zone_temp|node_hwmon_temp_celsius|nft_counter|mwan3_interface_(up|status|score|uptime|lost)|snmp6_Ip6'
+wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'hostapd_station_(signal_dbm|receive_bytes_total|transmit_bytes_total|connected_seconds_total|inactive_seconds)|wifi_network_(quality|bitrate|noise_dbm|signal_dbm)|wifi_station_(signal_dbm|inactive_milliseconds|expected_throughput_kilobits_per_second|transmit_kilobits_per_second|receive_kilobits_per_second|transmit_packets_total|receive_packets_total|receive_bytes_total|transmit_bytes_total)|wifi_stations|node_thermal_zone_temp|node_hwmon_temp_celsius|node_scrape_collector_(success|duration_seconds)|node_textfile_mtime_seconds|nft_counter|mwan3_interface_(up|status|score|uptime|lost|age|online|offline|enabled|running|turn)|snmp6_Ip6'
 ```
 
 ## Optional SQM/Cake Metrics

@@ -436,6 +436,20 @@ fi
   echo '# HELP dhcpv6_lease_count Number of active DHCPv6/RA leases known to odhcpd.'
   echo '# TYPE dhcpv6_lease_count gauge'
   printf 'dhcpv6_lease_count %s\n' "$([ -r /tmp/hosts/odhcpd ] && wc -l < /tmp/hosts/odhcpd || echo 0)"
+
+  echo '# HELP openwrt_wifi_station_connected_seconds WiFi station connected time from iw station dump.'
+  echo '# TYPE openwrt_wifi_station_connected_seconds gauge'
+  if command -v iw >/dev/null 2>&1; then
+    for wifi_iface in $(iw dev 2>/dev/null | awk '/Interface/ {iface=$2} /type AP/ {print iface}'); do
+      iw dev "$wifi_iface" station dump 2>/dev/null | awk -v iface="$wifi_iface" '
+        function esc(v) { gsub(/\\/,"\\\\",v); gsub(/"/,"\\\"",v); return v }
+        /^Station / { station = toupper($2) }
+        /^[ \t]*connected time:/ && station != "" && $3 ~ /^[0-9]+$/ {
+          printf "openwrt_wifi_station_connected_seconds{station=\"%s\",vif=\"%s\"} %s\n", esc(station), esc(iface), $3
+        }
+      '
+    done
+  fi
 } >"$TMP_FILE"
 
 mv "$TMP_FILE" "$OUT_FILE"

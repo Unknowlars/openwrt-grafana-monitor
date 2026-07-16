@@ -709,7 +709,77 @@
       "gridPos": {
         "x": 12,
         "y": 17,
-        "w": 6,
+        "w": 4,
+        "h": 6
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "stat",
+      "id": 51,
+      "title": "DNS Probe Duration",
+      "description": "DNS probe duration from the router textfile collector. The BusyBox implementation reports whole seconds.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "dns_probe_duration_seconds{job=\"openwrt\", router=\"$router\"}",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 17,
+        "w": 4,
         "h": 6
       },
       "options": {
@@ -793,9 +863,9 @@
         "overrides": []
       },
       "gridPos": {
-        "x": 18,
+        "x": 20,
         "y": 17,
-        "w": 6,
+        "w": 4,
         "h": 6
       },
       "options": {
@@ -880,6 +950,72 @@
           "expr": "mwan3_interface_lost{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "",
           "refId": "D",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mwan3_interface_age{job=\"openwrt\", router=\"$router\"}",
+          "legendFormat": "",
+          "refId": "E",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mwan3_interface_online{job=\"openwrt\", router=\"$router\"}",
+          "legendFormat": "",
+          "refId": "F",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mwan3_interface_offline{job=\"openwrt\", router=\"$router\"}",
+          "legendFormat": "",
+          "refId": "G",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mwan3_interface_enabled{job=\"openwrt\", router=\"$router\"}",
+          "legendFormat": "",
+          "refId": "H",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mwan3_interface_running{job=\"openwrt\", router=\"$router\"}",
+          "legendFormat": "",
+          "refId": "I",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mwan3_interface_turn{job=\"openwrt\", router=\"$router\"}",
+          "legendFormat": "",
+          "refId": "J",
           "format": "table",
           "instant": true
         }
@@ -1512,6 +1648,276 @@
       "pluginVersion": "12.4.0"
     },
     {
+      "type": "timeseries",
+      "id": 12,
+      "title": "WiFi AP Signal & Noise",
+      "description": "AP-level signal and noise from the optional wifi collector. Empty when the collector is unavailable.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "wifi_network_signal_dbm{job=\"openwrt\", router=\"$router\"}",
+          "legendFormat": "signal {{ssid}} {{ifname}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "wifi_network_noise_dbm{job=\"openwrt\", router=\"$router\"}",
+          "legendFormat": "noise {{ssid}} {{ifname}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "unit": "dBm",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 8,
+        "h": 7
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [],
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "timeseries",
+      "id": 13,
+      "title": "WiFi AP Quality",
+      "description": "AP-level quality percentage from the optional wifi collector.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "wifi_network_quality{job=\"openwrt\", router=\"$router\"}",
+          "legendFormat": "{{ssid}} {{ifname}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 48,
+        "w": 8,
+        "h": 7
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [],
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "timeseries",
+      "id": 14,
+      "title": "WiFi AP Bitrate",
+      "description": "AP-level bitrate from the optional wifi collector. The collector reports kilobits/sec, so the query converts to bits/sec.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "wifi_network_bitrate{job=\"openwrt\", router=\"$router\"} * 1000",
+          "legendFormat": "{{ssid}} {{ifname}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "unit": "bps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 48,
+        "w": 8,
+        "h": 7
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [],
+      "pluginVersion": "12.4.0"
+    },
+    {
       "type": "row",
       "id": 20,
       "title": "LAN & Internal Interfaces",
@@ -1519,7 +1925,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 48,
+        "y": 55,
         "w": 24,
         "h": 1
       }
@@ -1589,7 +1995,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 56,
         "w": 12,
         "h": 8
       },
@@ -1676,7 +2082,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 49,
+        "y": 56,
         "w": 12,
         "h": 8
       },
@@ -1706,7 +2112,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 57,
+        "y": 64,
         "w": 24,
         "h": 1
       }
@@ -1785,8 +2191,8 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 58,
-        "w": 12,
+        "y": 65,
+        "w": 8,
         "h": 7
       },
       "options": {
@@ -1880,9 +2286,105 @@
         "overrides": []
       },
       "gridPos": {
-        "x": 12,
-        "y": 58,
-        "w": 12,
+        "x": 8,
+        "y": 65,
+        "w": 8,
+        "h": 7
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [],
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "timeseries",
+      "id": 73,
+      "title": "IPv6 Octets",
+      "description": "Curated IPv6 byte counters from the optional snmp6 collector.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(snmp6_Ip6InOctets{job=\"openwrt\", router=\"$router\"}[$__rate_interval])",
+          "legendFormat": "In bytes {{device}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(snmp6_Ip6OutOctets{job=\"openwrt\", router=\"$router\"}[$__rate_interval])",
+          "legendFormat": "Out bytes {{device}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "unit": "Bps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 65,
+        "w": 8,
         "h": 7
       },
       "options": {
@@ -1911,7 +2413,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 65,
+        "y": 72,
         "w": 24,
         "h": 1
       }
@@ -1990,7 +2492,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 66,
+        "y": 73,
         "w": 12,
         "h": 7
       },
@@ -2086,7 +2588,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 66,
+        "y": 73,
         "w": 12,
         "h": 7
       },
@@ -2116,7 +2618,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 73,
+        "y": 80,
         "w": 24,
         "h": 1
       }
@@ -2218,7 +2720,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 74,
+        "y": 81,
         "w": 24,
         "h": 8
       },

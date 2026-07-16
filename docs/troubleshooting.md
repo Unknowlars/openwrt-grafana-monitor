@@ -70,7 +70,7 @@ The Devices and WAN info panels depend on this repo's textfile metrics:
 ls -l /var/prometheus
 cat /var/prometheus/openwrt-grafana-monitor.prom
 LAN_IP="$(uci get network.lan.ipaddr)"
-wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'node_textfile|dhcp_lease|router_device_up|wan_info|packet_loss|dns_probe_success|dns_probe_duration_seconds|overlay_bytes|gateway_packet_loss|wan_public_ip_changed|dhcpv6_lease_count'
+wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'node_textfile|dhcp_lease|router_device_up|wan_info|packet_loss|dns_probe_success|dns_probe_duration_seconds|overlay_bytes|gateway_packet_loss|wan_public_ip_changed|dhcpv6_lease_count|openwrt_wifi_station_connected_seconds'
 ```
 
 If `node_textfile_mtime_seconds` is missing, install the textfile collector package:
@@ -85,11 +85,11 @@ apk add prometheus-node-exporter-lua-textfile
 
 ### 3. Check optional collectors
 
-Panels for WiFi clients, temperature, nftables counters, mwan3, and IPv6 counters depend on optional packages. Missing metrics usually means the package is unavailable on your feed, the feature is not installed, or the device does not expose that data.
+Panels for WiFi clients, WiFi AP quality, temperature, nftables counters, mwan3, and IPv6 counters depend on optional packages. Missing metrics usually means the package is unavailable on your feed, the feature is not installed, or the device does not expose that data. For WiFi clients, `hostapd_station_*` is preferred, but the dashboards fall back to `wifi_station_*` when hostapd exposes collector metadata without station samples. AP-level quality uses `wifi_network_*`.
 
 ```sh
 LAN_IP="$(uci get network.lan.ipaddr)"
-wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'hostapd_station_(signal_dbm|receive_bytes_total|transmit_bytes_total|connected_seconds_total|inactive_seconds)|node_thermal_zone_temp|node_hwmon_temp_celsius|nft_counter|mwan3_interface_(up|status|score|uptime|lost)|snmp6_Ip6'
+wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'hostapd_station_(signal_dbm|receive_bytes_total|transmit_bytes_total|connected_seconds_total|inactive_seconds)|wifi_network_(quality|bitrate|noise_dbm|signal_dbm)|wifi_station_(signal_dbm|inactive_milliseconds|expected_throughput_kilobits_per_second|transmit_kilobits_per_second|receive_kilobits_per_second|transmit_packets_total|receive_packets_total|receive_bytes_total|transmit_bytes_total)|wifi_stations|node_thermal_zone_temp|node_hwmon_temp_celsius|node_scrape_collector_(success|duration_seconds)|node_textfile_mtime_seconds|nft_counter|mwan3_interface_(up|status|score|uptime|lost|age|online|offline|enabled|running|turn)|snmp6_Ip6'
 ```
 
 If the package is missing, install the collector that matches the panel:

@@ -9,13 +9,15 @@ Full observability stack for OpenWrt routers: metrics, logs, and dashboards in a
 | | |
 |---|---|
 | **CPU & memory** | Load average, memory usage, free memory |
-| **System health** | CPU temperature, overlay flash usage, uptime, reboot count, file descriptors |
-| **Network** | Per-interface RX/TX, WAN, LAN, WiFi AP, VPN, errors, drops, DNS probe, gateway packet loss |
-| **Devices** | Online device count, DHCP lease table, WiFi client signal, NAT traffic top-10 |
+| **System health** | CPU temperature, overlay flash usage, uptime, reboot count, file descriptors, exporter collector health, metric inventory |
+| **Network** | Per-interface RX/TX, WAN, LAN, WiFi AP quality, VPN, errors, drops, DNS probe, gateway packet loss |
+| **Devices** | Online device count, DHCP lease table, WiFi client signal/link rates, NAT traffic top-10 |
 | **NAT & firewall** | Active conntrack sessions, limit usage, optional named nftables counters, optional mwan3/IPv6/SQM rows |
 | **Logs** | Syslog stream, DHCP messages, firewall drops, failed SSH logins, kernel messages |
 
 4 pre-built dashboards: Overview, Network, Devices, Logs.
+
+The Overview dashboard includes a metric inventory table that lists every sampled Prometheus metric name for the router. High-signal dashboard panels stay curated so raw low-level collectors such as `node_netstat_*` and the larger `snmp6_*` family do not make the main dashboards unreadable.
 
 > Tested on ASUS RT-AX53U (MediaTek MT7621) with OpenWrt 24.10.3. Updated for OpenWrt 24.10/opkg and OpenWrt 25.12/apk compatibility.
 
@@ -49,7 +51,7 @@ The script:
 
 - Installs `prometheus-node-exporter-lua` using `opkg` or `apk`.
 - Enables official exporter collectors plus the textfile collector.
-- Adds this repo's custom textfile metrics for DHCP leases, device status, WAN info, packet loss, DNS probe health, gateway health, overlay usage, DHCPv6 lease count, and public IP change events.
+- Adds this repo's custom textfile metrics for DHCP leases, device status, WAN info, packet loss, DNS probe health, gateway health, overlay usage, DHCPv6 lease count, WiFi station connected time, and public IP change events.
 - Configures the exporter to listen on the LAN interface at `:9100`.
 - Configures OpenWrt remote syslog to the monitoring host.
 

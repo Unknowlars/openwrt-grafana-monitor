@@ -31,6 +31,7 @@ Key metrics confirmed live:
   gateway_packet_loss
   wan_public_ip_changed
   dhcpv6_lease_count
+  openwrt_wifi_station_connected_seconds{station, vif}
   sqm_backlog_bytes / sqm_dropped_packets_total / sqm_overlimits_total
 """
 
@@ -516,6 +517,54 @@ def build_overview():
         x=18, y=y, w=6, h=4, unit="short",
         desc="Number of active DHCP leases (devices with an IP from the router)",
         thresholds=[{"color": "blue", "value": 0}]))
+    y += 4
+
+    panels.append(row_panel(25, "Exporter Health", y))
+    y += 1
+
+    panels.append(stat(26, "Failed Collectors",
+        'count(node_scrape_collector_success{job="openwrt", router="$router"} == 0)',
+        x=0, y=y, w=6, h=5, unit="short",
+        desc="Collectors reporting failure in prometheus-node-exporter-lua.",
+        thresholds=[
+            {"color": "green", "value": 0},
+            {"color": "red", "value": 1},
+        ]))
+
+    panels.append(stat(27, "Textfile Age",
+        'time() - node_textfile_mtime_seconds{job="openwrt", router="$router", file=~".*openwrt-grafana-monitor.prom"}',
+        x=6, y=y, w=6, h=5, unit="s",
+        desc="Age of this repo's custom textfile metrics. It should normally stay near the cron cadence.",
+        thresholds=[
+            {"color": "green", "value": 0},
+            {"color": "yellow", "value": 120},
+            {"color": "red", "value": 300},
+        ],
+        graph=True))
+
+    panels.append(ts(28, "Collector Duration",
+        targets=[tgt(
+            'node_scrape_collector_duration_seconds{job="openwrt", router="$router"}',
+            "{{collector}}", "A",
+        )],
+        x=12, y=y, w=12, h=5, unit="s",
+        desc="Exporter collector runtime. Sustained spikes can make scrapes slow or incomplete."))
+    y += 5
+
+    panels.append(table(29, "OpenWrt Metric Inventory",
+        targets=[tgt(
+            'count by(__name__) ({job="openwrt", router="$router"})',
+            "", "A", fmt="table", instant=True,
+        )],
+        x=0, y=y, w=24, h=9,
+        desc="All sampled Prometheus metric names currently collected for this router, with series count per metric. Use this as a coverage inventory for low-level metrics not worth graphing individually.",
+        transforms=[
+            {"id": "organize", "options": {
+                "excludeByName": {"Time": True},
+                "renameByName": {"__name__": "Metric", "Value": "Series Count"},
+            }},
+        ],
+        sort_col="Metric", sort_desc=False))
 
     return make_dashboard(
         uid="openwrt-overview",
@@ -611,11 +660,22 @@ def build_network():
 
     panels.append(stat(50, "DNS Probe",
         'dns_probe_success{job="openwrt", router="$router"}',
-        x=12, y=y, w=6, h=6, unit="short",
+        x=12, y=y, w=4, h=6, unit="short",
         desc="DNS resolution probe for the configured host. 1 = successful, 0 = failed.",
         thresholds=[
             {"color": "red", "value": 0},
             {"color": "green", "value": 1},
+        ],
+        graph=True))
+
+    panels.append(stat(51, "DNS Probe Duration",
+        'dns_probe_duration_seconds{job="openwrt", router="$router"}',
+        x=16, y=y, w=4, h=6, unit="s",
+        desc="DNS probe duration from the router textfile collector. The BusyBox implementation reports whole seconds.",
+        thresholds=[
+            {"color": "green", "value": 0},
+            {"color": "yellow", "value": 1},
+            {"color": "red", "value": 5},
         ],
         graph=True))
 
@@ -624,7 +684,7 @@ def build_network():
             'sum by(name) (rate(nft_counter_packets{job="openwrt", router="$router"}[$__rate_interval]))',
             "{{name}}", "A",
         )],
-        x=18, y=y, w=6, h=6, unit="pps",
+        x=20, y=y, w=4, h=6, unit="pps",
         desc="Packet rate from explicitly named nftables counters. Add only bounded counters such as WAN reject/drop rules."))
     y += 6
 
@@ -638,6 +698,12 @@ def build_network():
             tgt('mwan3_interface_score{job="openwrt", router="$router"}', "", "B", fmt="table", instant=True),
             tgt('mwan3_interface_uptime{job="openwrt", router="$router"}', "", "C", fmt="table", instant=True),
             tgt('mwan3_interface_lost{job="openwrt", router="$router"}', "", "D", fmt="table", instant=True),
+            tgt('mwan3_interface_age{job="openwrt", router="$router"}', "", "E", fmt="table", instant=True),
+            tgt('mwan3_interface_online{job="openwrt", router="$router"}', "", "F", fmt="table", instant=True),
+            tgt('mwan3_interface_offline{job="openwrt", router="$router"}', "", "G", fmt="table", instant=True),
+            tgt('mwan3_interface_enabled{job="openwrt", router="$router"}', "", "H", fmt="table", instant=True),
+            tgt('mwan3_interface_running{job="openwrt", router="$router"}', "", "I", fmt="table", instant=True),
+            tgt('mwan3_interface_turn{job="openwrt", router="$router"}', "", "J", fmt="table", instant=True),
         ],
         x=0, y=y, w=10, h=7,
         desc="Optional mwan3 collector metrics. This table is empty when mwan3 is not installed.",
@@ -717,6 +783,33 @@ def build_network():
         desc="Traffic on the configured 2.4 GHz and 5 GHz WiFi access point interfaces"))
     y += 8
 
+    panels.append(ts(12, "WiFi AP Signal & Noise",
+        targets=[
+            tgt('wifi_network_signal_dbm{job="openwrt", router="$router"}',
+                "signal {{ssid}} {{ifname}}", "A"),
+            tgt('wifi_network_noise_dbm{job="openwrt", router="$router"}',
+                "noise {{ssid}} {{ifname}}", "B"),
+        ],
+        x=0, y=y, w=8, h=7, unit="dBm",
+        desc="AP-level signal and noise from the optional wifi collector. Empty when the collector is unavailable."))
+
+    panels.append(ts(13, "WiFi AP Quality",
+        targets=[tgt(
+            'wifi_network_quality{job="openwrt", router="$router"}',
+            "{{ssid}} {{ifname}}", "A",
+        )],
+        x=8, y=y, w=8, h=7, unit="percent",
+        desc="AP-level quality percentage from the optional wifi collector."))
+
+    panels.append(ts(14, "WiFi AP Bitrate",
+        targets=[tgt(
+            'wifi_network_bitrate{job="openwrt", router="$router"} * 1000',
+            "{{ssid}} {{ifname}}", "A",
+        )],
+        x=16, y=y, w=8, h=7, unit="bps",
+        desc="AP-level bitrate from the optional wifi collector. The collector reports kilobits/sec, so the query converts to bits/sec."))
+    y += 7
+
     # ── LAN section ──────────────────────────────────────────────────────────
     panels.append(row_panel(20, "LAN & Internal Interfaces", y))
     y += 1
@@ -747,7 +840,7 @@ def build_network():
             tgt('rate(snmp6_Ip6OutRequests{job="openwrt", router="$router"}[$__rate_interval])',
                 "Out requests {{device}}", "B"),
         ],
-        x=0, y=y, w=12, h=7, unit="pps",
+        x=0, y=y, w=8, h=7, unit="pps",
         desc="Curated IPv6 packet counters from the optional snmp6 collector. Empty when snmp6 is unavailable."))
 
     panels.append(ts(72, "IPv6 Discards",
@@ -757,8 +850,18 @@ def build_network():
             tgt('rate(snmp6_Ip6OutDiscards{job="openwrt", router="$router"}[$__rate_interval])',
                 "Out discards {{device}}", "B"),
         ],
-        x=12, y=y, w=12, h=7, unit="pps",
+        x=8, y=y, w=8, h=7, unit="pps",
         desc="Optional IPv6 discard counters. Non-zero sustained rates can indicate path or forwarding issues."))
+
+    panels.append(ts(73, "IPv6 Octets",
+        targets=[
+            tgt('rate(snmp6_Ip6InOctets{job="openwrt", router="$router"}[$__rate_interval])',
+                "In bytes {{device}}", "A"),
+            tgt('rate(snmp6_Ip6OutOctets{job="openwrt", router="$router"}[$__rate_interval])',
+                "Out bytes {{device}}", "B"),
+        ],
+        x=16, y=y, w=8, h=7, unit="Bps",
+        desc="Curated IPv6 byte counters from the optional snmp6 collector."))
     y += 7
 
     # ── Tailscale section ─────────────────────────────────────────────────────
@@ -826,13 +929,72 @@ def build_network():
     )
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# DASHBOARD 3 — DEVICES (replaces WiFi dashboard)
-# Uses router_device_up and dhcp_lease since wifi_station_* yields no data
+# DASHBOARD 3 — DEVICES
+# Uses router_device_up/dhcp_lease plus optional WiFi station collectors.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def build_devices():
     panels = []
     y = 0
+
+    def wifi_station_fallback_expr(hostapd_metric, wifi_metric):
+        hostapd = f'{hostapd_metric}{{job="openwrt", router="$router"}}'
+        wifi = (
+            f'label_replace(label_replace({wifi_metric}{{job="openwrt", router="$router"}}, '
+            f'"station", "$1", "mac", "(.+)"), "vif", "$1", "ifname", "(.+)")'
+        )
+        return f'{hostapd} or ({wifi} unless on(job, router) {hostapd})'
+
+    def wifi_station_label_expr(expr):
+        return (
+            f'label_replace(label_replace({expr}, '
+            f'"station", "$1", "mac", "(.+)"), "vif", "$1", "ifname", "(.+)")'
+        )
+
+    def wifi_station_rate_bps_expr(hostapd_metric, wifi_bytes_metric, wifi_kbits_metric):
+        hostapd = f'rate({hostapd_metric}{{job="openwrt", router="$router"}}[$__rate_interval]) * 8'
+        wifi_bytes = wifi_station_label_expr(
+            f'rate({wifi_bytes_metric}{{job="openwrt", router="$router"}}[$__rate_interval]) * 8'
+        )
+        wifi_kbits = wifi_station_label_expr(
+            f'{wifi_kbits_metric}{{job="openwrt", router="$router"}} * 1000'
+        )
+        byte_sources = f'({hostapd} or {wifi_bytes})'
+        return (
+            f'{hostapd} '
+            f'or ({wifi_bytes} unless on(job, router) {hostapd}) '
+            f'or ({wifi_kbits} unless on(job, router) {byte_sources})'
+        )
+
+    wifi_signal_expr = wifi_station_fallback_expr(
+        "hostapd_station_signal_dbm",
+        "wifi_station_signal_dbm",
+    )
+    wifi_rx_rate_expr = wifi_station_rate_bps_expr(
+        "hostapd_station_receive_bytes_total",
+        "wifi_station_receive_bytes_total",
+        "wifi_station_receive_kilobits_per_second",
+    )
+    wifi_tx_rate_expr = wifi_station_rate_bps_expr(
+        "hostapd_station_transmit_bytes_total",
+        "wifi_station_transmit_bytes_total",
+        "wifi_station_transmit_kilobits_per_second",
+    )
+    hostapd_inactive = 'hostapd_station_inactive_seconds{job="openwrt", router="$router"}'
+    wifi_inactive = (
+        'label_replace(label_replace(wifi_station_inactive_milliseconds{job="openwrt", router="$router"} / 1000, '
+        '"station", "$1", "mac", "(.+)"), "vif", "$1", "ifname", "(.+)")'
+    )
+    wifi_inactive_expr = f'{hostapd_inactive} or ({wifi_inactive} unless on(job, router) {hostapd_inactive})'
+    hostapd_connected = 'hostapd_station_connected_seconds_total{job="openwrt", router="$router"}'
+    openwrt_connected = 'openwrt_wifi_station_connected_seconds{job="openwrt", router="$router"}'
+    wifi_connected_expr = f'{hostapd_connected} or ({openwrt_connected} unless on(job, router) {hostapd_connected})'
+    wifi_client_count_expr = (
+        'count by(job, router, vif, frequency, channel) '
+        '(hostapd_station_signal_dbm{job="openwrt", router="$router"}) '
+        'or (label_replace(wifi_stations{job="openwrt", router="$router"}, "vif", "$1", "ifname", "(.+)") '
+        'unless on(job, router) hostapd_station_signal_dbm{job="openwrt", router="$router"})'
+    )
 
     # ── Stats row ────────────────────────────────────────────────────────────
     panels.append(stat(1, "Online Devices",
@@ -921,34 +1083,34 @@ def build_devices():
 
     panels.append(ts(13, "WiFi Client Signal",
         targets=[tgt(
-            'hostapd_station_signal_dbm{job="openwrt", router="$router"}',
-            "{{station}} {{ssid}}", "A",
+            wifi_signal_expr,
+            "{{station}} {{vif}}", "A",
         )],
         x=0, y=y, w=12, h=8, unit="dBm",
-        desc="Per-client signal reported by hostapd_stations. Client MAC addresses are exposed as labels.",
+        desc="Per-client signal from hostapd_stations, falling back to wifi_stations when hostapd exposes no samples. Client MAC addresses are exposed as labels.",
         calcs=["lastNotNull", "min"]))
 
     panels.append(ts(15, "WiFi Client RX/TX Rate",
         targets=[
-            tgt('rate(hostapd_station_receive_bytes_total{job="openwrt", router="$router"}[$__rate_interval])',
-                "RX {{station}} {{ssid}}", "A"),
-            tgt('rate(hostapd_station_transmit_bytes_total{job="openwrt", router="$router"}[$__rate_interval])',
-                "TX {{station}} {{ssid}}", "B"),
+            tgt(wifi_rx_rate_expr,
+                "RX {{station}} {{vif}}", "A"),
+            tgt(wifi_tx_rate_expr,
+                "TX {{station}} {{vif}}", "B"),
         ],
-        x=12, y=y, w=12, h=8, unit="Bps",
-        desc="Per-station traffic from hostapd_stations. The station label is a client MAC address."))
+        x=12, y=y, w=12, h=8, unit="bps",
+        desc="Per-station rate in bits/sec. Byte counters are preferred when exposed; otherwise the panel falls back to sampled wifi_stations link rates. The station label is a client MAC address."))
     y += 8
 
     panels.append(table(14, "Connected WiFi Stations",
         targets=[tgt(
-            'hostapd_station_signal_dbm{job="openwrt", router="$router"}',
+            wifi_signal_expr,
             "", "A", fmt="table", instant=True,
         )],
         x=0, y=y, w=8, h=8,
-        desc="Currently connected WiFi stations from hostapd. Availability depends on the optional hostapd_stations collector.",
+        desc="Currently connected WiFi stations from hostapd_stations or wifi_stations. Availability depends on optional WiFi collectors.",
         transforms=[
             {"id": "organize", "options": {
-                "excludeByName": {"Time": True, "__name__": True, "job": True, "router": True},
+                "excludeByName": {"Time": True, "__name__": True, "job": True, "router": True, "mac": True, "ifname": True},
                 "renameByName": {
                     "station": "Station",
                     "ssid": "SSID",
@@ -964,11 +1126,11 @@ def build_devices():
 
     panels.append(table(16, "WiFi Connected Duration",
         targets=[tgt(
-            'hostapd_station_connected_seconds_total{job="openwrt", router="$router"}',
+            wifi_connected_expr,
             "", "A", fmt="table", instant=True,
         )],
         x=8, y=y, w=8, h=8,
-        desc="Connected duration by station from the optional hostapd_stations collector.",
+        desc="Connected duration by station from hostapd_stations, falling back to this repo's iw-based textfile metric when needed.",
         transforms=[
             {"id": "organize", "options": {
                 "excludeByName": {"Time": True, "__name__": True, "job": True, "router": True},
@@ -986,14 +1148,14 @@ def build_devices():
 
     panels.append(table(17, "WiFi Inactive Seconds",
         targets=[tgt(
-            'hostapd_station_inactive_seconds{job="openwrt", router="$router"}',
+            wifi_inactive_expr,
             "", "A", fmt="table", instant=True,
         )],
         x=16, y=y, w=8, h=8,
-        desc="Inactive seconds by station. High values can indicate idle or poor-quality clients.",
+        desc="Inactive seconds by station from hostapd_stations or wifi_stations. High values can indicate idle or poor-quality clients.",
         transforms=[
             {"id": "organize", "options": {
-                "excludeByName": {"Time": True, "__name__": True, "job": True, "router": True},
+                "excludeByName": {"Time": True, "__name__": True, "job": True, "router": True, "mac": True, "ifname": True},
                 "renameByName": {
                     "station": "Station",
                     "ssid": "SSID",
@@ -1007,14 +1169,37 @@ def build_devices():
         sort_col="Inactive Seconds", sort_desc=True))
     y += 8
 
-    panels.append(bargauge(18, "WiFi Clients by Frequency",
+    panels.append(bargauge(18, "WiFi Clients by AP",
         targets=[tgt(
-            'count by(frequency, channel) (hostapd_station_signal_dbm{job="openwrt", router="$router"})',
-            "{{frequency}} MHz ch {{channel}}", "A",
+            wifi_client_count_expr,
+            "{{vif}} {{frequency}} MHz ch {{channel}}", "A",
         )],
         x=0, y=y, w=24, h=5, unit="short",
-        desc="Client counts grouped by hostapd frequency/channel labels when available."))
+        desc="Client counts grouped by AP. Hostapd frequency/channel labels are used when available; otherwise wifi_stations ifname is used."))
     y += 5
+
+    panels.append(ts(23, "WiFi Station Link Rate",
+        targets=[
+            tgt(wifi_station_label_expr('wifi_station_receive_kilobits_per_second{job="openwrt", router="$router"} * 1000'),
+                "RX {{station}} {{vif}}", "A"),
+            tgt(wifi_station_label_expr('wifi_station_transmit_kilobits_per_second{job="openwrt", router="$router"} * 1000'),
+                "TX {{station}} {{vif}}", "B"),
+            tgt(wifi_station_label_expr('wifi_station_expected_throughput_kilobits_per_second{job="openwrt", router="$router"} * 1000'),
+                "Expected {{station}} {{vif}}", "C"),
+        ],
+        x=0, y=y, w=12, h=7, unit="bps",
+        desc="Per-station PHY link rates and expected throughput from wifi_stations. Empty when the optional collector is unavailable."))
+
+    panels.append(ts(24, "WiFi Station Packet Rate",
+        targets=[
+            tgt(wifi_station_label_expr('rate(wifi_station_receive_packets_total{job="openwrt", router="$router"}[$__rate_interval])'),
+                "RX {{station}} {{vif}}", "A"),
+            tgt(wifi_station_label_expr('rate(wifi_station_transmit_packets_total{job="openwrt", router="$router"}[$__rate_interval])'),
+                "TX {{station}} {{vif}}", "B"),
+        ],
+        x=12, y=y, w=12, h=7, unit="pps",
+        desc="Per-station WiFi packet rate from wifi_stations. Empty when the optional collector is unavailable."))
+    y += 7
 
     # ── Device tables ─────────────────────────────────────────────────────────
     panels.append(row_panel(20, "Device Details", y))
