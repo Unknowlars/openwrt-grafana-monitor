@@ -61,7 +61,7 @@
       "type": "stat",
       "id": 1,
       "title": "Errors (1h)",
-      "description": "Log lines containing 'error' in the last hour",
+      "description": "Log lines containing 'error' in the last hour, excluding cron command-start noise",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -72,7 +72,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} |~ \"(?i)error|err\" [1h])",
+          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} !~ \"^USER [^ ]+ pid [0-9]+ cmd \" |~ \"(?i)error|err\" [1h])",
           "refId": "A",
           "queryType": "range"
         }
@@ -130,7 +130,7 @@
       "type": "stat",
       "id": 2,
       "title": "Warnings (1h)",
-      "description": "Log lines containing 'warn' in the last hour",
+      "description": "Log lines containing 'warn' in the last hour, excluding cron command-start noise",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -141,7 +141,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} |~ \"(?i)warn\" [1h])",
+          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} !~ \"^USER [^ ]+ pid [0-9]+ cmd \" |~ \"(?i)warn\" [1h])",
           "refId": "A",
           "queryType": "range"
         }
@@ -519,8 +519,8 @@
     {
       "type": "timeseries",
       "id": 7,
-      "title": "Log Rate by Type",
-      "description": "Rate of log lines over time, grouped by severity level",
+      "title": "Log Rate by Syslog Severity",
+      "description": "Rate of non-cron log lines over time, grouped by syslog severity. BusyBox cron command-start records are intentionally excluded.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -531,7 +531,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "sum by(level) (rate({job=\"openwrt-syslog\", router=\"$router\"}[$__rate_interval]))",
+          "expr": "sum by(message_severity) (rate({job=\"openwrt-syslog\", router=\"$router\"} !~ \"^USER [^ ]+ pid [0-9]+ cmd \"[$__rate_interval]))",
           "refId": "A",
           "queryType": "range"
         }
@@ -732,7 +732,7 @@
       "type": "logs",
       "id": 12,
       "title": "Error & Warning Events",
-      "description": "All log lines containing error, warning, fail, or critical keywords.",
+      "description": "Log lines containing error, warning, fail, or critical keywords, excluding cron command-start records.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -743,7 +743,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "{job=\"openwrt-syslog\", router=\"$router\"} |~ \"(?i)error|warn|fail|critical\"",
+          "expr": "{job=\"openwrt-syslog\", router=\"$router\"} !~ \"^USER [^ ]+ pid [0-9]+ cmd \" |~ \"(?i)error|warn|fail|critical\"",
           "refId": "A",
           "queryType": "range"
         }

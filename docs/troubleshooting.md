@@ -32,7 +32,8 @@ If an optional collector fails, the setup script continues. The required path is
 From the router:
 
 ```sh
-wget -qO- http://127.0.0.1:9100/metrics | head
+LAN_IP="$(uci get network.lan.ipaddr)"
+wget -qO- "http://$LAN_IP:9100/metrics" | head
 /etc/init.d/prometheus-node-exporter-lua status
 ```
 
@@ -68,7 +69,8 @@ The Devices and WAN info panels depend on this repo's textfile metrics:
 /usr/bin/openwrt-grafana-monitor-metrics
 ls -l /var/prometheus
 cat /var/prometheus/openwrt-grafana-monitor.prom
-wget -qO- http://127.0.0.1:9100/metrics | grep -E 'node_textfile|dhcp_lease|router_device_up|wan_info|packet_loss|overlay_bytes|gateway_packet_loss|wan_public_ip_changed|dhcpv6_lease_count'
+LAN_IP="$(uci get network.lan.ipaddr)"
+wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'node_textfile|dhcp_lease|router_device_up|wan_info|packet_loss|dns_probe_success|dns_probe_duration_seconds|overlay_bytes|gateway_packet_loss|wan_public_ip_changed|dhcpv6_lease_count'
 ```
 
 If `node_textfile_mtime_seconds` is missing, install the textfile collector package:
@@ -83,20 +85,21 @@ apk add prometheus-node-exporter-lua-textfile
 
 ### 3. Check optional collectors
 
-Panels for WiFi client signal, temperature, and nftables counters depend on optional packages. Missing metrics usually means the package is unavailable on your feed or the device does not expose that data.
+Panels for WiFi clients, temperature, nftables counters, mwan3, and IPv6 counters depend on optional packages. Missing metrics usually means the package is unavailable on your feed, the feature is not installed, or the device does not expose that data.
 
 ```sh
-wget -qO- http://127.0.0.1:9100/metrics | grep -E 'hostapd_station|node_thermal_zone_temp|node_hwmon_temp_celsius|nft_counter'
+LAN_IP="$(uci get network.lan.ipaddr)"
+wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'hostapd_station_(signal_dbm|receive_bytes_total|transmit_bytes_total|connected_seconds_total|inactive_seconds)|node_thermal_zone_temp|node_hwmon_temp_celsius|nft_counter|mwan3_interface_(up|status|score|uptime|lost)|snmp6_Ip6'
 ```
 
 If the package is missing, install the collector that matches the panel:
 
 ```sh
 # OpenWrt 24.10
-opkg install prometheus-node-exporter-lua-hostapd_stations prometheus-node-exporter-lua-thermal prometheus-node-exporter-lua-hwmon prometheus-node-exporter-lua-nft-counters
+opkg install prometheus-node-exporter-lua-hostapd_stations prometheus-node-exporter-lua-thermal prometheus-node-exporter-lua-hwmon prometheus-node-exporter-lua-nft-counters prometheus-node-exporter-lua-mwan3 prometheus-node-exporter-lua-snmp6
 
 # OpenWrt 25.12+
-apk add prometheus-node-exporter-lua-hostapd_stations prometheus-node-exporter-lua-thermal prometheus-node-exporter-lua-hwmon prometheus-node-exporter-lua-nft-counters
+apk add prometheus-node-exporter-lua-hostapd_stations prometheus-node-exporter-lua-thermal prometheus-node-exporter-lua-hwmon prometheus-node-exporter-lua-nft-counters prometheus-node-exporter-lua-mwan3 prometheus-node-exporter-lua-snmp6
 ```
 
 ### 4. Check Alloy is scraping
@@ -164,6 +167,46 @@ SYSLOG_PORT=1514 sh /tmp/setup.sh 192.168.0.100
 curl 'http://localhost:3100/loki/api/v1/query?query={job="openwrt-syslog"}' | python3 -m json.tool
 ```
 
+## Cron Lines Show as Errors
+
+OpenWrt's BusyBox cron can emit command-start records with syslog severity `error` even when the command ran normally:
+
+```text
+USER root pid 15654 cmd /usr/bin/openwrt-grafana-monitor-metrics >/dev/null 2>&1
+```
+
+That line means cron started the command. It is not proof that the script failed. A real failure normally has additional output such as `not found`, permission errors, shell errors, or package install errors.
+
+Verify this repo's collector manually on the router:
+
+```sh
+/usr/bin/openwrt-grafana-monitor-metrics
+echo $?
+head /var/prometheus/openwrt-grafana-monitor.prom
+```
+
+Exit code `0` means the collector completed successfully. The Logs dashboard filters these cron command-start records out of the error and warning panels, but they remain visible in "All System Logs".
+
+If you migrated from an older monitoring setup and see many cron command-start lines every minute, check for legacy jobs:
+
+```sh
+crontab -l
+```
+
+The current repo only needs this cron entry for its custom textfile metrics:
+
+```cron
+* * * * * /usr/bin/openwrt-grafana-monitor-metrics >/dev/null 2>&1
+```
+
+See [Migrating From Older Router Scripts](openwrt-setup.md#migrating-from-older-router-scripts) before removing old jobs.
+
+Setup prompts before removing known old monitoring cron entries during interactive runs. To force cleanup without prompting, rerun it with:
+
+```sh
+CLEANUP_LEGACY_CRON=1 sh /tmp/setup.sh 192.168.0.100
+```
+
 ## Grafana Shows "No Data"
 
 - Set the time range to "Last 1 hour".
@@ -188,6 +231,43 @@ ssh root@192.168.0.1 "ip route | grep default; cat /proc/net/dev"
 ```
 
 Then change the Grafana dashboard variables at the top of the dashboard.
+
+For WAN-health panels, check the custom DNS and packet-loss probes:
+
+```sh
+/usr/bin/openwrt-grafana-monitor-metrics
+cat /var/prometheus/openwrt-grafana-monitor.prom | grep -E 'packet_loss|gateway_packet_loss|dns_probe_success|dns_probe_duration_seconds'
+LAN_IP="$(uci get network.lan.ipaddr)"
+wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'packet_loss|gateway_packet_loss|dns_probe_success|dns_probe_duration_seconds'
+```
+
+If `dns_probe_success` is `0`, verify router DNS resolution directly:
+
+```sh
+nslookup openwrt.org
+```
+
+If you changed `DNS_PROBE_HOST`, test that hostname instead.
+
+## Optional SQM Panels Show No Data
+
+The SQM/cake collector is disabled by default. Confirm it was enabled with real interface names:
+
+```sh
+grep -E 'ENABLE_SQM_METRICS|SQM_INTERFACES' /etc/openwrt-grafana-monitor.conf
+crontab -l | grep openwrt-grafana-monitor-sqm
+tc -s qdisc show dev eth0
+tc -s qdisc show dev ifb4eth0
+```
+
+Then run and check the collector:
+
+```sh
+/usr/bin/openwrt-grafana-monitor-sqm
+cat /var/prometheus/openwrt-grafana-monitor-sqm.prom
+LAN_IP="$(uci get network.lan.ipaddr)"
+wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'sqm_(backlog_bytes|dropped_packets_total|overlimits_total)'
+```
 
 ## Port 514 Permission Denied
 

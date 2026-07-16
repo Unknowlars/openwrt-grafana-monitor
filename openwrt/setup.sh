@@ -12,9 +12,14 @@
 #   EXPORTER_LISTEN_INTERFACE  Interface for :9100; default: lan
 #   SYSLOG_PORT                Remote syslog port; default: 514
 #   PING_TARGET                Packet-loss probe target; default: 1.1.1.1
+#   DNS_PROBE_HOST             DNS resolution probe host; default: openwrt.org
+#   DNS_PROBE_TIMEOUT          DNS probe ping fallback timeout; default: 5
 #   PUBLIC_IP_LOOKUP           Set to 1 to enable public IP lookup; default: 0
 #   PUBLIC_IP_URL              Public IP endpoint; default: https://api.ipify.org
 #   PUBLIC_IP_CHECK_INTERVAL   Public IP lookup interval in seconds; default: 900
+#   ENABLE_SQM_METRICS         Set to 1 to install optional SQM/cake metrics; default: 0
+#   SQM_INTERFACES             Space-separated SQM/IFB interfaces; default: empty
+#   CLEANUP_LEGACY_CRON        auto prompts on TTY, 1 removes, 0 keeps; default: auto
 #
 # =============================================================================
 
@@ -24,9 +29,14 @@ MONITORING_HOST="${1:-}"
 EXPORTER_LISTEN_INTERFACE="${EXPORTER_LISTEN_INTERFACE:-lan}"
 SYSLOG_PORT="${SYSLOG_PORT:-514}"
 PING_TARGET="${PING_TARGET:-1.1.1.1}"
+DNS_PROBE_HOST="${DNS_PROBE_HOST:-openwrt.org}"
+DNS_PROBE_TIMEOUT="${DNS_PROBE_TIMEOUT:-5}"
 PUBLIC_IP_LOOKUP="${PUBLIC_IP_LOOKUP:-0}"
 PUBLIC_IP_URL="${PUBLIC_IP_URL:-https://api.ipify.org}"
 PUBLIC_IP_CHECK_INTERVAL="${PUBLIC_IP_CHECK_INTERVAL:-900}"
+ENABLE_SQM_METRICS="${ENABLE_SQM_METRICS:-0}"
+SQM_INTERFACES="${SQM_INTERFACES:-}"
+CLEANUP_LEGACY_CRON="${CLEANUP_LEGACY_CRON:-auto}"
 
 REQUIRED_PACKAGES="
 prometheus-node-exporter-lua
@@ -43,6 +53,7 @@ prometheus-node-exporter-lua-hostapd_stations
 prometheus-node-exporter-lua-thermal
 prometheus-node-exporter-lua-hwmon
 prometheus-node-exporter-lua-nft-counters
+prometheus-node-exporter-lua-snmp6
 "
 
 log() {
@@ -107,6 +118,96 @@ fetch_url() {
   fi
 }
 
+is_legacy_cron_line() {
+  case "$1" in
+    *'/usr/bin/1-minute-script.sh'*|\
+    *'/usr/bin/5-minute-script.sh'*|\
+    *'/usr/bin/15-second-script.sh'*|\
+    *'/usr/bin/device-status-ping.sh'*|\
+    *'/usr/bin/new_device.sh'*|\
+    *'/usr/bin/packet-loss.sh'*|\
+    *'/usr/bin/openwrt-monitor-device-status.sh'*|\
+    *'/usr/bin/openwrt-monitor-packet-loss.sh'*|\
+    *'/usr/bin/openwrt-monitor-wan-info.sh'*|\
+    *'/usr/bin/openwrt-monitor-service-health.sh'*|\
+    *'/usr/bin/openwrt-monitor-wan-quality.sh'*|\
+    *'/usr/bin/openwrt-monitor-filesystem.sh'*|\
+    *'/usr/bin/openwrt-monitor-dhcp-pool.sh'*|\
+    *'/usr/bin/openwrt-monitor-link-health.sh'*|\
+    *'/usr/bin/openwrt-monitor-softnet.sh'*|\
+    *'/usr/bin/openwrt-monitor-ipv6-health.sh'*|\
+    *'/usr/bin/openwrt-monitor-inodes.sh'*|\
+    *'/usr/bin/openwrt-monitor-firewall-counters.sh'*|\
+    *'/usr/bin/openwrt-monitor-sqm.sh'*|\
+    *'/usr/bin/openwrt-monitor-wifi-radio.sh'*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+filter_crontab() {
+  while IFS= read -r line; do
+    case "$line" in
+      *'/usr/bin/openwrt-grafana-monitor-metrics'*) continue ;;
+      *'/usr/bin/openwrt-grafana-monitor-sqm'*) continue ;;
+    esac
+
+    if is_legacy_cron_line "$line"; then
+      if [ "$CLEANUP_LEGACY_CRON" = "1" ]; then
+        log "    Removing legacy cron job: $line" >&2
+        continue
+      fi
+      log "    WARNING: legacy monitor cron job still enabled: $line" >&2
+    fi
+
+    printf '%s\n' "$line"
+  done
+}
+
+detect_legacy_cron_jobs() {
+  found=0
+  while IFS= read -r line; do
+    if is_legacy_cron_line "$line"; then
+      log "    $line"
+      found=1
+    fi
+  done
+  [ "$found" = "1" ]
+}
+
+resolve_legacy_cron_cleanup() {
+  case "$CLEANUP_LEGACY_CRON" in
+    1|yes|YES|true|TRUE)
+      CLEANUP_LEGACY_CRON="1"
+      return
+      ;;
+    0|no|NO|false|FALSE)
+      CLEANUP_LEGACY_CRON="0"
+      return
+      ;;
+    auto|"")
+      ;;
+    *)
+      log "    WARNING: invalid CLEANUP_LEGACY_CRON='$CLEANUP_LEGACY_CRON'; using auto"
+      ;;
+  esac
+
+  CLEANUP_LEGACY_CRON="0"
+  if [ -t 0 ]; then
+    printf 'Disable these known old monitoring cron jobs? [y/N] '
+    read -r answer || answer=""
+    case "$answer" in
+      y|Y|yes|YES) CLEANUP_LEGACY_CRON="1" ;;
+    esac
+  else
+    log "    Non-interactive shell detected; keeping legacy cron jobs."
+    log "    Rerun with CLEANUP_LEGACY_CRON=1 to remove known old monitor jobs."
+  fi
+}
+
 log "==> OpenWrt Grafana Monitor setup"
 log "    Monitoring host: $MONITORING_HOST"
 log "    Package manager: $PKG_MANAGER"
@@ -143,9 +244,13 @@ mkdir -p /var/prometheus
 
 cat >/etc/openwrt-grafana-monitor.conf <<EOF
 PING_TARGET="$PING_TARGET"
+DNS_PROBE_HOST="$DNS_PROBE_HOST"
+DNS_PROBE_TIMEOUT="$DNS_PROBE_TIMEOUT"
 PUBLIC_IP_LOOKUP="$PUBLIC_IP_LOOKUP"
 PUBLIC_IP_URL="$PUBLIC_IP_URL"
 PUBLIC_IP_CHECK_INTERVAL="$PUBLIC_IP_CHECK_INTERVAL"
+ENABLE_SQM_METRICS="$ENABLE_SQM_METRICS"
+SQM_INTERFACES="$SQM_INTERFACES"
 EOF
 
 cat >/usr/bin/openwrt-grafana-monitor-metrics <<'EOF'
@@ -158,6 +263,8 @@ OUT_FILE="$OUT_DIR/openwrt-grafana-monitor.prom"
 TMP_FILE="$OUT_FILE.$$"
 
 PING_TARGET="1.1.1.1"
+DNS_PROBE_HOST="openwrt.org"
+DNS_PROBE_TIMEOUT="5"
 PUBLIC_IP_LOOKUP="0"
 PUBLIC_IP_URL="https://api.ipify.org"
 PUBLIC_IP_CHECK_INTERVAL="900"
@@ -276,6 +383,31 @@ fi
   fi
   printf 'packet_loss{target="%s"} %s\n' "$(escape_label "$PING_TARGET")" "$loss"
 
+  echo '# HELP dns_probe_success DNS resolution probe result for the configured host.'
+  echo '# TYPE dns_probe_success gauge'
+  echo '# HELP dns_probe_duration_seconds DNS resolution probe duration in whole seconds.'
+  echo '# TYPE dns_probe_duration_seconds gauge'
+  dns_success="0"
+  dns_duration=""
+  case "$DNS_PROBE_TIMEOUT" in *[!0-9]*|"") DNS_PROBE_TIMEOUT="5" ;; esac
+  dns_start="$(date +%s 2>/dev/null || echo 0)"
+  if command -v nslookup >/dev/null 2>&1; then
+    if nslookup "$DNS_PROBE_HOST" >/dev/null 2>&1; then
+      dns_success="1"
+    fi
+  elif command -v ping >/dev/null 2>&1; then
+    if ping -c 1 -W "$DNS_PROBE_TIMEOUT" "$DNS_PROBE_HOST" >/dev/null 2>&1; then
+      dns_success="1"
+    fi
+  fi
+  dns_end="$(date +%s 2>/dev/null || echo 0)"
+  case "$dns_start:$dns_end" in
+    *[!0-9:]*|0:*) dns_duration="" ;;
+    *) dns_duration="$((dns_end - dns_start))" ;;
+  esac
+  printf 'dns_probe_success{host="%s"} %s\n' "$(escape_label "$DNS_PROBE_HOST")" "$dns_success"
+  [ -n "$dns_duration" ] && printf 'dns_probe_duration_seconds{host="%s"} %s\n' "$(escape_label "$DNS_PROBE_HOST")" "$dns_duration"
+
   echo '# HELP overlay_bytes_total Total overlay rootfs_data filesystem size in bytes.'
   echo '# TYPE overlay_bytes_total gauge'
   echo '# HELP overlay_bytes_used Used overlay rootfs_data filesystem bytes.'
@@ -312,12 +444,102 @@ EOF
 chmod 0755 /usr/bin/openwrt-grafana-monitor-metrics
 /usr/bin/openwrt-grafana-monitor-metrics
 
+if [ "$ENABLE_SQM_METRICS" = "1" ]; then
+  if [ -z "$SQM_INTERFACES" ]; then
+    log "    WARNING: ENABLE_SQM_METRICS=1 but SQM_INTERFACES is empty; SQM collector will emit no interface samples."
+  fi
+
+  cat >/usr/bin/openwrt-grafana-monitor-sqm <<'EOF'
+#!/bin/sh
+set -eu
+
+CONF="/etc/openwrt-grafana-monitor.conf"
+OUT_DIR="/var/prometheus"
+OUT_FILE="$OUT_DIR/openwrt-grafana-monitor-sqm.prom"
+TMP_FILE="$OUT_FILE.$$"
+
+ENABLE_SQM_METRICS="0"
+SQM_INTERFACES=""
+
+[ -r "$CONF" ] && . "$CONF"
+
+mkdir -p "$OUT_DIR"
+
+escape_label() {
+  printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+{
+  echo '# HELP sqm_backlog_bytes SQM/cake qdisc backlog bytes by configured interface.'
+  echo '# TYPE sqm_backlog_bytes gauge'
+  echo '# HELP sqm_dropped_packets_total SQM/cake qdisc dropped packets by configured interface.'
+  echo '# TYPE sqm_dropped_packets_total counter'
+  echo '# HELP sqm_overlimits_total SQM/cake qdisc overlimits by configured interface.'
+  echo '# TYPE sqm_overlimits_total counter'
+
+  if [ "$ENABLE_SQM_METRICS" = "1" ] && [ -n "$SQM_INTERFACES" ] && command -v tc >/dev/null 2>&1; then
+    for iface in $SQM_INTERFACES; do
+      direction="egress"
+      case "$iface" in ifb*) direction="ingress" ;; esac
+      tc -s qdisc show dev "$iface" 2>/dev/null | awk \
+        -v iface="$(escape_label "$iface")" \
+        -v direction="$direction" '
+        function bytes(v, n, u) {
+          n = v
+          u = v
+          sub(/[kKmMgG]?[bB]$/, "", n)
+          sub(/^[0-9.]+/, "", u)
+          if (u == "Kb" || u == "KB" || u == "kb") return n * 1024
+          if (u == "Mb" || u == "MB" || u == "mb") return n * 1024 * 1024
+          if (u == "Gb" || u == "GB" || u == "gb") return n * 1024 * 1024 * 1024
+          return n + 0
+        }
+        /backlog / {
+          for (i = 1; i <= NF; i++) {
+            if ($i == "backlog" && (i + 1) <= NF) backlog += bytes($(i + 1))
+          }
+        }
+        /\(dropped / {
+          for (i = 1; i <= NF; i++) {
+            if ($i == "(dropped" && (i + 1) <= NF) { v = $(i + 1); gsub(/,/, "", v); dropped += v + 0 }
+            if ($i == "overlimits" && (i + 1) <= NF) overlimits += $(i + 1) + 0
+          }
+        }
+        END {
+          printf "sqm_backlog_bytes{iface=\"%s\",direction=\"%s\"} %.0f\n", iface, direction, backlog + 0
+          printf "sqm_dropped_packets_total{iface=\"%s\",direction=\"%s\"} %.0f\n", iface, direction, dropped + 0
+          printf "sqm_overlimits_total{iface=\"%s\",direction=\"%s\"} %.0f\n", iface, direction, overlimits + 0
+        }'
+    done
+  fi
+} >"$TMP_FILE"
+
+mv "$TMP_FILE" "$OUT_FILE"
+EOF
+
+  chmod 0755 /usr/bin/openwrt-grafana-monitor-sqm
+  /usr/bin/openwrt-grafana-monitor-sqm
+fi
+
 if command -v crontab >/dev/null 2>&1; then
   tmp_cron="/tmp/openwrt-grafana-monitor.cron.$$"
-  crontab -l 2>/dev/null | grep -v '/usr/bin/openwrt-grafana-monitor-metrics' >"$tmp_cron" || true
+  current_cron="/tmp/openwrt-grafana-monitor.current-cron.$$"
+  crontab -l 2>/dev/null >"$current_cron" || true
+
+  log "==> Checking for legacy monitor cron jobs..."
+  if detect_legacy_cron_jobs <"$current_cron"; then
+    resolve_legacy_cron_cleanup
+  else
+    log "    No known legacy monitor cron jobs detected."
+  fi
+
+  filter_crontab <"$current_cron" >"$tmp_cron"
   echo '* * * * * /usr/bin/openwrt-grafana-monitor-metrics >/dev/null 2>&1' >>"$tmp_cron"
+  if [ "$ENABLE_SQM_METRICS" = "1" ]; then
+    echo '* * * * * /usr/bin/openwrt-grafana-monitor-sqm >/dev/null 2>&1' >>"$tmp_cron"
+  fi
   crontab "$tmp_cron"
-  rm -f "$tmp_cron"
+  rm -f "$tmp_cron" "$current_cron"
   /etc/init.d/cron enable >/dev/null 2>&1 || true
   /etc/init.d/cron restart >/dev/null 2>&1 || true
 fi
@@ -328,11 +550,14 @@ log "==> Enabling and starting prometheus-node-exporter-lua..."
 
 sleep 2
 
-if fetch_url "http://127.0.0.1:9100/metrics" >/dev/null 2>&1; then
-  log "    OK: metrics endpoint is up at 127.0.0.1:9100/metrics"
+LAN_IP="$(uci get network.lan.ipaddr 2>/dev/null || echo '<ROUTER_IP>')"
+METRICS_URL="http://$LAN_IP:9100/metrics"
+
+if fetch_url "$METRICS_URL" >/dev/null 2>&1; then
+  log "    OK: metrics endpoint is up at $METRICS_URL"
 else
   log "    WARNING: local metrics endpoint is not responding yet."
-  log "    Check with: wget -qO- http://127.0.0.1:9100/metrics | head"
+  log "    Check with: wget -qO- $METRICS_URL | head"
 fi
 
 log "==> Configuring remote syslog to $MONITORING_HOST:$SYSLOG_PORT ..."
@@ -344,8 +569,6 @@ uci commit system
 
 /etc/init.d/log restart
 log "    OK: syslog configured"
-
-LAN_IP="$(uci get network.lan.ipaddr 2>/dev/null || echo '<ROUTER_IP>')"
 
 log ""
 log "==> Setup complete"

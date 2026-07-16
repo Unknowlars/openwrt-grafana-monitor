@@ -9,10 +9,10 @@ Full observability stack for OpenWrt routers: metrics, logs, and dashboards in a
 | | |
 |---|---|
 | **CPU & memory** | Load average, memory usage, free memory |
-| **System health** | CPU temperature, overlay flash usage, uptime, file descriptors |
-| **Network** | Per-interface RX/TX, WAN, LAN, WiFi AP, VPN, errors, drops, gateway packet loss |
+| **System health** | CPU temperature, overlay flash usage, uptime, reboot count, file descriptors |
+| **Network** | Per-interface RX/TX, WAN, LAN, WiFi AP, VPN, errors, drops, DNS probe, gateway packet loss |
 | **Devices** | Online device count, DHCP lease table, WiFi client signal, NAT traffic top-10 |
-| **NAT & firewall** | Active conntrack sessions, limit usage, optional named nftables counters |
+| **NAT & firewall** | Active conntrack sessions, limit usage, optional named nftables counters, optional mwan3/IPv6/SQM rows |
 | **Logs** | Syslog stream, DHCP messages, firewall drops, failed SSH logins, kernel messages |
 
 4 pre-built dashboards: Overview, Network, Devices, Logs.
@@ -49,9 +49,11 @@ The script:
 
 - Installs `prometheus-node-exporter-lua` using `opkg` or `apk`.
 - Enables official exporter collectors plus the textfile collector.
-- Adds this repo's custom textfile metrics for DHCP leases, device status, WAN info, packet loss, gateway health, overlay usage, DHCPv6 lease count, and public IP change events.
+- Adds this repo's custom textfile metrics for DHCP leases, device status, WAN info, packet loss, DNS probe health, gateway health, overlay usage, DHCPv6 lease count, and public IP change events.
 - Configures the exporter to listen on the LAN interface at `:9100`.
 - Configures OpenWrt remote syslog to the monitoring host.
+
+If you are migrating from an older router monitoring setup, review [Migrating From Older Router Scripts](docs/openwrt-setup.md#migrating-from-older-router-scripts). Setup auto-detects known old monitor cron jobs and prompts on interactive runs; use `CLEANUP_LEGACY_CRON=1` for unattended cleanup.
 
 Manual package equivalents:
 
@@ -69,7 +71,7 @@ apk add prometheus-node-exporter-lua prometheus-node-exporter-lua-openwrt \
   prometheus-node-exporter-lua-textfile
 ```
 
-The setup script also attempts optional collectors as best effort: WiFi AP/client metrics, hostapd station quality, thermal/hwmon temperature, and nftables counters. If a package is unavailable on your OpenWrt feed, setup continues.
+The setup script also attempts optional collectors as best effort: WiFi AP/client metrics, hostapd station quality, thermal/hwmon temperature, nftables counters, and curated IPv6 counters via `snmp6`. If a package is unavailable on your OpenWrt feed, setup continues.
 
 ### Step 2 - Monitoring Host
 
@@ -105,9 +107,14 @@ Router setup accepts these optional environment variables:
 EXPORTER_LISTEN_INTERFACE=lan
 SYSLOG_PORT=514
 PING_TARGET=1.1.1.1
+DNS_PROBE_HOST=openwrt.org
+DNS_PROBE_TIMEOUT=5
 PUBLIC_IP_LOOKUP=0
 PUBLIC_IP_URL=https://api.ipify.org
 PUBLIC_IP_CHECK_INTERVAL=900
+ENABLE_SQM_METRICS=0
+SQM_INTERFACES=
+CLEANUP_LEGACY_CRON=auto
 ```
 
 ## Architecture
@@ -135,7 +142,6 @@ Monitoring Host (Docker)
 - [OpenWrt setup guide](docs/openwrt-setup.md)
 - [Monitoring host setup](docs/monitoring-host-setup.md)
 - [Troubleshooting](docs/troubleshooting.md)
-- [Full implementation plan](PLAN.md)
 
 ## Adapting to Your Router
 

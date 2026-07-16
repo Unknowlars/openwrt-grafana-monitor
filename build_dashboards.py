@@ -20,6 +20,8 @@ Key metrics confirmed live:
   router_device_up{device, status, mac, ip}
   dhcp_lease{mac, hostname, ip}
   packet_loss{target}
+  dns_probe_success{host}
+  dns_probe_duration_seconds{host}
   wan_info{wanip, publicip, hostname}
   node_openwrt_info{board_name, model, release, ...}
   node_uname_info{release, machine, nodename}
@@ -29,6 +31,7 @@ Key metrics confirmed live:
   gateway_packet_loss
   wan_public_ip_changed
   dhcpv6_lease_count
+  sqm_backlog_bytes / sqm_dropped_packets_total / sqm_overlimits_total
 """
 
 import json
@@ -443,9 +446,18 @@ def build_overview():
 
     panels.append(stat(15, "DHCPv6 Leases",
         'dhcpv6_lease_count{job="openwrt", router="$router"}',
-        x=16, y=y, w=8, h=5, unit="short",
+        x=12, y=y, w=6, h=5, unit="short",
         desc="Active DHCPv6/RA leases known to odhcpd, when odhcpd is in use.",
         thresholds=[{"color": "blue", "value": 0}]))
+
+    panels.append(stat(16, "Reboots in Range",
+        'changes(node_boot_time_seconds{job="openwrt", router="$router"}[$__range])',
+        x=18, y=y, w=6, h=5, unit="short",
+        desc="Number of boot-time changes in the selected dashboard range.",
+        thresholds=[
+            {"color": "green", "value": 0},
+            {"color": "yellow", "value": 1},
+        ]))
     y += 5
 
     # ── Tier 4: Router info table ─────────────────────────────────────────────
@@ -597,14 +609,94 @@ def build_network():
             {"color": "yellow", "value": 1},
         ]))
 
+    panels.append(stat(50, "DNS Probe",
+        'dns_probe_success{job="openwrt", router="$router"}',
+        x=12, y=y, w=6, h=6, unit="short",
+        desc="DNS resolution probe for the configured host. 1 = successful, 0 = failed.",
+        thresholds=[
+            {"color": "red", "value": 0},
+            {"color": "green", "value": 1},
+        ],
+        graph=True))
+
     panels.append(ts(9, "Named nftables Counter Rate",
         targets=[tgt(
             'sum by(name) (rate(nft_counter_packets{job="openwrt", router="$router"}[$__rate_interval]))',
             "{{name}}", "A",
         )],
-        x=12, y=y, w=12, h=6, unit="pps",
+        x=18, y=y, w=6, h=6, unit="pps",
         desc="Packet rate from explicitly named nftables counters. Add only bounded counters such as WAN reject/drop rules."))
     y += 6
+
+    # ── Multi-WAN section ────────────────────────────────────────────────────
+    panels.append(row_panel(60, "Multi-WAN (mwan3)", y))
+    y += 1
+
+    panels.append(table(61, "mwan3 Interface Status",
+        targets=[
+            tgt('mwan3_interface_status{job="openwrt", router="$router"}', "", "A", fmt="table", instant=True),
+            tgt('mwan3_interface_score{job="openwrt", router="$router"}', "", "B", fmt="table", instant=True),
+            tgt('mwan3_interface_uptime{job="openwrt", router="$router"}', "", "C", fmt="table", instant=True),
+            tgt('mwan3_interface_lost{job="openwrt", router="$router"}', "", "D", fmt="table", instant=True),
+        ],
+        x=0, y=y, w=10, h=7,
+        desc="Optional mwan3 collector metrics. This table is empty when mwan3 is not installed.",
+        transforms=[
+            {"id": "organize", "options": {
+                "excludeByName": {"Time": True, "__name__": True, "job": True, "router": True},
+                "renameByName": {"interface": "Interface", "status": "Status", "Value": "Value"},
+            }},
+        ]))
+
+    panels.append(bargauge(62, "mwan3 Interfaces Up",
+        targets=[tgt(
+            'mwan3_interface_up{job="openwrt", router="$router"}',
+            "{{interface}}", "A",
+        )],
+        x=10, y=y, w=6, h=7, unit="short", max=1,
+        desc="Interface up status from the optional mwan3 collector.",
+        thresholds=[
+            {"color": "red", "value": 0},
+            {"color": "green", "value": 1},
+        ]))
+
+    panels.append(ts(63, "mwan3 Interface Score",
+        targets=[tgt(
+            'mwan3_interface_score{job="openwrt", router="$router"}',
+            "{{interface}}", "A",
+        )],
+        x=16, y=y, w=8, h=7, unit="short",
+        desc="mwan3 interface score over time. Empty when mwan3 is absent."))
+    y += 7
+
+    # ── SQM/cake section ─────────────────────────────────────────────────────
+    panels.append(row_panel(80, "SQM / Cake", y))
+    y += 1
+
+    panels.append(ts(81, "SQM Backlog",
+        targets=[tgt(
+            'sqm_backlog_bytes{job="openwrt", router="$router"}',
+            "{{iface}} {{direction}}", "A",
+        )],
+        x=0, y=y, w=8, h=7, unit="bytes",
+        desc="Optional disabled-by-default SQM/cake textfile collector backlog. Empty until ENABLE_SQM_METRICS=1 is configured."))
+
+    panels.append(ts(82, "SQM Drops",
+        targets=[tgt(
+            'rate(sqm_dropped_packets_total{job="openwrt", router="$router"}[$__rate_interval])',
+            "{{iface}} {{direction}}", "A",
+        )],
+        x=8, y=y, w=8, h=7, unit="pps",
+        desc="SQM/cake dropped packet rate for configured egress and IFB ingress interfaces."))
+
+    panels.append(ts(83, "SQM Overlimits",
+        targets=[tgt(
+            'rate(sqm_overlimits_total{job="openwrt", router="$router"}[$__rate_interval])',
+            "{{iface}} {{direction}}", "A",
+        )],
+        x=16, y=y, w=8, h=7, unit="pps",
+        desc="SQM/cake overlimit rate for configured interfaces."))
+    y += 7
 
     # ── WiFi section ─────────────────────────────────────────────────────────
     panels.append(row_panel(10, "WiFi Access Points", y))
@@ -643,6 +735,31 @@ def build_network():
         x=12, y=y, w=12, h=8, unit="Bps",
         desc="TX throughput per interface. Excludes loopback and unused LAN ports."))
     y += 8
+
+    # ── IPv6 section ─────────────────────────────────────────────────────────
+    panels.append(row_panel(70, "IPv6 (snmp6)", y))
+    y += 1
+
+    panels.append(ts(71, "IPv6 Packets",
+        targets=[
+            tgt('rate(snmp6_Ip6InReceives{job="openwrt", router="$router"}[$__rate_interval])',
+                "In receives {{device}}", "A"),
+            tgt('rate(snmp6_Ip6OutRequests{job="openwrt", router="$router"}[$__rate_interval])',
+                "Out requests {{device}}", "B"),
+        ],
+        x=0, y=y, w=12, h=7, unit="pps",
+        desc="Curated IPv6 packet counters from the optional snmp6 collector. Empty when snmp6 is unavailable."))
+
+    panels.append(ts(72, "IPv6 Discards",
+        targets=[
+            tgt('rate(snmp6_Ip6InDiscards{job="openwrt", router="$router"}[$__rate_interval])',
+                "In discards {{device}}", "A"),
+            tgt('rate(snmp6_Ip6OutDiscards{job="openwrt", router="$router"}[$__rate_interval])',
+                "Out discards {{device}}", "B"),
+        ],
+        x=12, y=y, w=12, h=7, unit="pps",
+        desc="Optional IPv6 discard counters. Non-zero sustained rates can indicate path or forwarding issues."))
+    y += 7
 
     # ── Tailscale section ─────────────────────────────────────────────────────
     panels.append(row_panel(30, "VPN Interface", y))
@@ -811,12 +928,23 @@ def build_devices():
         desc="Per-client signal reported by hostapd_stations. Client MAC addresses are exposed as labels.",
         calcs=["lastNotNull", "min"]))
 
+    panels.append(ts(15, "WiFi Client RX/TX Rate",
+        targets=[
+            tgt('rate(hostapd_station_receive_bytes_total{job="openwrt", router="$router"}[$__rate_interval])',
+                "RX {{station}} {{ssid}}", "A"),
+            tgt('rate(hostapd_station_transmit_bytes_total{job="openwrt", router="$router"}[$__rate_interval])',
+                "TX {{station}} {{ssid}}", "B"),
+        ],
+        x=12, y=y, w=12, h=8, unit="Bps",
+        desc="Per-station traffic from hostapd_stations. The station label is a client MAC address."))
+    y += 8
+
     panels.append(table(14, "Connected WiFi Stations",
         targets=[tgt(
             'hostapd_station_signal_dbm{job="openwrt", router="$router"}',
             "", "A", fmt="table", instant=True,
         )],
-        x=12, y=y, w=12, h=8,
+        x=0, y=y, w=8, h=8,
         desc="Currently connected WiFi stations from hostapd. Availability depends on the optional hostapd_stations collector.",
         transforms=[
             {"id": "organize", "options": {
@@ -833,7 +961,60 @@ def build_devices():
             }},
         ],
         sort_col="Signal dBm", sort_desc=True))
+
+    panels.append(table(16, "WiFi Connected Duration",
+        targets=[tgt(
+            'hostapd_station_connected_seconds_total{job="openwrt", router="$router"}',
+            "", "A", fmt="table", instant=True,
+        )],
+        x=8, y=y, w=8, h=8,
+        desc="Connected duration by station from the optional hostapd_stations collector.",
+        transforms=[
+            {"id": "organize", "options": {
+                "excludeByName": {"Time": True, "__name__": True, "job": True, "router": True},
+                "renameByName": {
+                    "station": "Station",
+                    "ssid": "SSID",
+                    "vif": "Interface",
+                    "frequency": "Frequency",
+                    "channel": "Channel",
+                    "Value": "Connected Seconds",
+                },
+            }},
+        ],
+        sort_col="Connected Seconds", sort_desc=True))
+
+    panels.append(table(17, "WiFi Inactive Seconds",
+        targets=[tgt(
+            'hostapd_station_inactive_seconds{job="openwrt", router="$router"}',
+            "", "A", fmt="table", instant=True,
+        )],
+        x=16, y=y, w=8, h=8,
+        desc="Inactive seconds by station. High values can indicate idle or poor-quality clients.",
+        transforms=[
+            {"id": "organize", "options": {
+                "excludeByName": {"Time": True, "__name__": True, "job": True, "router": True},
+                "renameByName": {
+                    "station": "Station",
+                    "ssid": "SSID",
+                    "vif": "Interface",
+                    "frequency": "Frequency",
+                    "channel": "Channel",
+                    "Value": "Inactive Seconds",
+                },
+            }},
+        ],
+        sort_col="Inactive Seconds", sort_desc=True))
     y += 8
+
+    panels.append(bargauge(18, "WiFi Clients by Frequency",
+        targets=[tgt(
+            'count by(frequency, channel) (hostapd_station_signal_dbm{job="openwrt", router="$router"})',
+            "{{frequency}} MHz ch {{channel}}", "A",
+        )],
+        x=0, y=y, w=24, h=5, unit="short",
+        desc="Client counts grouped by hostapd frequency/channel labels when available."))
+    y += 5
 
     # ── Device tables ─────────────────────────────────────────────────────────
     panels.append(row_panel(20, "Device Details", y))
@@ -997,6 +1178,7 @@ def loki_logs(id, title, expr, x, y, w, h, desc=""):
 def build_logs():
     panels = []
     y = 0
+    cron_cmd_filter = '!~ "^USER [^ ]+ pid [0-9]+ cmd "'
 
     LOKI_TEMPLATING = {"list": [
         {
@@ -1014,13 +1196,13 @@ def build_logs():
 
     # Stats row
     panels.append(loki_stat(1, "Errors (1h)",
-        'count_over_time({job="openwrt-syslog", router="$router"} |~ "(?i)error|err" [1h])',
-        x=0, y=y, w=4, h=4, desc="Log lines containing 'error' in the last hour",
+        f'count_over_time({{job="openwrt-syslog", router="$router"}} {cron_cmd_filter} |~ "(?i)error|err" [1h])',
+        x=0, y=y, w=4, h=4, desc="Log lines containing 'error' in the last hour, excluding cron command-start noise",
         thresholds=[{"color": "green", "value": 0}, {"color": "yellow", "value": 1}, {"color": "red", "value": 10}]))
 
     panels.append(loki_stat(2, "Warnings (1h)",
-        'count_over_time({job="openwrt-syslog", router="$router"} |~ "(?i)warn" [1h])',
-        x=4, y=y, w=4, h=4, desc="Log lines containing 'warn' in the last hour",
+        f'count_over_time({{job="openwrt-syslog", router="$router"}} {cron_cmd_filter} |~ "(?i)warn" [1h])',
+        x=4, y=y, w=4, h=4, desc="Log lines containing 'warn' in the last hour, excluding cron command-start noise",
         thresholds=[{"color": "green", "value": 0}, {"color": "yellow", "value": 1}, {"color": "orange", "value": 20}]))
 
     panels.append(loki_stat(3, "DHCP Events (1h)",
@@ -1051,9 +1233,9 @@ def build_logs():
     y += 4
 
     # Log rate over time
-    panels.append(loki_ts(7, "Log Rate by Type",
-        'sum by(level) (rate({job="openwrt-syslog", router="$router"}[$__rate_interval]))',
-        x=0, y=y, w=24, h=7, desc="Rate of log lines over time, grouped by severity level"))
+    panels.append(loki_ts(7, "Log Rate by Syslog Severity",
+        f'sum by(message_severity) (rate({{job="openwrt-syslog", router="$router"}} {cron_cmd_filter}[$__rate_interval]))',
+        x=0, y=y, w=24, h=7, desc="Rate of non-cron log lines over time, grouped by syslog severity. BusyBox cron command-start records are intentionally excluded."))
     y += 7
 
     # All logs
@@ -1081,9 +1263,9 @@ def build_logs():
         desc="Kernel events: network interface state changes, driver errors, OOM events."))
 
     panels.append(loki_logs(12, "Error & Warning Events",
-        '{job="openwrt-syslog", router="$router"} |~ "(?i)error|warn|fail|critical"',
+        f'{{job="openwrt-syslog", router="$router"}} {cron_cmd_filter} |~ "(?i)error|warn|fail|critical"',
         x=12, y=y, w=12, h=10,
-        desc="All log lines containing error, warning, fail, or critical keywords."))
+        desc="Log lines containing error, warning, fail, or critical keywords, excluding cron command-start records."))
     y += 10
 
     panels.append(loki_logs(14, "Failed SSH Login Events",
