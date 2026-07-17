@@ -4,6 +4,13 @@ The monitoring host is any Linux machine on the same network as your router. It 
 - **grafana/otel-lgtm** — all-in-one Grafana + Prometheus + Loki + Tempo
 - **Grafana Alloy** — metrics scraper and syslog receiver
 
+The dashboards in this repo expect the router to be set up with both:
+
+- official `prometheus-node-exporter-lua` packages
+- the bundled custom collectors and helper scripts installed by `openwrt/setup.sh`
+
+That includes custom textfile metrics for WAN quality, filesystem usage, and service health in addition to the Lua-based custom collectors.
+
 ## Requirements
 
 - Docker 24+ and Docker Compose v2
@@ -31,8 +38,10 @@ Edit `.env`:
 ```env
 ROUTER_IP=192.168.0.1          # Your router's IP
 ROUTER_NAME=openwrt             # Label used in Grafana
+ROUTER_METRICS_PORT=9100        # prometheus-node-exporter-lua port
 MONITORING_HOST_IP=192.168.0.100 # This machine's LAN IP
 GRAFANA_ADMIN_PASSWORD=changeme  # Change this!
+SYSLOG_PORT=514                 # Host port for Alloy syslog
 ```
 
 ### 3. Start
@@ -54,11 +63,13 @@ Go to **http://localhost:3000**
 
 Login: `admin` / value from `GRAFANA_ADMIN_PASSWORD` in `.env`
 
-The OpenWRT dashboards load automatically from `grafana/provisioning/dashboards/`.
+The four classic OpenWrt dashboards load automatically from `grafana/provisioning/dashboards/`.
 
-The dashboards include variables for `router`, `wan_interface`, `wifi24_interface`,
-`wifi5_interface`, and `vpn_interface`. Change those in Grafana first if your
-OpenWrt 24/25 router uses different interface names.
+The optional v2beta1 operations dashboard is generated separately into `grafana-dashboard-exports/openwrt-operations-v2.json` for manual import.
+
+For a complete dashboard, make sure you ran the router-side setup by copying the whole `openwrt/` directory and executing `openwrt/setup.sh`, not just by installing the base exporter packages.
+
+The dashboards include variables for `router`, `wan_interface`, `wifi24_interface`, `wifi5_interface`, and `vpn_interface`; adjust those in Grafana if your router uses different labels.
 
 ---
 
@@ -67,15 +78,15 @@ OpenWrt 24/25 router uses different interface names.
 | Port | Service | Purpose |
 |------|---------|---------|
 | 3000 | Grafana | Web UI |
-| 514/UDP | Alloy | Syslog receiver from router |
-| 514/TCP | Alloy | Syslog receiver (TCP fallback) |
+| 514/UDP | Alloy | Default router syslog receiver |
+| 514/TCP | Alloy | Syslog receiver fallback |
 | 9090 | Prometheus | Metrics database (also used by Alloy remote_write) |
 | 3100 | Loki | Logs database |
 | 3200 | Tempo | Traces database |
-| 3500 | Pyroscope | Profiling (unused for OpenWRT) |
+| 3500 | Pyroscope | Profiling (unused for OpenWrt) |
 | 4317 | OTel Collector | OTLP gRPC |
 | 4318 | OTel Collector | OTLP HTTP |
-| 12345 | Alloy UI | Alloy debug/config UI |
+| 1234 | Alloy UI | Alloy debug/config UI |
 
 ---
 
@@ -123,7 +134,7 @@ or rely on the `log_hostname` label (set per router via `uci set system.@system[
 
 ## Alloy UI
 
-The Alloy debug interface is available at **http://localhost:12345**
+The Alloy debug interface is available at **http://localhost:1234**
 
 Useful for:
 - Checking if targets are being scraped
@@ -138,7 +149,3 @@ Useful for:
 docker compose pull
 docker compose up -d
 ```
-
-Router package updates are separate from this Docker stack. OpenWrt 24.10 uses
-`opkg`; OpenWrt 25.12 and newer use `apk`. Do not use `apk upgrade` on OpenWrt;
-upgrade router firmware with sysupgrade or attended sysupgrade.

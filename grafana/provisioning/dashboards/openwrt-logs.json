@@ -1,7 +1,7 @@
 {
-  "title": "OpenWRT \u2014 Logs",
+  "title": "OpenWrt \u2014 Logs",
   "uid": "openwrt-logs",
-  "description": "System logs from OpenWRT's logd via remote syslog \u2192 Loki: DHCP events, firewall drops, kernel messages.",
+  "description": "System logs from OpenWrt's logd via remote syslog \u2192 Loki: DHCP events, firewall drops, kernel messages.",
   "tags": [
     "openwrt",
     "logs"
@@ -61,7 +61,7 @@
       "type": "stat",
       "id": 1,
       "title": "Errors (1h)",
-      "description": "Log lines containing 'error' in the last hour, excluding cron command-start noise",
+      "description": "Log lines containing 'error' in the last hour",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -72,7 +72,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} !~ \"^USER [^ ]+ pid [0-9]+ cmd \" |~ \"(?i)error|err\" [1h])",
+          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} |~ \"(?i)error|err\" [1h])",
           "refId": "A",
           "queryType": "range"
         }
@@ -130,7 +130,7 @@
       "type": "stat",
       "id": 2,
       "title": "Warnings (1h)",
-      "description": "Log lines containing 'warn' in the last hour, excluding cron command-start noise",
+      "description": "Log lines containing 'warn' in the last hour",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -141,7 +141,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} !~ \"^USER [^ ]+ pid [0-9]+ cmd \" |~ \"(?i)warn\" [1h])",
+          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} |~ \"(?i)warn\" [1h])",
           "refId": "A",
           "queryType": "range"
         }
@@ -448,79 +448,10 @@
       "pluginVersion": "12.4.0"
     },
     {
-      "type": "stat",
-      "id": 13,
-      "title": "Failed SSH Logins (1h)",
-      "description": "Failed SSH login attempts seen in router syslog",
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
-          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} |~ \"(?i)failed password|login failed\" [1h])",
-          "refId": "A",
-          "queryType": "range"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 10
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 4,
-        "w": 6,
-        "h": 4
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "sum"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "pluginVersion": "12.4.0"
-    },
-    {
       "type": "timeseries",
       "id": 7,
-      "title": "Log Rate by Syslog Severity",
-      "description": "Rate of non-cron log lines over time, grouped by syslog severity. BusyBox cron command-start records are intentionally excluded.",
+      "title": "Log Rate by Severity",
+      "description": "Rate of log lines over time, grouped by syslog severity.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -531,9 +462,10 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "sum by(message_severity) (rate({job=\"openwrt-syslog\", router=\"$router\"} !~ \"^USER [^ ]+ pid [0-9]+ cmd \"[$__rate_interval]))",
+          "expr": "sum by(message_severity) (rate({job=\"openwrt-syslog\", router=\"$router\"}[$__interval]))",
           "refId": "A",
-          "queryType": "range"
+          "queryType": "range",
+          "legendFormat": "{{message_severity}}"
         }
       ],
       "fieldConfig": {
@@ -559,8 +491,69 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 8,
-        "w": 24,
+        "y": 4,
+        "w": 12,
+        "h": 7
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "timeseries",
+      "id": 13,
+      "title": "Log Rate by App",
+      "description": "Which daemons are emitting the most logs over time. Requires the syslog app-name label to be preserved.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "sum by(message_app_name) (rate({job=\"openwrt-syslog\", router=\"$router\"}[$__interval]))",
+          "refId": "A",
+          "queryType": "range",
+          "legendFormat": "{{message_app_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
         "h": 7
       },
       "options": {
@@ -580,7 +573,7 @@
       "type": "logs",
       "id": 8,
       "title": "All System Logs",
-      "description": "Full log stream from OpenWRT's logd. Use the search bar to filter by keyword.",
+      "description": "Full log stream from OpenWrt's logd. Use the search bar to filter by keyword.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -598,7 +591,7 @@
       ],
       "gridPos": {
         "x": 0,
-        "y": 15,
+        "y": 11,
         "w": 24,
         "h": 14
       },
@@ -636,7 +629,7 @@
       ],
       "gridPos": {
         "x": 0,
-        "y": 29,
+        "y": 25,
         "w": 12,
         "h": 10
       },
@@ -674,7 +667,7 @@
       ],
       "gridPos": {
         "x": 12,
-        "y": 29,
+        "y": 25,
         "w": 12,
         "h": 10
       },
@@ -712,7 +705,7 @@
       ],
       "gridPos": {
         "x": 0,
-        "y": 39,
+        "y": 35,
         "w": 12,
         "h": 10
       },
@@ -732,7 +725,7 @@
       "type": "logs",
       "id": 12,
       "title": "Error & Warning Events",
-      "description": "Log lines containing error, warning, fail, or critical keywords, excluding cron command-start records.",
+      "description": "All log lines containing error, warning, fail, or critical keywords.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -743,54 +736,16 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "{job=\"openwrt-syslog\", router=\"$router\"} !~ \"^USER [^ ]+ pid [0-9]+ cmd \" |~ \"(?i)error|warn|fail|critical\"",
+          "expr": "{job=\"openwrt-syslog\", router=\"$router\"} |~ \"(?i)error|warn|fail|critical\"",
           "refId": "A",
           "queryType": "range"
         }
       ],
       "gridPos": {
         "x": 12,
-        "y": 39,
+        "y": 35,
         "w": 12,
         "h": 10
-      },
-      "options": {
-        "dedupStrategy": "none",
-        "enableLogDetails": true,
-        "prettifyLogMessage": false,
-        "showCommonLabels": false,
-        "showLabels": false,
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": true
-      },
-      "pluginVersion": "12.4.0"
-    },
-    {
-      "type": "logs",
-      "id": 14,
-      "title": "Failed SSH Login Events",
-      "description": "SSH authentication failures from dropbear or sshd.",
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
-          "expr": "{job=\"openwrt-syslog\", router=\"$router\"} |~ \"(?i)failed password|login failed\"",
-          "refId": "A",
-          "queryType": "range"
-        }
-      ],
-      "gridPos": {
-        "x": 0,
-        "y": 49,
-        "w": 24,
-        "h": 8
       },
       "options": {
         "dedupStrategy": "none",

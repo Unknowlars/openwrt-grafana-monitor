@@ -5,7 +5,7 @@
     "name": "openwrt-operations"
   },
   "spec": {
-    "title": "OpenWRT — Operations",
+    "title": "OpenWrt — Operations",
     "description": "Single-tabbed OpenWrt operations dashboard for router health, WAN, WiFi, devices, capacity, logs, and optional collectors.",
     "tags": [
       "openwrt",
@@ -398,7 +398,7 @@
         "spec": {
           "id": 2,
           "title": "WAN Health",
-          "description": "DNS probe must succeed and packet loss must stay below 1%.",
+          "description": "Internet/resolver probes must succeed and internet packet loss must stay below 1%.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -417,7 +417,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "(min(dns_probe_success{job=\"openwrt\", router=~\"$router\"}) * (max(packet_loss{job=\"openwrt\", router=~\"$router\"}) < bool 1)) or vector(0)",
+                        "expr": "(min(openwrt_wan_probe_success{job=\"openwrt\", router=~\"$router\", target=~\"internet|resolver\"}) * (max(openwrt_wan_probe_packet_loss_percent{job=\"openwrt\", router=~\"$router\", target=\"internet\"}) < bool 1)) or vector(0)",
                         "legendFormat": ""
                       }
                     }
@@ -710,7 +710,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "max((1 - (node_memory_MemAvailable_bytes{job=\"openwrt\", router=~\"$router\"} / node_memory_MemTotal_bytes{job=\"openwrt\", router=~\"$router\"})) or (node_nf_conntrack_entries{job=\"openwrt\", router=~\"$router\"} / node_nf_conntrack_entries_limit{job=\"openwrt\", router=~\"$router\"}) or (overlay_bytes_used{job=\"openwrt\", router=~\"$router\"} / overlay_bytes_total{job=\"openwrt\", router=~\"$router\"})) or vector(0)",
+                        "expr": "max((1 - (node_memory_MemAvailable_bytes{job=\"openwrt\", router=~\"$router\"} / node_memory_MemTotal_bytes{job=\"openwrt\", router=~\"$router\"})) or (node_nf_conntrack_entries{job=\"openwrt\", router=~\"$router\"} / node_nf_conntrack_entries_limit{job=\"openwrt\", router=~\"$router\"}) or (openwrt_filesystem_used_percent{job=\"openwrt\", router=~\"$router\", mount=\"/overlay\"} / 100)) or vector(0)",
                         "legendFormat": ""
                       }
                     }
@@ -798,7 +798,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "time() - max(node_textfile_mtime_seconds{job=\"openwrt\", router=~\"$router\", file=~\".*openwrt-grafana-monitor.prom\"}) or vector(999999)",
+                        "expr": "max(time() - node_textfile_mtime_seconds{job=\"openwrt\", router=~\"$router\"}) or vector(999999)",
                         "legendFormat": ""
                       }
                     }
@@ -1338,7 +1338,7 @@
             "spec": {
               "options": {
                 "mode": "markdown",
-                "content": "## WAN & Internet\nValidate internet reachability first: throughput, packet rate, interface errors, gateway loss, DNS, and public-IP changes.",
+                "content": "## WAN & Internet\nValidate internet reachability first: throughput, packet rate, interface errors, gateway, resolver, and internet probes.",
                 "code": {
                   "language": "plaintext",
                   "showLineNumbers": false,
@@ -2067,8 +2067,8 @@
         "kind": "Panel",
         "spec": {
           "id": 104,
-          "title": "Gateway Packet Loss Trend",
-          "description": "Gateway packet loss as a percent. Kept separate from DNS latency so axes and units stay honest.",
+          "title": "WAN Probe Packet Loss",
+          "description": "Packet loss from gateway, resolver, and internet probes. Targets are emitted by the WAN quality helper.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -2087,8 +2087,8 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "gateway_packet_loss{job=\"openwrt\", router=~\"$router\"}",
-                        "legendFormat": "{{gateway}}"
+                        "expr": "openwrt_wan_probe_packet_loss_percent{job=\"openwrt\", router=~\"$router\"}",
+                        "legendFormat": "{{target}} {{address}}"
                       }
                     }
                   }
@@ -2255,8 +2255,8 @@
         "kind": "Panel",
         "spec": {
           "id": 109,
-          "title": "DNS Probe Latency",
-          "description": "DNS probe duration from the router textfile collector.",
+          "title": "WAN Probe Latency",
+          "description": "Probe latency from the router WAN quality helper.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -2275,8 +2275,8 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "dns_probe_duration_seconds{job=\"openwrt\", router=~\"$router\"}",
-                        "legendFormat": "{{host}}"
+                        "expr": "openwrt_wan_probe_latency_milliseconds{job=\"openwrt\", router=~\"$router\"} / 1000",
+                        "legendFormat": "{{target}} {{address}}"
                       }
                     }
                   }
@@ -2463,7 +2463,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "max(gateway_packet_loss{job=\"openwrt\", router=~\"$router\"}) or vector(0)",
+                        "expr": "max(openwrt_wan_probe_packet_loss_percent{job=\"openwrt\", router=~\"$router\", target=\"gateway\"}) or vector(0)",
                         "legendFormat": ""
                       }
                     }
@@ -2530,8 +2530,8 @@
         "kind": "Panel",
         "spec": {
           "id": 106,
-          "title": "DNS Probe",
-          "description": "Configured DNS lookup success. All configured probes must be healthy.",
+          "title": "Probe Success",
+          "description": "Internet and resolver probe success. 1 means all present probes succeeded.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -2550,7 +2550,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "min(dns_probe_success{job=\"openwrt\", router=~\"$router\"}) or vector(0)",
+                        "expr": "min(openwrt_wan_probe_success{job=\"openwrt\", router=~\"$router\", target=~\"internet|resolver\"}) or vector(0)",
                         "legendFormat": ""
                       }
                     }
@@ -2656,8 +2656,8 @@
         "kind": "Panel",
         "spec": {
           "id": 107,
-          "title": "DNS Probe Duration",
-          "description": "Worst current DNS probe latency from the router textfile collector.",
+          "title": "Worst Probe Latency",
+          "description": "Worst current probe latency from the router WAN quality helper.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -2676,7 +2676,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "max(dns_probe_duration_seconds{job=\"openwrt\", router=~\"$router\"}) or vector(0)",
+                        "expr": "max(openwrt_wan_probe_latency_milliseconds{job=\"openwrt\", router=~\"$router\"} / 1000) or vector(0)",
                         "legendFormat": ""
                       }
                     }
@@ -2743,8 +2743,8 @@
         "kind": "Panel",
         "spec": {
           "id": 108,
-          "title": "Public IP Changed",
-          "description": "Whether the latest public IP lookup observed a change. A change is an event, not a continuous failure.",
+          "title": "Internet Packet Loss",
+          "description": "Current packet loss to the configured internet probe target.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -2763,7 +2763,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "max(wan_public_ip_changed{job=\"openwrt\", router=~\"$router\"}) or vector(0)",
+                        "expr": "max(openwrt_wan_probe_packet_loss_percent{job=\"openwrt\", router=~\"$router\", target=\"internet\"}) or vector(0)",
                         "legendFormat": ""
                       }
                     }
@@ -2781,7 +2781,7 @@
             "spec": {
               "options": {
                 "colorMode": "background_solid",
-                "graphMode": "none",
+                "graphMode": "area",
                 "justifyMode": "center",
                 "orientation": "auto",
                 "reduceOptions": {
@@ -2797,46 +2797,22 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "none",
-                  "mappings": [
-                    {
-                      "type": "value",
-                      "options": {
-                        "0": {
-                          "text": "No change",
-                          "color": "green",
-                          "index": 0
-                        }
-                      }
-                    },
-                    {
-                      "type": "value",
-                      "options": {
-                        "1": {
-                          "text": "Changed",
-                          "color": "yellow",
-                          "index": 1
-                        }
-                      }
-                    },
-                    {
-                      "type": "special",
-                      "options": {
-                        "match": "null",
-                        "result": {
-                          "text": "Unavailable",
-                          "color": "gray",
-                          "index": 2
-                        }
-                      }
-                    }
-                  ],
+                  "unit": "percent",
+                  "mappings": [],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "blue",
+                        "color": "green",
                         "value": 0
+                      },
+                      {
+                        "color": "yellow",
+                        "value": 1
+                      },
+                      {
+                        "color": "red",
+                        "value": 5
                       }
                     ]
                   },
@@ -5819,7 +5795,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "overlay_bytes_used{job=\"openwrt\", router=~\"$router\"} / overlay_bytes_total{job=\"openwrt\", router=~\"$router\"}",
+                        "expr": "openwrt_filesystem_used_percent{job=\"openwrt\", router=~\"$router\", mount=\"/overlay\"} / 100",
                         "legendFormat": ""
                       }
                     }
@@ -7127,7 +7103,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "time() - max(node_textfile_mtime_seconds{job=\"openwrt\", router=~\"$router\", file=~\".*openwrt-grafana-monitor.prom\"}) or vector(999999)",
+                        "expr": "max(time() - node_textfile_mtime_seconds{job=\"openwrt\", router=~\"$router\"}) or vector(999999)",
                         "legendFormat": ""
                       }
                     }
@@ -8680,7 +8656,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "max(present_over_time(sqm_backlog_bytes{job=\"openwrt\", router=~\"$router\"}[$__range])) or vector(0)",
+                        "expr": "max(openwrt_tc_available{job=\"openwrt\", router=~\"$router\"}) or vector(0)",
                         "legendFormat": ""
                       }
                     }
@@ -9405,7 +9381,7 @@
         "spec": {
           "id": 608,
           "title": "SQM / Cake Backlog",
-          "description": "Optional SQM/cake backlog bytes. Missing data means SQM collection is disabled or unavailable.",
+          "description": "Qdisc backlog bytes from the SQM/helper script. Missing data means tc is unavailable or the helper is not running.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -9424,8 +9400,8 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "sqm_backlog_bytes{job=\"openwrt\", router=~\"$router\"}",
-                        "legendFormat": "{{iface}} {{direction}}"
+                        "expr": "openwrt_tc_qdisc_backlog_bytes{job=\"openwrt\", router=~\"$router\"}",
+                        "legendFormat": "{{device}} {{qdisc}}"
                       }
                     }
                   }
@@ -9585,7 +9561,7 @@
         "spec": {
           "id": 613,
           "title": "SQM / Cake Drops",
-          "description": "Optional SQM/cake drop and overlimit packet rates.",
+          "description": "Qdisc drop and overlimit packet rates from the SQM/helper script.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -9604,8 +9580,8 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "rate(sqm_dropped_packets_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval])",
-                        "legendFormat": "{{iface}} {{direction}} drops"
+                        "expr": "rate(openwrt_tc_qdisc_drops_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval])",
+                        "legendFormat": "{{device}} {{qdisc}} drops"
                       }
                     }
                   }
@@ -9623,8 +9599,8 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "rate(sqm_overlimits_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval])",
-                        "legendFormat": "{{iface}} {{direction}} overlimits"
+                        "expr": "rate(openwrt_tc_qdisc_overlimits_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval])",
+                        "legendFormat": "{{device}} {{qdisc}} overlimits"
                       }
                     }
                   }

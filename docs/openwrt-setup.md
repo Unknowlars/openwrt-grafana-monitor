@@ -1,58 +1,149 @@
 # OpenWrt Router Setup
 
-This guide covers the router-side pieces for OpenWrt 24.10 and 25.12.
+This repo uses two kinds of router-side data:
+
+- Official `prometheus-node-exporter-lua` collectors from OpenWrt packages
+- Bundled custom collectors and helper scripts from this repo's `openwrt/` directory
+
+The dashboards expect both. If you only install the official packages, Grafana will still show core system metrics, but panels such as WAN/public IP, packet loss, DHCP pool usage, ping-based device presence, WAN quality, filesystem/inode usage, link health, IPv6 WAN health, firewall counters, and service health will be empty.
 
 ## Requirements
 
-- OpenWrt 24.10 or 25.12
-- SSH access as `root`
-- At least 8 MB flash free: `df -h /overlay`
-- At least 32 MB RAM free: `free`
-- Monitoring host reachable from the router LAN
+- OpenWrt 24.10/opkg or OpenWrt 25.12/apk
+- SSH access to the router
+- Enough free flash for the exporter packages plus a few small helper scripts
+- A monitoring host on the same LAN running this repo's Docker stack
 
-## Quick Setup
+## Recommended Setup
+
+Copy the whole `openwrt/` directory, not just `setup.sh`:
+
+```sh
+scp -O -r openwrt root@192.168.0.1:/tmp/
+ssh root@192.168.0.1 "sh /tmp/openwrt/setup.sh 192.168.0.100"
+```
+
+The `-O` flag forces legacy scp mode for OpenWrt/dropbear systems without an SFTP server.
+
+The setup script does all of the following:
+
+- Detects `opkg` or `apk` and installs the required exporter packages
+- Installs optional collectors when available on your router build
+- Installs the `textfile` collector used for custom script metrics
+- Configures `prometheus-node-exporter-lua` to listen on `lan:9100`
+- Copies bundled collectors into `/usr/lib/lua/prometheus-collectors/`
+- Copies helper scripts into `/usr/bin/`
+- Creates `/var/prometheus/` for textfile metrics
+- Adds cron jobs for device status, WAN/public IP, packet loss, WAN quality, filesystem and inode usage, service health, DHCP pool, link health, softnet counters, IPv6 health, firewall counters, SQM, and WiFi radio state
+- Configures remote syslog to the monitoring host over UDP port `514` by default
+
+Bundled files installed by the script:
+
+- `/usr/lib/lua/prometheus-collectors/dnsmasq.lua`
+- `/usr/lib/lua/prometheus-collectors/device_status.lua`
+- `/usr/lib/lua/prometheus-collectors/packet_loss.lua`
+- `/usr/lib/lua/prometheus-collectors/wan_info.lua`
+- `/usr/bin/openwrt-monitor-device-status.sh`
+- `/usr/bin/openwrt-monitor-filesystem.sh`
+- `/usr/bin/openwrt-monitor-packet-loss.sh`
+- `/usr/bin/openwrt-monitor-service-health.sh`
+- `/usr/bin/openwrt-monitor-wan-info.sh`
+- `/usr/bin/openwrt-monitor-wan-quality.sh`
+- `/usr/bin/openwrt-monitor-dhcp-pool.sh`
+- `/usr/bin/openwrt-monitor-link-health.sh`
+- `/usr/bin/openwrt-monitor-softnet.sh`
+- `/usr/bin/openwrt-monitor-ipv6-health.sh`
+- `/usr/bin/openwrt-monitor-inodes.sh`
+- `/usr/bin/openwrt-monitor-firewall-counters.sh`
+- `/usr/bin/openwrt-monitor-sqm.sh`
+- `/usr/bin/openwrt-monitor-wifi-radio.sh`
+
+## Required Packages
+
+These are the packages the dashboards assume are present:
+
+```sh
+# OpenWrt 24.10
+opkg update
+opkg install \
+  prometheus-node-exporter-lua \
+  prometheus-node-exporter-lua-textfile \
+  prometheus-node-exporter-lua-openwrt \
+  prometheus-node-exporter-lua-uci_dhcp_host \
+  prometheus-node-exporter-lua-wifi \
+  prometheus-node-exporter-lua-wifi_stations \
+  prometheus-node-exporter-lua-nat_traffic \
+  prometheus-node-exporter-lua-netstat
+```
+
+On OpenWrt 25.12 and newer, use the same package names with `apk`:
+
+```sh
+apk update
+apk add \
+  prometheus-node-exporter-lua \
+  prometheus-node-exporter-lua-textfile \
+  prometheus-node-exporter-lua-openwrt \
+  prometheus-node-exporter-lua-uci_dhcp_host \
+  prometheus-node-exporter-lua-nat_traffic \
+  prometheus-node-exporter-lua-netstat
+```
+
+Do not use `apk upgrade` on OpenWrt; use sysupgrade/attended sysupgrade for firmware upgrades.
+
+## Optional Packages
+
+These are useful depending on your router and feature set:
+
+- `prometheus-node-exporter-lua-wifi`: AP-level WiFi metrics
+- `prometheus-node-exporter-lua-wifi_stations`: WiFi client metrics
+- `prometheus-node-exporter-lua-hostapd_stations`: hostapd WiFi client metrics when available
+- `prometheus-node-exporter-lua-hwmon`: hardware temperature sensors
+- `prometheus-node-exporter-lua-thermal`: thermal zone sensors
+- `prometheus-node-exporter-lua-mwan3`: multi-WAN status
+- `prometheus-node-exporter-lua-snmp6`: IPv6 stack counters
+- `prometheus-node-exporter-lua-nft-counters`: nftables counters on newer OpenWrt releases
+- `prometheus-node-exporter-lua-ethtool`: lower-level Ethernet/NIC stats
+- `tc` (from `ip-full` on some builds): detailed SQM/qdisc counters used by `openwrt-monitor-sqm.sh`
+
+## Manual Setup
+
+Use the script if possible. Manual setup is mostly useful when you want to inspect or customize the router-side files.
+
+### 1. Install exporter packages
+
+Run the commands from the Required Packages section above.
+
+### 2. Configure the exporter to listen on LAN
+
+By default, the OpenWrt package usually listens on loopback only. Change it so the monitoring host can scrape it:
+
+```sh
+uci set prometheus-node-exporter-lua.main.listen_interface='lan'
+uci set prometheus-node-exporter-lua.main.listen_port='9100'
+uci commit prometheus-node-exporter-lua
+```
+
+### 3. Copy the bundled collectors and scripts
 
 From your local machine:
 
 ```sh
-scp -O openwrt/setup.sh root@192.168.0.1:/tmp/
-ssh root@192.168.0.1 "sh /tmp/setup.sh 192.168.0.100"
-#                                        ^ monitoring host LAN IP
+scp -O openwrt/collectors/*.lua root@192.168.0.1:/usr/lib/lua/prometheus-collectors/
+scp -O openwrt/scripts/*.sh root@192.168.0.1:/usr/bin/
+ssh root@192.168.0.1 "chmod +x /usr/bin/openwrt-monitor-*.sh"
 ```
 
-`-O` forces legacy scp mode. OpenWrt's default SSH server often does not provide an SFTP server, and modern OpenSSH `scp` uses SFTP by default.
+### 4. Add the helper cron jobs
 
-The script detects the package manager:
+On the router:
 
-- OpenWrt 24.10: `opkg`
-- OpenWrt 25.12+: `apk`
-
-It installs exporter packages, enables the textfile collector, creates custom metrics, configures remote syslog, and starts the exporter.
-
-## Migrating From Older Router Scripts
-
-If this router already ran an older OpenWrt monitoring setup, keep only one collector path for each metric. The current repo installs one cron job:
-
-```cron
-* * * * * /usr/bin/openwrt-grafana-monitor-metrics >/dev/null 2>&1
-```
-
-Older setups may also have jobs such as:
-
-```cron
-*/1 * * * * /usr/bin/1-minute-script.sh
-*/5 * * * * /usr/bin/5-minute-script.sh
-* * * * * /usr/bin/15-second-script.sh
-* * * * * sleep 15; /usr/bin/15-second-script.sh
-* * * * * sleep 30; /usr/bin/15-second-script.sh
-* * * * * sleep 45; /usr/bin/15-second-script.sh
-*/1 * * * * /usr/bin/device-status-ping.sh
-*/1 * * * * /usr/bin/new_device.sh
-*/1 * * * * /usr/bin/packet-loss.sh
+```sh
+cat >> /etc/crontabs/root <<'EOF'
 */1 * * * * /usr/bin/openwrt-monitor-device-status.sh
+*/1 * * * * /usr/bin/openwrt-monitor-service-health.sh
 */5 * * * * /usr/bin/openwrt-monitor-packet-loss.sh
 */5 * * * * /usr/bin/openwrt-monitor-wan-info.sh
-*/1 * * * * /usr/bin/openwrt-monitor-service-health.sh
 */5 * * * * /usr/bin/openwrt-monitor-wan-quality.sh
 */10 * * * * /usr/bin/openwrt-monitor-filesystem.sh
 */1 * * * * /usr/bin/openwrt-monitor-dhcp-pool.sh
@@ -63,322 +154,128 @@ Older setups may also have jobs such as:
 */2 * * * * /usr/bin/openwrt-monitor-firewall-counters.sh
 */1 * * * * /usr/bin/openwrt-monitor-sqm.sh
 */2 * * * * /usr/bin/openwrt-monitor-wifi-radio.sh
-```
+EOF
 
-Those scripts are not installed or managed by this repo. They can create duplicate metrics and noisy cron syslog lines if left enabled. Audit before removing anything:
-
-```sh
-crontab -l
-ls -l /usr/bin/openwrt-monitor-* /usr/bin/*packet-loss* /usr/bin/*device* 2>/dev/null
-```
-
-By default, setup auto-detects known legacy jobs. In an interactive SSH session it prompts before removing them. In a non-interactive shell it keeps them and prints a warning.
-
-To remove the known old monitoring cron entries without prompting:
-
-```sh
-CLEANUP_LEGACY_CRON=1 sh /tmp/setup.sh 192.168.0.100
-```
-
-To always keep legacy jobs without prompting:
-
-```sh
-CLEANUP_LEGACY_CRON=0 sh /tmp/setup.sh 192.168.0.100
-```
-
-This removes only the known old monitoring cron entries listed above and always preserves:
-
-```cron
-* * * * * /usr/bin/openwrt-grafana-monitor-metrics >/dev/null 2>&1
-```
-
-To disable legacy jobs manually instead, edit root's crontab and remove only the old monitoring lines you no longer need:
-
-```sh
-crontab -e
+/etc/init.d/cron enable
 /etc/init.d/cron restart
 ```
 
-Do not remove unrelated jobs such as speed tests, backups, or custom maintenance tasks unless you know they are obsolete.
-
-## Optional Script Settings
-
-Set these before running the script if the defaults do not fit your router:
+Run the helper scripts once immediately so the custom metrics appear without waiting for cron:
 
 ```sh
-EXPORTER_LISTEN_INTERFACE=lan \
-SYSLOG_PORT=514 \
-PING_TARGET=1.1.1.1 \
-DNS_PROBE_HOST=openwrt.org \
-DNS_PROBE_TIMEOUT=5 \
-PUBLIC_IP_LOOKUP=0 \
-PUBLIC_IP_CHECK_INTERVAL=900 \
-ENABLE_SQM_METRICS=0 \
-SQM_INTERFACES='' \
-CLEANUP_LEGACY_CRON=auto \
-sh /tmp/setup.sh 192.168.0.100
+/usr/bin/openwrt-monitor-device-status.sh
+/usr/bin/openwrt-monitor-service-health.sh
+/usr/bin/openwrt-monitor-packet-loss.sh
+/usr/bin/openwrt-monitor-wan-info.sh
+/usr/bin/openwrt-monitor-wan-quality.sh
+/usr/bin/openwrt-monitor-filesystem.sh
+/usr/bin/openwrt-monitor-dhcp-pool.sh
+/usr/bin/openwrt-monitor-link-health.sh
+/usr/bin/openwrt-monitor-softnet.sh
+/usr/bin/openwrt-monitor-ipv6-health.sh
+/usr/bin/openwrt-monitor-inodes.sh
+/usr/bin/openwrt-monitor-firewall-counters.sh
+/usr/bin/openwrt-monitor-sqm.sh
+/usr/bin/openwrt-monitor-wifi-radio.sh
 ```
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `EXPORTER_LISTEN_INTERFACE` | `lan` | Interface where `:9100` listens |
-| `SYSLOG_PORT` | `514` | Remote syslog destination port |
-| `PING_TARGET` | `1.1.1.1` | Packet-loss probe target |
-| `DNS_PROBE_HOST` | `openwrt.org` | DNS name resolved by the WAN-health DNS probe |
-| `DNS_PROBE_TIMEOUT` | `5` | Ping fallback timeout in seconds when `nslookup` is unavailable |
-| `PUBLIC_IP_LOOKUP` | `0` | Set `1` to query public IP endpoint |
-| `PUBLIC_IP_URL` | `https://api.ipify.org` | Public IP endpoint |
-| `PUBLIC_IP_CHECK_INTERVAL` | `900` | Minimum seconds between public IP endpoint calls |
-| `ENABLE_SQM_METRICS` | `0` | Set `1` to install the optional SQM/cake textfile collector |
-| `SQM_INTERFACES` | empty | Space-separated SQM interfaces, for example `eth0 ifb4eth0` |
-| `CLEANUP_LEGACY_CRON` | `auto` | `auto` prompts on interactive runs, `1` removes known old monitor cron jobs, `0` keeps them |
+### 5. Configure remote syslog
 
-## Manual Package Install
-
-Prefer the setup script because it also installs custom metrics. If you need to install manually:
-
-```sh
-# OpenWrt 24.10
-opkg update
-opkg install \
-  prometheus-node-exporter-lua \
-  prometheus-node-exporter-lua-openwrt \
-  prometheus-node-exporter-lua-nat_traffic \
-  prometheus-node-exporter-lua-netstat \
-  prometheus-node-exporter-lua-textfile
-```
-
-```sh
-# OpenWrt 25.12+
-apk update
-apk add \
-  prometheus-node-exporter-lua \
-  prometheus-node-exporter-lua-openwrt \
-  prometheus-node-exporter-lua-nat_traffic \
-  prometheus-node-exporter-lua-netstat \
-  prometheus-node-exporter-lua-textfile
-```
-
-Do not run `apk upgrade` on OpenWrt. Upgrade firmware with sysupgrade or attended sysupgrade.
-
-WiFi collectors are installed by the script as best-effort optional packages:
-
-```sh
-prometheus-node-exporter-lua-wifi
-prometheus-node-exporter-lua-wifi_stations
-prometheus-node-exporter-lua-hostapd_stations
-```
-
-`hostapd_stations` is preferred for per-client WiFi quality panels because it reads station data directly from hostapd. Some OpenWrt 25.x/driver combinations expose hostapd collector metadata but no station samples; the dashboards fall back to `wifi_station_*` metrics from `wifi_stations` for signal, link rates, packet rates, inactive time, and AP client counts. AP-level quality panels use `wifi_network_*` metrics from the `wifi` collector.
-
-Temperature and nftables collectors are also installed by the script as best-effort optional packages:
-
-```sh
-prometheus-node-exporter-lua-thermal
-prometheus-node-exporter-lua-hwmon
-prometheus-node-exporter-lua-nft-counters
-prometheus-node-exporter-lua-snmp6
-```
-
-Package availability depends on your OpenWrt feed. Optional package failures are warnings only.
-
-If you use mwan3:
-
-```sh
-# OpenWrt 24.10
-opkg install prometheus-node-exporter-lua-mwan3
-
-# OpenWrt 25.12+
-apk add prometheus-node-exporter-lua-mwan3
-```
-
-The Network dashboard includes a "Multi-WAN (mwan3)" row. It stays empty when mwan3 or the exporter package is absent.
-
-## Exporter Configuration
-
-The setup script configures the exporter to listen on LAN:
-
-```sh
-uci set prometheus-node-exporter-lua.main.listen_interface=lan
-uci set prometheus-node-exporter-lua.main.listen_port=9100
-uci commit prometheus-node-exporter-lua
-/etc/init.d/prometheus-node-exporter-lua restart
-```
-
-Verify from the router:
-
-```sh
-LAN_IP="$(uci get network.lan.ipaddr)"
-wget -qO- "http://$LAN_IP:9100/metrics" | head -40
-```
-
-Verify from the monitoring host:
-
-```sh
-curl http://192.168.0.1:9100/metrics | head -40
-```
-
-## Custom Textfile Metrics
-
-The setup script installs:
-
-- `/usr/bin/openwrt-grafana-monitor-metrics`
-- `/etc/openwrt-grafana-monitor.conf`
-- `/var/prometheus/openwrt-grafana-monitor.prom`
-- A cron entry that refreshes metrics every minute
-
-These metrics back dashboard panels that the official exporter does not provide directly:
-
-- `dhcp_lease{mac,ip,hostname}`
-- `router_device_up{device,mac,ip,status}`
-- `wan_info{wanip,publicip,hostname}`
-- `packet_loss{target}`
-- `dns_probe_success{host}`
-- `dns_probe_duration_seconds{host}`
-- `overlay_bytes_total`
-- `overlay_bytes_used`
-- `gateway_packet_loss{gateway}`
-- `wan_public_ip_changed`
-- `dhcpv6_lease_count`
-- `openwrt_wifi_station_connected_seconds{station,vif}`
-
-Check them on the router:
-
-```sh
-/usr/bin/openwrt-grafana-monitor-metrics
-cat /var/prometheus/openwrt-grafana-monitor.prom
-LAN_IP="$(uci get network.lan.ipaddr)"
-wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'dhcp_lease|router_device_up|wan_info|packet_loss|dns_probe_success|dns_probe_duration_seconds|overlay_bytes|gateway_packet_loss|wan_public_ip_changed|dhcpv6_lease_count|openwrt_wifi_station_connected_seconds|node_textfile'
-```
-
-Check optional collector metrics:
-
-```sh
-LAN_IP="$(uci get network.lan.ipaddr)"
-wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'hostapd_station_(signal_dbm|receive_bytes_total|transmit_bytes_total|connected_seconds_total|inactive_seconds)|wifi_network_(quality|bitrate|noise_dbm|signal_dbm)|wifi_station_(signal_dbm|inactive_milliseconds|expected_throughput_kilobits_per_second|transmit_kilobits_per_second|receive_kilobits_per_second|transmit_packets_total|receive_packets_total|receive_bytes_total|transmit_bytes_total)|wifi_stations|node_thermal_zone_temp|node_hwmon_temp_celsius|node_scrape_collector_(success|duration_seconds)|node_textfile_mtime_seconds|nft_counter|mwan3_interface_(up|status|score|uptime|lost|age|online|offline|enabled|running|turn)|snmp6_Ip6'
-```
-
-## Optional SQM/Cake Metrics
-
-SQM/cake metrics are disabled by default because the relevant interfaces vary by router and SQM setup. Enable them only when SQM is configured and you know the egress and IFB ingress interface names:
-
-```sh
-ENABLE_SQM_METRICS=1 SQM_INTERFACES='eth0 ifb4eth0' sh /tmp/setup.sh 192.168.0.100
-```
-
-This installs:
-
-- `/usr/bin/openwrt-grafana-monitor-sqm`
-- `/var/prometheus/openwrt-grafana-monitor-sqm.prom`
-- One cron entry at one-minute cadence
-
-Metrics:
-
-- `sqm_backlog_bytes{iface,direction}`
-- `sqm_dropped_packets_total{iface,direction}`
-- `sqm_overlimits_total{iface,direction}`
-
-Direction is `egress` for configured non-IFB interfaces and `ingress` for `ifb*` interfaces. If `ENABLE_SQM_METRICS=1` and `SQM_INTERFACES` is empty, setup prints a warning and the collector emits no interface samples.
-
-Verify qdisc data before enabling:
-
-```sh
-tc -s qdisc show dev eth0
-tc -s qdisc show dev ifb4eth0
-```
-
-Verify exported metrics:
-
-```sh
-/usr/bin/openwrt-grafana-monitor-sqm
-cat /var/prometheus/openwrt-grafana-monitor-sqm.prom
-LAN_IP="$(uci get network.lan.ipaddr)"
-wget -qO- "http://$LAN_IP:9100/metrics" | grep -E 'sqm_(backlog_bytes|dropped_packets_total|overlimits_total)'
-```
-
-## Optional Add-On Collectors
-
-These niche collectors are not installed by default. Install them manually only when the router uses the matching feature:
-
-- `prometheus-node-exporter-lua-unbound`: useful only when Unbound is the resolver instead of dnsmasq.
-- `prometheus-node-exporter-lua-modemmanager`: useful for LTE/WWAN routers managed by ModemManager.
-- `prometheus-node-exporter-lua-ethtool`: useful for link speed, duplex, and driver details.
-
-OpenWrt 24.10:
-
-```sh
-opkg update
-opkg install prometheus-node-exporter-lua-unbound prometheus-node-exporter-lua-modemmanager prometheus-node-exporter-lua-ethtool
-```
-
-OpenWrt 25.12+:
-
-```sh
-apk update
-apk add prometheus-node-exporter-lua-unbound prometheus-node-exporter-lua-modemmanager prometheus-node-exporter-lua-ethtool
-```
-
-## Optional nftables Counters
-
-The setup script installs `prometheus-node-exporter-lua-nft-counters` as best effort, but it does not edit firewall rules. Enable only a small number of named counters manually so Prometheus label cardinality stays bounded.
-
-Example for an existing WAN reject rule:
-
-```sh
-uci show firewall | grep -i "Reject-WAN"
-uci set firewall.@rule[0].counter='1'
-uci commit firewall
-/etc/init.d/firewall restart
-nft --json list counters
-```
-
-Use your actual rule index or edit `/etc/config/firewall` directly. Avoid counters parameterized by source IP, destination IP, or port.
-
-## Remote Syslog
-
-Replace `192.168.0.100` with the monitoring host IP:
+The monitoring stack listens on both UDP and TCP. The setup script defaults to UDP, which matches OpenWrt syslog and the Kubernetes examples:
 
 ```sh
 uci set system.@system[0].log_ip=192.168.0.100
+uci set system.@system[0].log_remote='1'
 uci set system.@system[0].log_port=514
 uci set system.@system[0].log_proto=udp
+uci set system.@system[0].log_hostname="$(uci get system.@system[0].hostname 2>/dev/null || echo openwrt)"
 uci commit system
+```
+
+### 6. Restart services
+
+```sh
+/etc/init.d/prometheus-node-exporter-lua enable
+/etc/init.d/prometheus-node-exporter-lua restart
 /etc/init.d/log restart
 ```
 
-Verify from the router:
+## Verification
+
+### On the router
+
+Check the raw metrics endpoint:
 
 ```sh
-uci show system | grep log_
-logger "test message from openwrt"
+LAN_IP="$(uci get network.lan.ipaddr 2>/dev/null)"
+wget -qO- "http://$LAN_IP:9100/metrics" | head -40
 ```
 
-## Optional Firewall Logging
-
-To see firewall DROP events in the Logs dashboard:
+Verify the custom metrics exist:
 
 ```sh
-uci set firewall.@defaults[0].drop_invalid=1
-uci commit firewall
-/etc/init.d/firewall restart
+wget -qO- "http://$LAN_IP:9100/metrics" | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info|openwrt_service_up|openwrt_filesystem_used_percent|openwrt_wan_probe_latency_milliseconds|openwrt_dhcp_pool_size_total|openwrt_link_up|openwrt_softnet_dropped_total|openwrt_wan6_up|openwrt_filesystem_inode_used_percent|openwrt_firewall_chain_packets_total|openwrt_tc_available|openwrt_wifi_channel|openwrt_wifi_station_connected_seconds)'
 ```
 
-Or add `option log 1` to specific firewall rules.
-
-## Interface Names
-
-The dashboard defaults are:
-
-- WAN: `wan`
-- 2.4 GHz WiFi: `phy0-ap0`
-- 5 GHz WiFi: `phy1-ap0`
-- VPN: `tailscale0`
-
-Check your router:
+Verify the exporter is scraping the collectors you expect:
 
 ```sh
-ip route | grep default
-cat /proc/net/dev
+wget -qO- "http://$LAN_IP:9100/metrics" | grep '^node_scrape_collector_success'
 ```
 
-Use the Grafana dashboard variables to change interface names without editing JSON.
+Healthy examples include collectors such as:
+
+- `openwrt`
+- `wifi`
+- `wifi_stations`
+- `nat_traffic`
+- `netstat`
+- `uci_dhcp_host`
+- `dnsmasq`
+- `device_status`
+- `packet_loss`
+- `wan_info`
+- `textfile`
+
+### On the monitoring host
+
+```sh
+curl http://192.168.0.1:9100/metrics | head -20
+curl 'http://localhost:9090/api/v1/query?query=node_load1{job="openwrt"}'
+curl 'http://localhost:3100/loki/api/v1/query?query={job="openwrt-syslog"}'
+```
+
+## Important Notes
+
+- `router_device_up` is based on ICMP ping against DHCP leases. Some devices block ping and may appear offline even though they are connected.
+- `wan_info` depends on the helper script reaching an external public-IP service. If that request fails, the panel will still show the local WAN IP and set the public IP label to `unknown`.
+- The WAN quality metrics are synthetic probes run from the router itself. They are meant for trend and troubleshooting, not for precise SLA measurement.
+- The filesystem and service-health metrics are exported via the textfile collector from files in `/var/prometheus/*.prom`.
+- The newer helper scripts are also textfile metrics. They are safe to run even when optional tools are missing; affected scripts emit availability metrics such as `openwrt_tc_available` and `openwrt_wifi_radio_collector_available`.
+- `wifi` and `wifi_stations` should expose `wifi_*` metrics automatically once the packages are installed. If they do not, check `node_scrape_collector_success` first.
+- Temperature panels prefer `hwmon` and `thermal`. Some routers expose one, some both, some neither.
+
+## Files This Repo Adds To The Router
+
+These repo-local files are part of the supported setup and should be treated as part of the router install surface:
+
+- `openwrt/collectors/dnsmasq.lua`
+- `openwrt/collectors/device_status.lua`
+- `openwrt/collectors/packet_loss.lua`
+- `openwrt/collectors/wan_info.lua`
+- `openwrt/scripts/openwrt-monitor-device-status.sh`
+- `openwrt/scripts/openwrt-monitor-filesystem.sh`
+- `openwrt/scripts/openwrt-monitor-packet-loss.sh`
+- `openwrt/scripts/openwrt-monitor-service-health.sh`
+- `openwrt/scripts/openwrt-monitor-wan-info.sh`
+- `openwrt/scripts/openwrt-monitor-wan-quality.sh`
+- `openwrt/scripts/openwrt-monitor-dhcp-pool.sh`
+- `openwrt/scripts/openwrt-monitor-link-health.sh`
+- `openwrt/scripts/openwrt-monitor-softnet.sh`
+- `openwrt/scripts/openwrt-monitor-ipv6-health.sh`
+- `openwrt/scripts/openwrt-monitor-inodes.sh`
+- `openwrt/scripts/openwrt-monitor-firewall-counters.sh`
+- `openwrt/scripts/openwrt-monitor-sqm.sh`
+- `openwrt/scripts/openwrt-monitor-wifi-radio.sh`
+
+If you skip these files, the dashboards will only be partially populated.
