@@ -1,15 +1,15 @@
-# OpenWRT Router Setup
+# OpenWrt Router Setup
 
 This repo uses two kinds of router-side data:
 
-- Official `prometheus-node-exporter-lua` collectors from OpenWRT packages
+- Official `prometheus-node-exporter-lua` collectors from OpenWrt packages
 - Bundled custom collectors and helper scripts from this repo's `openwrt/` directory
 
 The dashboards expect both. If you only install the official packages, Grafana will still show core system metrics, but panels such as WAN/public IP, packet loss, DHCP pool usage, ping-based device presence, WAN quality, filesystem/inode usage, link health, IPv6 WAN health, firewall counters, and service health will be empty.
 
 ## Requirements
 
-- OpenWRT 21.02 or newer
+- OpenWrt 24.10/opkg or OpenWrt 25.12/apk
 - SSH access to the router
 - Enough free flash for the exporter packages plus a few small helper scripts
 - A monitoring host on the same LAN running this repo's Docker stack
@@ -19,21 +19,23 @@ The dashboards expect both. If you only install the official packages, Grafana w
 Copy the whole `openwrt/` directory, not just `setup.sh`:
 
 ```sh
-scp -r openwrt root@192.168.0.1:/tmp/
+scp -O -r openwrt root@192.168.0.1:/tmp/
 ssh root@192.168.0.1 "sh /tmp/openwrt/setup.sh 192.168.0.100"
 ```
 
+The `-O` flag forces legacy scp mode for OpenWrt/dropbear systems without an SFTP server.
+
 The setup script does all of the following:
 
-- Installs the required exporter packages
-- Installs `hwmon` and `thermal` collectors when available on your router build
+- Detects `opkg` or `apk` and installs the required exporter packages
+- Installs optional collectors when available on your router build
 - Installs the `textfile` collector used for custom script metrics
 - Configures `prometheus-node-exporter-lua` to listen on `lan:9100`
 - Copies bundled collectors into `/usr/lib/lua/prometheus-collectors/`
 - Copies helper scripts into `/usr/bin/`
 - Creates `/var/prometheus/` for textfile metrics
 - Adds cron jobs for device status, WAN/public IP, packet loss, WAN quality, filesystem and inode usage, service health, DHCP pool, link health, softnet counters, IPv6 health, firewall counters, SQM, and WiFi radio state
-- Configures remote syslog to the monitoring host over TCP port `514`
+- Configures remote syslog to the monitoring host over UDP port `514` by default
 
 Bundled files installed by the script:
 
@@ -61,6 +63,7 @@ Bundled files installed by the script:
 These are the packages the dashboards assume are present:
 
 ```sh
+# OpenWrt 24.10
 opkg update
 opkg install \
   prometheus-node-exporter-lua \
@@ -73,22 +76,33 @@ opkg install \
   prometheus-node-exporter-lua-netstat
 ```
 
-Recommended when available:
+On OpenWrt 25.12 and newer, use the same package names with `apk`:
 
 ```sh
-opkg install \
-  prometheus-node-exporter-lua-hwmon \
-  prometheus-node-exporter-lua-thermal
+apk update
+apk add \
+  prometheus-node-exporter-lua \
+  prometheus-node-exporter-lua-textfile \
+  prometheus-node-exporter-lua-openwrt \
+  prometheus-node-exporter-lua-uci_dhcp_host \
+  prometheus-node-exporter-lua-nat_traffic \
+  prometheus-node-exporter-lua-netstat
 ```
+
+Do not use `apk upgrade` on OpenWrt; use sysupgrade/attended sysupgrade for firmware upgrades.
 
 ## Optional Packages
 
 These are useful depending on your router and feature set:
 
+- `prometheus-node-exporter-lua-wifi`: AP-level WiFi metrics
+- `prometheus-node-exporter-lua-wifi_stations`: WiFi client metrics
+- `prometheus-node-exporter-lua-hostapd_stations`: hostapd WiFi client metrics when available
+- `prometheus-node-exporter-lua-hwmon`: hardware temperature sensors
+- `prometheus-node-exporter-lua-thermal`: thermal zone sensors
 - `prometheus-node-exporter-lua-mwan3`: multi-WAN status
 - `prometheus-node-exporter-lua-snmp6`: IPv6 stack counters
-- `prometheus-node-exporter-lua-nft-counters`: nftables counters on newer OpenWRT releases
-- `prometheus-node-exporter-lua-hostapd_ubus_stations`: extra WiFi client capability metadata
+- `prometheus-node-exporter-lua-nft-counters`: nftables counters on newer OpenWrt releases
 - `prometheus-node-exporter-lua-ethtool`: lower-level Ethernet/NIC stats
 - `tc` (from `ip-full` on some builds): detailed SQM/qdisc counters used by `openwrt-monitor-sqm.sh`
 
@@ -102,7 +116,7 @@ Run the commands from the Required Packages section above.
 
 ### 2. Configure the exporter to listen on LAN
 
-By default, the OpenWRT package usually listens on loopback only. Change it so the monitoring host can scrape it:
+By default, the OpenWrt package usually listens on loopback only. Change it so the monitoring host can scrape it:
 
 ```sh
 uci set prometheus-node-exporter-lua.main.listen_interface='lan'
@@ -115,8 +129,8 @@ uci commit prometheus-node-exporter-lua
 From your local machine:
 
 ```sh
-scp openwrt/collectors/*.lua root@192.168.0.1:/usr/lib/lua/prometheus-collectors/
-scp openwrt/scripts/*.sh root@192.168.0.1:/usr/bin/
+scp -O openwrt/collectors/*.lua root@192.168.0.1:/usr/lib/lua/prometheus-collectors/
+scp -O openwrt/scripts/*.sh root@192.168.0.1:/usr/bin/
 ssh root@192.168.0.1 "chmod +x /usr/bin/openwrt-monitor-*.sh"
 ```
 
@@ -167,13 +181,13 @@ Run the helper scripts once immediately so the custom metrics appear without wai
 
 ### 5. Configure remote syslog
 
-The monitoring stack listens on both UDP and TCP, but TCP is recommended for reliability:
+The monitoring stack listens on both UDP and TCP. The setup script defaults to UDP, which matches OpenWrt syslog and the Kubernetes examples:
 
 ```sh
 uci set system.@system[0].log_ip=192.168.0.100
 uci set system.@system[0].log_remote='1'
 uci set system.@system[0].log_port=514
-uci set system.@system[0].log_proto=tcp
+uci set system.@system[0].log_proto=udp
 uci set system.@system[0].log_hostname="$(uci get system.@system[0].hostname 2>/dev/null || echo openwrt)"
 uci commit system
 ```
@@ -193,19 +207,20 @@ uci commit system
 Check the raw metrics endpoint:
 
 ```sh
-wget -qO- http://127.0.0.1:9100/metrics | head -40
+LAN_IP="$(uci get network.lan.ipaddr 2>/dev/null)"
+wget -qO- "http://$LAN_IP:9100/metrics" | head -40
 ```
 
 Verify the custom metrics exist:
 
 ```sh
-wget -qO- http://127.0.0.1:9100/metrics | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info|openwrt_service_up|openwrt_filesystem_used_percent|openwrt_wan_probe_latency_milliseconds|openwrt_dhcp_pool_size_total|openwrt_link_up|openwrt_softnet_dropped_total|openwrt_wan6_up|openwrt_filesystem_inode_used_percent|openwrt_firewall_chain_packets_total|openwrt_tc_available|openwrt_wifi_channel)'
+wget -qO- "http://$LAN_IP:9100/metrics" | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info|openwrt_service_up|openwrt_filesystem_used_percent|openwrt_wan_probe_latency_milliseconds|openwrt_dhcp_pool_size_total|openwrt_link_up|openwrt_softnet_dropped_total|openwrt_wan6_up|openwrt_filesystem_inode_used_percent|openwrt_firewall_chain_packets_total|openwrt_tc_available|openwrt_wifi_channel|openwrt_wifi_station_connected_seconds)'
 ```
 
 Verify the exporter is scraping the collectors you expect:
 
 ```sh
-wget -qO- http://127.0.0.1:9100/metrics | grep '^node_scrape_collector_success'
+wget -qO- "http://$LAN_IP:9100/metrics" | grep '^node_scrape_collector_success'
 ```
 
 Healthy examples include collectors such as:

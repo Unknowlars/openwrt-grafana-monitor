@@ -1,5 +1,5 @@
 """
-OpenWRT Grafana Monitor — Dashboard Builder
+OpenWrt Grafana Monitor — Dashboard Builder
 Generated from live metrics at http://192.168.0.1:9100/metrics
 
 Confirmed metrics and interfaces:
@@ -215,6 +215,31 @@ TEMPLATING = {"list": [
         "current": {"text": "Prometheus", "value": "prometheus"},
         "hide": 0, "label": "Datasource",
     },
+    {
+        "name": "router", "type": "custom", "query": "openwrt",
+        "current": {"text": "openwrt", "value": "openwrt"},
+        "hide": 0, "label": "Router",
+    },
+    {
+        "name": "wan_interface", "type": "custom", "query": "wan",
+        "current": {"text": "wan", "value": "wan"},
+        "hide": 0, "label": "WAN interface",
+    },
+    {
+        "name": "wifi24_interface", "type": "custom", "query": "phy0-ap0",
+        "current": {"text": "phy0-ap0", "value": "phy0-ap0"},
+        "hide": 0, "label": "2.4 GHz interface",
+    },
+    {
+        "name": "wifi5_interface", "type": "custom", "query": "phy1-ap0",
+        "current": {"text": "phy1-ap0", "value": "phy1-ap0"},
+        "hide": 0, "label": "5 GHz interface",
+    },
+    {
+        "name": "vpn_interface", "type": "custom", "query": "tailscale0",
+        "current": {"text": "tailscale0", "value": "tailscale0"},
+        "hide": 0, "label": "VPN interface",
+    },
 ]}
 
 ANNOTATIONS = {"list": [{
@@ -267,7 +292,7 @@ def build_overview():
     # ── Tier 1: KPI stats row (8 × w=3) ─────────────────────────────────────
     # 1. Uptime
     panels.append(stat(1, "Uptime",
-        'node_time_seconds{job="openwrt"} - node_boot_time_seconds{job="openwrt"}',
+        'node_time_seconds{job="openwrt", router="$router"} - node_boot_time_seconds{job="openwrt", router="$router"}',
         x=0, y=y, w=4, h=4, unit="s", desc="Time since last reboot",
         thresholds=[
             {"color": "red",    "value": 0},
@@ -277,7 +302,7 @@ def build_overview():
 
     # 2. Memory used %
     panels.append(stat(2, "Memory Used",
-        '1 - (node_memory_MemAvailable_bytes{job="openwrt"} / node_memory_MemTotal_bytes{job="openwrt"})',
+        '1 - (node_memory_MemAvailable_bytes{job="openwrt", router="$router"} / node_memory_MemTotal_bytes{job="openwrt", router="$router"})',
         x=4, y=y, w=4, h=4, unit="percentunit",
         desc="Percentage of RAM in use. Routers often run tight — >90% is a concern.",
         thresholds=[
@@ -288,7 +313,7 @@ def build_overview():
 
     # 3. CPU busy %
     panels.append(stat(3, "CPU Busy",
-        '1 - avg(rate(node_cpu_seconds_total{job="openwrt", mode="idle"}[$__rate_interval]))',
+        '1 - avg(rate(node_cpu_seconds_total{job="openwrt", router="$router", mode="idle"}[$__rate_interval]))',
         x=8, y=y, w=4, h=4, unit="percentunit",
         desc="Average CPU utilisation across all cores",
         thresholds=[
@@ -299,14 +324,14 @@ def build_overview():
 
     # 4. Online devices
     panels.append(stat(4, "Online Devices",
-        'count(router_device_up{job="openwrt"} == 1)',
+        'count(router_device_up{job="openwrt", router="$router"} == 1)',
         x=12, y=y, w=4, h=4, unit="short",
         desc="Number of devices currently seen as online by the router",
         thresholds=[{"color": "blue", "value": 0}]))
 
     # 5. NAT sessions
     panels.append(stat(5, "NAT Sessions",
-        'node_nf_conntrack_entries{job="openwrt"}',
+        'node_nf_conntrack_entries{job="openwrt", router="$router"}',
         x=16, y=y, w=4, h=4, unit="short",
         desc="Active NAT/conntrack sessions. High values may indicate port scanning or excessive connections.",
         thresholds=[
@@ -317,7 +342,7 @@ def build_overview():
 
     # 6. Packet loss
     panels.append(stat(6, "Packet Loss",
-        'packet_loss{job="openwrt"}',
+        'packet_loss{job="openwrt", router="$router"}',
         x=20, y=y, w=4, h=4, unit="percent",
         desc="Packet loss percentage on WAN connection. 0 = perfect, >5% = degraded.",
         thresholds=[
@@ -328,7 +353,7 @@ def build_overview():
     y += 4
 
     panels.append(stat(25, "Services Down",
-        'count(openwrt_service_up{job="openwrt"} == 0)',
+        'count(openwrt_service_up{job="openwrt", router="$router"} == 0)',
         x=0, y=y, w=6, h=4, unit="short",
         desc="Count of monitored router services that are currently down. Backed by the textfile service-health script.",
         thresholds=[
@@ -338,9 +363,9 @@ def build_overview():
         ]))
 
     panels.append(stat(26, "Overlay Used",
-        'openwrt_filesystem_used_percent{job="openwrt", mount="/overlay"}',
+        'openwrt_filesystem_used_percent{job="openwrt", router="$router", mount="/overlay"}',
         x=6, y=y, w=6, h=4, unit="percent",
-        desc="Persistent overlay storage usage. High usage is a common OpenWRT failure mode during upgrades and package installs.",
+        desc="Persistent overlay storage usage. High usage is a common OpenWrt failure mode during upgrades and package installs.",
         thresholds=[
             {"color": "green",  "value": 0},
             {"color": "yellow", "value": 70},
@@ -348,7 +373,7 @@ def build_overview():
         ]))
 
     panels.append(stat(27, "Router Temperature",
-        'max(node_hwmon_temp_celsius{job="openwrt"}) or max(node_thermal_zone_temp{job="openwrt"})',
+        'max(node_hwmon_temp_celsius{job="openwrt", router="$router"}) or max(node_thermal_zone_temp{job="openwrt", router="$router"})',
         x=12, y=y, w=6, h=4, unit="celsius",
         desc="Preferred temperature signal from hwmon or thermal collectors. Install both if available on your router.",
         thresholds=[
@@ -358,14 +383,14 @@ def build_overview():
         ]))
 
     panels.append(stat(28, "WiFi Clients",
-        'sum(wifi_stations{job="openwrt"})',
+        'sum(wifi_stations{job="openwrt", router="$router"})',
         x=18, y=y, w=6, h=4, unit="short",
         desc="Associated WiFi clients across all access-point interfaces. Requires the wifi_stations collector.",
         thresholds=[{"color": "blue", "value": 0}]))
     y += 4
 
     panels.append(stat(29, "DHCP Pool Used",
-        'openwrt_dhcp_pool_utilization_percent{job="openwrt"} / 100',
+        'openwrt_dhcp_pool_utilization_percent{job="openwrt", router="$router"} / 100',
         x=0, y=y, w=6, h=4, unit="percentunit",
         desc="Active DHCP leases as a fraction of the configured pool across interfaces.",
         thresholds=[
@@ -375,7 +400,7 @@ def build_overview():
         ]))
 
     panels.append(stat(30, "IPv6 WAN Up",
-        'openwrt_wan6_up{job="openwrt"}',
+        'openwrt_wan6_up{job="openwrt", router="$router"}',
         x=6, y=y, w=6, h=4, unit="short",
         desc="Whether WAN IPv6 is currently up (1) or down (0).",
         thresholds=[
@@ -384,7 +409,7 @@ def build_overview():
         ]))
 
     panels.append(stat(31, "Links Down",
-        'count(openwrt_link_up{job="openwrt"} == 0)',
+        'count(openwrt_link_up{job="openwrt", router="$router"} == 0)',
         x=12, y=y, w=6, h=4, unit="short",
         desc="Number of interfaces currently reported with link down.",
         thresholds=[
@@ -394,7 +419,7 @@ def build_overview():
         ]))
 
     panels.append(stat(32, "Softnet Drops/s",
-        'sum(rate(openwrt_softnet_dropped_total{job="openwrt"}[$__rate_interval]))',
+        'sum(rate(openwrt_softnet_dropped_total{job="openwrt", router="$router"}[$__rate_interval]))',
         x=18, y=y, w=6, h=4, unit="pps",
         desc="Kernel packet drops in the softnet path. Sustained non-zero values indicate packet-processing saturation.",
         thresholds=[
@@ -407,9 +432,9 @@ def build_overview():
     # ── Tier 2: WAN throughput + CPU load ────────────────────────────────────
     panels.append(ts(7, "WAN Throughput (wan)",
         targets=[
-            tgt('rate(node_network_receive_bytes_total{job="openwrt", device="wan"}[$__rate_interval])',
+            tgt('rate(node_network_receive_bytes_total{job="openwrt", router="$router", device="$wan_interface"}[$__rate_interval])',
                 "Download (RX)", "A"),
-            tgt('rate(node_network_transmit_bytes_total{job="openwrt", device="wan"}[$__rate_interval])',
+            tgt('rate(node_network_transmit_bytes_total{job="openwrt", router="$router", device="$wan_interface"}[$__rate_interval])',
                 "Upload (TX)", "B"),
         ],
         x=0, y=y, w=12, h=9, unit="Bps",
@@ -423,9 +448,9 @@ def build_overview():
 
     panels.append(ts(8, "CPU Load Average",
         targets=[
-            tgt('node_load1{job="openwrt"}',  "1 min",  "A"),
-            tgt('node_load5{job="openwrt"}',  "5 min",  "B"),
-            tgt('node_load15{job="openwrt"}', "15 min", "C"),
+            tgt('node_load1{job="openwrt", router="$router"}',  "1 min",  "A"),
+            tgt('node_load5{job="openwrt", router="$router"}',  "5 min",  "B"),
+            tgt('node_load15{job="openwrt", router="$router"}', "15 min", "C"),
         ],
         x=12, y=y, w=12, h=9, unit="short",
         desc="System load average. On this 4-thread MT7621 router, values >4 indicate sustained overload.",
@@ -435,11 +460,11 @@ def build_overview():
     # ── Tier 2: Memory + NAT sessions ────────────────────────────────────────
     panels.append(ts(9, "Memory Usage",
         targets=[
-            tgt('node_memory_MemTotal_bytes{job="openwrt"} - node_memory_MemAvailable_bytes{job="openwrt"}',
+            tgt('node_memory_MemTotal_bytes{job="openwrt", router="$router"} - node_memory_MemAvailable_bytes{job="openwrt", router="$router"}',
                 "Used", "A"),
-            tgt('node_memory_MemAvailable_bytes{job="openwrt"}',
+            tgt('node_memory_MemAvailable_bytes{job="openwrt", router="$router"}',
                 "Available", "B"),
-            tgt('node_memory_Buffers_bytes{job="openwrt"} + node_memory_Cached_bytes{job="openwrt"}',
+            tgt('node_memory_Buffers_bytes{job="openwrt", router="$router"} + node_memory_Cached_bytes{job="openwrt", router="$router"}',
                 "Buffers+Cache", "C"),
         ],
         x=0, y=y, w=12, h=8, unit="bytes", stacked=True, fill=40,
@@ -447,9 +472,9 @@ def build_overview():
 
     panels.append(ts(10, "NAT Conntrack Sessions",
         targets=[
-            tgt('node_nf_conntrack_entries{job="openwrt"}',
+            tgt('node_nf_conntrack_entries{job="openwrt", router="$router"}',
                 "Active sessions", "A"),
-            tgt('node_nf_conntrack_entries_limit{job="openwrt"}',
+            tgt('node_nf_conntrack_entries_limit{job="openwrt", router="$router"}',
                 "Maximum limit", "B"),
         ],
         x=12, y=y, w=12, h=8, unit="short",
@@ -466,13 +491,13 @@ def build_overview():
     # ── Tier 2: Per-CPU breakdown ─────────────────────────────────────────────
     panels.append(ts(11, "CPU Usage by Mode (all cores)",
         targets=[
-            tgt('sum(rate(node_cpu_seconds_total{job="openwrt", mode="user"}[$__rate_interval]))',
+            tgt('sum(rate(node_cpu_seconds_total{job="openwrt", router="$router", mode="user"}[$__rate_interval]))',
                 "user", "A"),
-            tgt('sum(rate(node_cpu_seconds_total{job="openwrt", mode="system"}[$__rate_interval]))',
+            tgt('sum(rate(node_cpu_seconds_total{job="openwrt", router="$router", mode="system"}[$__rate_interval]))',
                 "system", "B"),
-            tgt('sum(rate(node_cpu_seconds_total{job="openwrt", mode="softirq"}[$__rate_interval]))',
+            tgt('sum(rate(node_cpu_seconds_total{job="openwrt", router="$router", mode="softirq"}[$__rate_interval]))',
                 "softirq", "C"),
-            tgt('sum(rate(node_cpu_seconds_total{job="openwrt", mode="iowait"}[$__rate_interval]))',
+            tgt('sum(rate(node_cpu_seconds_total{job="openwrt", router="$router", mode="iowait"}[$__rate_interval]))',
                 "iowait", "D"),
         ],
         x=0, y=y, w=24, h=8, unit="short", stacked=True, fill=60,
@@ -483,9 +508,9 @@ def build_overview():
     panels.append(row_panel(20, "Router Info", y))
     y += 1
 
-    panels.append(table(21, "OpenWRT Firmware Info",
+    panels.append(table(21, "OpenWrt Firmware Info",
         targets=[tgt(
-            'node_openwrt_info{job="openwrt"}',
+            'node_openwrt_info{job="openwrt", router="$router"}',
             "", "A", fmt="table", instant=True,
         )],
         x=0, y=y, w=24, h=4,
@@ -496,7 +521,7 @@ def build_overview():
                 "renameByName": {
                     "board_name": "Board",
                     "model": "Model",
-                    "release": "OpenWRT Release",
+                    "release": "OpenWrt Release",
                     "revision": "Revision",
                     "target": "Target",
                     "system": "CPU",
@@ -508,7 +533,7 @@ def build_overview():
 
     panels.append(table(22, "WAN IP Info",
         targets=[tgt(
-            'wan_info{job="openwrt"}',
+            'wan_info{job="openwrt", router="$router"}',
             "", "A", fmt="table", instant=True,
         )],
         x=0, y=y, w=12, h=4,
@@ -521,7 +546,7 @@ def build_overview():
         ]))
 
     panels.append(stat(23, "Open File Descriptors",
-        'node_filefd_allocated{job="openwrt"} / node_filefd_maximum{job="openwrt"}',
+        'node_filefd_allocated{job="openwrt", router="$router"} / node_filefd_maximum{job="openwrt", router="$router"}',
         x=12, y=y, w=6, h=4, unit="percentunit",
         desc="File descriptor usage. High values indicate too many open connections or stuck processes.",
         thresholds=[
@@ -531,7 +556,7 @@ def build_overview():
         ]))
 
     panels.append(stat(24, "Static Reservations",
-        'max(time() - node_textfile_mtime_seconds{job="openwrt"})',
+        'max(time() - node_textfile_mtime_seconds{job="openwrt", router="$router"})',
         x=18, y=y, w=6, h=4, unit="short",
         desc="Age in seconds of the oldest helper-generated textfile metric. Rising values mean one of the router-side scripts stopped updating.",
         thresholds=[
@@ -542,8 +567,8 @@ def build_overview():
 
     return make_dashboard(
         uid="openwrt-overview",
-        title="OpenWRT — Overview",
-        description="OpenWRT system health: CPU, memory, WAN throughput, NAT sessions, router services, overlay usage, WiFi clients, and temperature.",
+        title="OpenWrt — Overview",
+        description="OpenWrt system health: CPU, memory, WAN throughput, NAT sessions, router services, overlay usage, WiFi clients, and temperature.",
         panels=panels,
         tags=["openwrt", "overview"],
     )
@@ -562,7 +587,7 @@ def build_network():
 
     panels.append(ts(2, "WAN Download (RX)",
         targets=[tgt(
-            'rate(node_network_receive_bytes_total{job="openwrt", device="wan"}[$__rate_interval])',
+            'rate(node_network_receive_bytes_total{job="openwrt", router="$router", device="$wan_interface"}[$__rate_interval])',
             "WAN Download", "A")],
         x=0, y=y, w=12, h=8, unit="Bps",
         desc="Bytes per second received on the WAN interface (internet download)",
@@ -571,7 +596,7 @@ def build_network():
 
     panels.append(ts(3, "WAN Upload (TX)",
         targets=[tgt(
-            'rate(node_network_transmit_bytes_total{job="openwrt", device="wan"}[$__rate_interval])',
+            'rate(node_network_transmit_bytes_total{job="openwrt", router="$router", device="$wan_interface"}[$__rate_interval])',
             "WAN Upload", "A")],
         x=12, y=y, w=12, h=8, unit="Bps",
         desc="Bytes per second transmitted on the WAN interface (internet upload)",
@@ -581,9 +606,9 @@ def build_network():
 
     panels.append(ts(4, "WAN Packets/sec",
         targets=[
-            tgt('rate(node_network_receive_packets_total{job="openwrt", device="wan"}[$__rate_interval])',
+            tgt('rate(node_network_receive_packets_total{job="openwrt", router="$router", device="$wan_interface"}[$__rate_interval])',
                 "RX packets", "A"),
-            tgt('rate(node_network_transmit_packets_total{job="openwrt", device="wan"}[$__rate_interval])',
+            tgt('rate(node_network_transmit_packets_total{job="openwrt", router="$router", device="$wan_interface"}[$__rate_interval])',
                 "TX packets", "B"),
         ],
         x=0, y=y, w=12, h=7, unit="pps",
@@ -591,11 +616,11 @@ def build_network():
 
     panels.append(ts(5, "WAN Errors & Drops",
         targets=[
-            tgt('rate(node_network_receive_errs_total{job="openwrt", device="wan"}[$__rate_interval])',
+            tgt('rate(node_network_receive_errs_total{job="openwrt", router="$router", device="$wan_interface"}[$__rate_interval])',
                 "RX errors", "A"),
-            tgt('rate(node_network_receive_drop_total{job="openwrt", device="wan"}[$__rate_interval])',
+            tgt('rate(node_network_receive_drop_total{job="openwrt", router="$router", device="$wan_interface"}[$__rate_interval])',
                 "RX drops", "B"),
-            tgt('rate(node_network_transmit_errs_total{job="openwrt", device="wan"}[$__rate_interval])',
+            tgt('rate(node_network_transmit_errs_total{job="openwrt", router="$router", device="$wan_interface"}[$__rate_interval])',
                 "TX errors", "C"),
         ],
         x=12, y=y, w=12, h=7, unit="pps",
@@ -610,9 +635,9 @@ def build_network():
 
     panels.append(ts(6, "WAN Probe Latency & Jitter",
         targets=[
-            tgt('openwrt_wan_probe_latency_milliseconds{job="openwrt"}',
+            tgt('openwrt_wan_probe_latency_milliseconds{job="openwrt", router="$router"}',
                 'latency {{target}} ({{address}})', "A"),
-            tgt('openwrt_wan_probe_jitter_milliseconds{job="openwrt"}',
+            tgt('openwrt_wan_probe_jitter_milliseconds{job="openwrt", router="$router"}',
                 'jitter {{target}} ({{address}})', "B"),
         ],
         x=0, y=y, w=12, h=7, unit="ms",
@@ -620,7 +645,7 @@ def build_network():
 
     panels.append(ts(7, "WAN Probe Packet Loss",
         targets=[tgt(
-            'openwrt_wan_probe_packet_loss_percent{job="openwrt"}',
+            'openwrt_wan_probe_packet_loss_percent{job="openwrt", router="$router"}',
             '{{target}} ({{address}})', "A")],
         x=12, y=y, w=12, h=7, unit="percent",
         desc="Packet loss from the same router-side probes. Useful to separate local gateway issues from upstream internet loss."))
@@ -632,13 +657,13 @@ def build_network():
 
     panels.append(ts(11, "WiFi AP Throughput — Both Bands",
         targets=[
-            tgt('rate(node_network_receive_bytes_total{job="openwrt", device="phy0-ap0"}[$__rate_interval])',
+            tgt('rate(node_network_receive_bytes_total{job="openwrt", router="$router", device="$wifi24_interface"}[$__rate_interval])',
                 "2.4 GHz RX", "A"),
-            tgt('rate(node_network_transmit_bytes_total{job="openwrt", device="phy0-ap0"}[$__rate_interval])',
+            tgt('rate(node_network_transmit_bytes_total{job="openwrt", router="$router", device="$wifi24_interface"}[$__rate_interval])',
                 "2.4 GHz TX", "B"),
-            tgt('rate(node_network_receive_bytes_total{job="openwrt", device="phy1-ap0"}[$__rate_interval])',
+            tgt('rate(node_network_receive_bytes_total{job="openwrt", router="$router", device="$wifi5_interface"}[$__rate_interval])',
                 "5 GHz RX", "C"),
-            tgt('rate(node_network_transmit_bytes_total{job="openwrt", device="phy1-ap0"}[$__rate_interval])',
+            tgt('rate(node_network_transmit_bytes_total{job="openwrt", router="$router", device="$wifi5_interface"}[$__rate_interval])',
                 "5 GHz TX", "D"),
         ],
         x=0, y=y, w=24, h=8, unit="Bps",
@@ -646,7 +671,7 @@ def build_network():
     y += 8
 
     panels.append(stat(94, "WiFi Stations Collector",
-        'count(wifi_stations{job="openwrt"}) or vector(0)',
+        'count(wifi_stations{job="openwrt", router="$router"}) or vector(0)',
         x=0, y=y, w=6, h=7, unit="short",
         desc="Number of WiFi AP interfaces reporting per-client station data. 0 = the prometheus-node-exporter-lua-wifi_stations package is not installed or not running.",
         thresholds=[
@@ -656,14 +681,14 @@ def build_network():
 
     panels.append(ts(12, "WiFi Clients by AP",
         targets=[tgt(
-            'wifi_stations{job="openwrt"}',
+            'wifi_stations{job="openwrt", router="$router"}',
             '{{ifname}}', "A")],
         x=6, y=y, w=9, h=7, unit="short",
         desc="Associated WiFi client count per AP interface. Requires the wifi_stations collector."))
 
     panels.append(ts(13, "WiFi Signal by AP",
         targets=[tgt(
-            'wifi_network_signal_dbm{job="openwrt"}',
+            'wifi_network_signal_dbm{job="openwrt", router="$router"}',
             '{{ifname}} {{ssid}}', "A")],
         x=15, y=y, w=9, h=7, unit="dBm",
         desc="Reported signal level per WiFi AP interface. Requires the wifi collector."))
@@ -671,14 +696,14 @@ def build_network():
 
     panels.append(ts(14, "WiFi AP Quality",
         targets=[tgt(
-            'wifi_network_quality{job="openwrt"}',
+            'wifi_network_quality{job="openwrt", router="$router"}',
             '{{ifname}} {{ssid}}', "A")],
         x=0, y=y, w=12, h=7, unit="percent",
         desc="WiFi quality score reported by iwinfo for each access point interface."))
 
     panels.append(ts(15, "WiFi AP Link Bitrate",
         targets=[tgt(
-            '1000 * wifi_network_bitrate{job="openwrt"}',
+            '1000 * wifi_network_bitrate{job="openwrt", router="$router"}',
             '{{ifname}} {{ssid}}', "A")],
         x=12, y=y, w=12, h=7, unit="bps",
         desc="Configured WiFi AP bitrate per radio. Useful for spotting unexpected band or mode changes."))
@@ -690,14 +715,14 @@ def build_network():
 
     panels.append(ts(21, "All Interface Throughput (RX)",
         targets=[tgt(
-            'rate(node_network_receive_bytes_total{job="openwrt", device!~"lo|lan2|lan3"}[$__rate_interval])',
+            'rate(node_network_receive_bytes_total{job="openwrt", router="$router", device!~"lo|lan2|lan3"}[$__rate_interval])',
             "{{device}}", "A")],
         x=0, y=y, w=12, h=8, unit="Bps",
         desc="RX throughput per interface. Excludes loopback and unused LAN ports (lan2, lan3)."))
 
     panels.append(ts(22, "All Interface Throughput (TX)",
         targets=[tgt(
-            'rate(node_network_transmit_bytes_total{job="openwrt", device!~"lo|lan2|lan3"}[$__rate_interval])',
+            'rate(node_network_transmit_bytes_total{job="openwrt", router="$router", device!~"lo|lan2|lan3"}[$__rate_interval])',
             "{{device}}", "A")],
         x=12, y=y, w=12, h=8, unit="Bps",
         desc="TX throughput per interface. Excludes loopback and unused LAN ports."))
@@ -709,9 +734,9 @@ def build_network():
 
     panels.append(ts(31, "Tailscale VPN Throughput",
         targets=[
-            tgt('rate(node_network_receive_bytes_total{job="openwrt", device="tailscale0"}[$__rate_interval])',
+            tgt('rate(node_network_receive_bytes_total{job="openwrt", router="$router", device="$vpn_interface"}[$__rate_interval])',
                 "VPN RX", "A"),
-            tgt('rate(node_network_transmit_bytes_total{job="openwrt", device="tailscale0"}[$__rate_interval])',
+            tgt('rate(node_network_transmit_bytes_total{job="openwrt", router="$router", device="$vpn_interface"}[$__rate_interval])',
                 "VPN TX", "B"),
         ],
         x=0, y=y, w=12, h=7, unit="Bps",
@@ -719,8 +744,8 @@ def build_network():
 
     panels.append(ts(32, "NAT Conntrack Sessions",
         targets=[
-            tgt('node_nf_conntrack_entries{job="openwrt"}',         "Active sessions", "A"),
-            tgt('node_nf_conntrack_entries_limit{job="openwrt"}',   "Limit",           "B"),
+            tgt('node_nf_conntrack_entries{job="openwrt", router="$router"}',         "Active sessions", "A"),
+            tgt('node_nf_conntrack_entries_limit{job="openwrt", router="$router"}',   "Limit",           "B"),
         ],
         x=12, y=y, w=12, h=7, unit="short",
         desc="NAT connection tracking table usage vs limit. Approaching the limit causes new connections to fail."))
@@ -732,11 +757,11 @@ def build_network():
 
     panels.append(ts(41, "DNS Queries",
         targets=[
-            tgt('rate(dnsmasq_dns_queries_forwarded{job="openwrt"}[$__rate_interval])',
+            tgt('rate(dnsmasq_dns_queries_forwarded{job="openwrt", router="$router"}[$__rate_interval])',
                 "Forwarded", "A"),
-            tgt('rate(dnsmasq_dns_local_answered{job="openwrt"}[$__rate_interval])',
+            tgt('rate(dnsmasq_dns_local_answered{job="openwrt", router="$router"}[$__rate_interval])',
                 "Local (cached)", "B"),
-            tgt('rate(dnsmasq_dns_unanswered{job="openwrt"}[$__rate_interval])',
+            tgt('rate(dnsmasq_dns_unanswered{job="openwrt", router="$router"}[$__rate_interval])',
                 "Unanswered", "C"),
         ],
         x=0, y=y, w=12, h=8, unit="reqps",
@@ -744,11 +769,11 @@ def build_network():
 
     panels.append(ts(42, "DHCP Events",
         targets=[
-            tgt('rate(dnsmasq_dhcp_ack{job="openwrt"}[$__rate_interval])',
+            tgt('rate(dnsmasq_dhcp_ack{job="openwrt", router="$router"}[$__rate_interval])',
                 "ACK (granted)", "A"),
-            tgt('rate(dnsmasq_dhcp_request{job="openwrt"}[$__rate_interval])',
+            tgt('rate(dnsmasq_dhcp_request{job="openwrt", router="$router"}[$__rate_interval])',
                 "Request", "B"),
-            tgt('rate(dnsmasq_dhcp_discover{job="openwrt"}[$__rate_interval])',
+            tgt('rate(dnsmasq_dhcp_discover{job="openwrt", router="$router"}[$__rate_interval])',
                 "Discover (new)", "C"),
         ],
         x=12, y=y, w=12, h=8, unit="reqps",
@@ -760,14 +785,14 @@ def build_network():
 
     panels.append(ts(46, "Filesystem Used %",
         targets=[tgt(
-            'openwrt_filesystem_used_percent{job="openwrt"}',
+            'openwrt_filesystem_used_percent{job="openwrt", router="$router"}',
             '{{mount}}', "A")],
         x=0, y=y, w=12, h=7, unit="percent",
         desc="Router storage pressure on persistent overlay storage and tmpfs. High overlay usage often breaks upgrades and package installs."))
 
     panels.append(bargauge(47, "Service Status",
         targets=[tgt(
-            'openwrt_service_up{job="openwrt"}',
+            'openwrt_service_up{job="openwrt", router="$router"}',
             '{{service}}', "A")],
         x=12, y=y, w=12, h=7, unit="short", min=0, max=1,
         desc="Current status of key router daemons collected by the textfile service-health script.",
@@ -779,18 +804,18 @@ def build_network():
 
     panels.append(ts(52, "Filesystem Inode Used %",
         targets=[tgt(
-            'openwrt_filesystem_inode_used_percent{job="openwrt"}',
+            'openwrt_filesystem_inode_used_percent{job="openwrt", router="$router"}',
             '{{mount}}', "A")],
         x=0, y=y, w=12, h=7, unit="percent",
         desc="Inode pressure on persistent and tmp filesystems. Inode exhaustion can break package operations even with free bytes left."))
 
     panels.append(ts(53, "DHCP Pool Utilization",
         targets=[
-            tgt('openwrt_dhcp_pool_utilization_percent{job="openwrt"}',
+            tgt('openwrt_dhcp_pool_utilization_percent{job="openwrt", router="$router"}',
                 "Pool used %", "A"),
-            tgt('openwrt_dhcp_leases_used{job="openwrt"}',
+            tgt('openwrt_dhcp_leases_used{job="openwrt", router="$router"}',
                 "Active leases", "B"),
-            tgt('openwrt_dhcp_pool_size_total{job="openwrt"}',
+            tgt('openwrt_dhcp_pool_size_total{job="openwrt", router="$router"}',
                 "Pool size", "C"),
         ],
         x=12, y=y, w=12, h=7, unit="short",
@@ -803,7 +828,7 @@ def build_network():
 
     panels.append(bargauge(99, "DHCP Pool Size by Interface",
         targets=[tgt(
-            'openwrt_dhcp_pool_size{job="openwrt"}',
+            'openwrt_dhcp_pool_size{job="openwrt", router="$router"}',
             '{{interface}}', "A")],
         x=0, y=y, w=12, h=7, unit="short", min=0,
         desc="Configured DHCP pool size per interface from UCI. Each bar shows how many IP addresses are in that interface's DHCP range.",
@@ -811,9 +836,9 @@ def build_network():
 
     panels.append(ts(100, "DHCP Lease Lifetime Remaining",
         targets=[
-            tgt('openwrt_dhcp_lease_remaining_seconds_min{job="openwrt"}',
+            tgt('openwrt_dhcp_lease_remaining_seconds_min{job="openwrt", router="$router"}',
                 "Min remaining", "A"),
-            tgt('openwrt_dhcp_lease_remaining_seconds_max{job="openwrt"}',
+            tgt('openwrt_dhcp_lease_remaining_seconds_max{job="openwrt", router="$router"}',
                 "Max remaining", "B"),
         ],
         x=12, y=y, w=12, h=7, unit="s",
@@ -825,7 +850,7 @@ def build_network():
 
     panels.append(table(49, "Helper Metric Freshness",
         targets=[tgt(
-            'time() - node_textfile_mtime_seconds{job="openwrt"}',
+            'time() - node_textfile_mtime_seconds{job="openwrt", router="$router"}',
             "", "A", fmt="table", instant=True,
         )],
         x=0, y=y, w=12, h=8,
@@ -843,7 +868,7 @@ def build_network():
 
     panels.append(table(50, "Service Enablement",
         targets=[tgt(
-            'openwrt_service_enabled{job="openwrt"}',
+            'openwrt_service_enabled{job="openwrt", router="$router"}',
             "", "A", fmt="table", instant=True,
         )],
         x=12, y=y, w=12, h=8,
@@ -875,7 +900,7 @@ def build_network():
 
     panels.append(table(61, "Network Interface Status",
         targets=[
-            tgt('node_network_info{job="openwrt"}', "", "A", fmt="table", instant=True),
+            tgt('node_network_info{job="openwrt", router="$router"}', "", "A", fmt="table", instant=True),
         ],
         x=0, y=y, w=24, h=8,
         desc="Current state of all network interfaces",
@@ -908,11 +933,11 @@ def build_network():
 
     panels.append(ts(71, "IPv6 WAN Health",
         targets=[
-            tgt('openwrt_wan6_up{job="openwrt"}',
+            tgt('openwrt_wan6_up{job="openwrt", router="$router"}',
                 "WAN6 up", "A"),
-            tgt('openwrt_ipv6_default_route_up{job="openwrt"}',
+            tgt('openwrt_ipv6_default_route_up{job="openwrt", router="$router"}',
                 "Default route up", "B"),
-            tgt('openwrt_ipv6_global_addresses{job="openwrt"}',
+            tgt('openwrt_ipv6_global_addresses{job="openwrt", router="$router"}',
                 "Global addresses", "C"),
         ],
         x=0, y=y, w=12, h=8, unit="short",
@@ -920,9 +945,9 @@ def build_network():
 
     panels.append(ts(72, "IPv6 Prefix Lifetime",
         targets=[
-            tgt('openwrt_ipv6_prefix_valid_seconds{job="openwrt"}',
+            tgt('openwrt_ipv6_prefix_valid_seconds{job="openwrt", router="$router"}',
                 "Valid lifetime", "A"),
-            tgt('openwrt_ipv6_prefix_preferred_seconds{job="openwrt"}',
+            tgt('openwrt_ipv6_prefix_preferred_seconds{job="openwrt", router="$router"}',
                 "Preferred lifetime", "B"),
         ],
         x=12, y=y, w=12, h=8, unit="s",
@@ -931,14 +956,14 @@ def build_network():
 
     panels.append(ts(73, "Interface Link Up/Down",
         targets=[tgt(
-            'openwrt_link_up{job="openwrt", device!="lo"}',
+            'openwrt_link_up{job="openwrt", router="$router", device!="lo"}',
             '{{device}}', "A")],
         x=0, y=y, w=12, h=8, unit="short",
         desc="Kernel carrier/operstate-derived interface link status."))
 
     panels.append(ts(74, "Interface Link Speed",
         targets=[tgt(
-            'openwrt_link_speed_bits_per_second{job="openwrt", device!="lo"}',
+            'openwrt_link_speed_bits_per_second{job="openwrt", router="$router", device!="lo"}',
             '{{device}}', "A")],
         x=12, y=y, w=12, h=8, unit="bps",
         desc="Current link speed per interface where exposed by the kernel."))
@@ -946,14 +971,14 @@ def build_network():
 
     panels.append(ts(75, "Softnet Drops by CPU",
         targets=[tgt(
-            'rate(openwrt_softnet_dropped_total{job="openwrt"}[$__rate_interval])',
+            'rate(openwrt_softnet_dropped_total{job="openwrt", router="$router"}[$__rate_interval])',
             'cpu {{cpu}}', "A")],
         x=0, y=y, w=12, h=8, unit="pps",
         desc="Dropped packets in the kernel softnet path by CPU. Sustained growth indicates packet-processing saturation."))
 
     panels.append(ts(76, "Softnet Budget Exhaustion",
         targets=[tgt(
-            'rate(openwrt_softnet_times_squeezed_total{job="openwrt"}[$__rate_interval])',
+            'rate(openwrt_softnet_times_squeezed_total{job="openwrt", router="$router"}[$__rate_interval])',
             'cpu {{cpu}}', "A")],
         x=12, y=y, w=12, h=8, unit="short",
         desc="How often softnet processing hit budget limits per CPU."))
@@ -961,16 +986,16 @@ def build_network():
 
     panels.append(ts(95, "Softnet Packets Processed by CPU",
         targets=[tgt(
-            'rate(openwrt_softnet_processed_total{job="openwrt"}[$__rate_interval])',
+            'rate(openwrt_softnet_processed_total{job="openwrt", router="$router"}[$__rate_interval])',
             'cpu {{cpu}}', "A")],
         x=0, y=y, w=12, h=8, unit="pps",
         desc="Total packets processed by the kernel softnet path per CPU. Compare with the drops panel above to understand what fraction of processed packets are being dropped."))
 
     panels.append(ts(96, "TCP Listen Queue Drops",
         targets=[
-            tgt('rate(openwrt_tcp_listen_drops_total{job="openwrt"}[$__rate_interval])',
+            tgt('rate(openwrt_tcp_listen_drops_total{job="openwrt", router="$router"}[$__rate_interval])',
                 "Listen drops", "A"),
-            tgt('rate(openwrt_tcp_listen_overflows_total{job="openwrt"}[$__rate_interval])',
+            tgt('rate(openwrt_tcp_listen_overflows_total{job="openwrt", router="$router"}[$__rate_interval])',
                 "Listen overflows", "B"),
         ],
         x=12, y=y, w=12, h=8, unit="pps",
@@ -988,21 +1013,21 @@ def build_network():
 
     panels.append(ts(81, "Firewall Drops by Chain",
         targets=[tgt(
-            'sum by(chain, target, family) (rate(openwrt_firewall_drop_packets_total{job="openwrt"}[$__rate_interval]))',
+            'sum by(chain, target, family) (rate(openwrt_firewall_drop_packets_total{job="openwrt", router="$router"}[$__rate_interval]))',
             '{{family}} {{chain}} {{target}}', "A")],
         x=0, y=y, w=12, h=8, unit="pps",
         desc="DROP/REJECT packet rates by chain and IP family from firewall counters."))
 
     panels.append(ts(82, "Firewall Traffic by Chain",
         targets=[tgt(
-            'sum by(chain, family) (rate(openwrt_firewall_chain_bytes_total{job="openwrt"}[$__rate_interval]))',
+            'sum by(chain, family) (rate(openwrt_firewall_chain_bytes_total{job="openwrt", router="$router"}[$__rate_interval]))',
             '{{family}} {{chain}}', "A")],
         x=12, y=y, w=12, h=8, unit="Bps",
         desc="Byte throughput by firewall chain and IP family."))
     y += 8
 
     panels.append(stat(83, "SQM Collector Available",
-        'max(openwrt_tc_available{job="openwrt"})',
+        'max(openwrt_tc_available{job="openwrt", router="$router"})',
         x=0, y=y, w=6, h=7, unit="short",
         desc="1 when tc/qdisc stats are available, 0 when tc is missing on this router.",
         thresholds=[
@@ -1012,9 +1037,9 @@ def build_network():
 
     panels.append(ts(84, "Qdisc Drops and Overlimits",
         targets=[
-            tgt('sum by(device, qdisc) (rate(openwrt_tc_qdisc_drops_total{job="openwrt"}[$__rate_interval]))',
+            tgt('sum by(device, qdisc) (rate(openwrt_tc_qdisc_drops_total{job="openwrt", router="$router"}[$__rate_interval]))',
                 'drops {{device}} {{qdisc}}', "A"),
-            tgt('sum by(device, qdisc) (rate(openwrt_tc_qdisc_overlimits_total{job="openwrt"}[$__rate_interval]))',
+            tgt('sum by(device, qdisc) (rate(openwrt_tc_qdisc_overlimits_total{job="openwrt", router="$router"}[$__rate_interval]))',
                 'overlimits {{device}} {{qdisc}}', "B"),
         ],
         x=6, y=y, w=9, h=7, unit="pps",
@@ -1022,9 +1047,9 @@ def build_network():
 
     panels.append(ts(85, "Qdisc Backlog",
         targets=[
-            tgt('sum by(device, qdisc) (openwrt_tc_qdisc_backlog_bytes{job="openwrt"})',
+            tgt('sum by(device, qdisc) (openwrt_tc_qdisc_backlog_bytes{job="openwrt", router="$router"})',
                 'bytes {{device}} {{qdisc}}', "A"),
-            tgt('sum by(device, qdisc) (openwrt_tc_qdisc_backlog_packets{job="openwrt"})',
+            tgt('sum by(device, qdisc) (openwrt_tc_qdisc_backlog_packets{job="openwrt", router="$router"})',
                 'packets {{device}} {{qdisc}}', "B"),
         ],
         x=15, y=y, w=9, h=7, unit="short",
@@ -1033,14 +1058,14 @@ def build_network():
 
     panels.append(ts(97, "Qdisc Throughput (Shaped Traffic)",
         targets=[tgt(
-            'sum by(device, qdisc) (rate(openwrt_tc_qdisc_sent_bytes_total{job="openwrt"}[$__rate_interval]))',
+            'sum by(device, qdisc) (rate(openwrt_tc_qdisc_sent_bytes_total{job="openwrt", router="$router"}[$__rate_interval]))',
             '{{device}} {{qdisc}}', "A")],
         x=0, y=y, w=12, h=7, unit="Bps",
         desc="Bytes per second actually leaving each qdisc after shaping. Compare with the WAN interface rate to confirm SQM is actively capping traffic."))
 
     panels.append(ts(98, "Qdisc Requeue Rate",
         targets=[tgt(
-            'sum by(device, qdisc) (rate(openwrt_tc_qdisc_requeues_total{job="openwrt"}[$__rate_interval]))',
+            'sum by(device, qdisc) (rate(openwrt_tc_qdisc_requeues_total{job="openwrt", router="$router"}[$__rate_interval]))',
             '{{device}} {{qdisc}}', "A")],
         x=12, y=y, w=12, h=7, unit="pps",
         desc="Packets requeued by the traffic shaper per second. Elevated requeue rate alongside high overlimits is expected SQM behaviour; very high rates can indicate scheduler misconfiguration."))
@@ -1050,7 +1075,7 @@ def build_network():
     y += 1
 
     panels.append(stat(91, "WiFi Radio Collector",
-        'max(openwrt_wifi_radio_collector_available{job="openwrt"})',
+        'max(openwrt_wifi_radio_collector_available{job="openwrt", router="$router"})',
         x=0, y=y, w=6, h=7, unit="short",
         desc="1 when iwinfo-based radio collection is available, 0 when unavailable.",
         thresholds=[
@@ -1060,9 +1085,9 @@ def build_network():
 
     panels.append(ts(92, "WiFi Channel and Frequency",
         targets=[
-            tgt('openwrt_wifi_channel{job="openwrt"}',
+            tgt('openwrt_wifi_channel{job="openwrt", router="$router"}',
                 'channel {{ifname}}', "A"),
-            tgt('openwrt_wifi_frequency_hz{job="openwrt"}',
+            tgt('openwrt_wifi_frequency_hz{job="openwrt", router="$router"}',
                 'freq {{ifname}}', "B"),
         ],
         x=6, y=y, w=9, h=7, unit="short",
@@ -1074,11 +1099,11 @@ def build_network():
 
     panels.append(ts(93, "WiFi Noise, TX Power, and Quality",
         targets=[
-            tgt('openwrt_wifi_noise_dbm{job="openwrt"}',
+            tgt('openwrt_wifi_noise_dbm{job="openwrt", router="$router"}',
                 'noise {{ifname}}', "A"),
-            tgt('openwrt_wifi_tx_power_dbm{job="openwrt"}',
+            tgt('openwrt_wifi_tx_power_dbm{job="openwrt", router="$router"}',
                 'tx power {{ifname}}', "B"),
-            tgt('openwrt_wifi_quality_percent{job="openwrt"}',
+            tgt('openwrt_wifi_quality_percent{job="openwrt", router="$router"}',
                 'quality {{ifname}}', "C"),
         ],
         x=15, y=y, w=9, h=7, unit="dBm",
@@ -1091,7 +1116,7 @@ def build_network():
 
     return make_dashboard(
         uid="openwrt-network",
-        title="OpenWRT — Network",
+        title="OpenWrt — Network",
         description="WAN throughput and quality, WiFi AP traffic and client counts, Tailscale VPN, router storage/service health, LAN interfaces, DNS/DHCP stats.",
         panels=panels,
         tags=["openwrt", "network"],
@@ -1108,13 +1133,13 @@ def build_devices():
 
     # ── Stats row ────────────────────────────────────────────────────────────
     panels.append(stat(1, "Online Devices",
-        'count(router_device_up{job="openwrt"} == 1)',
+        'count(router_device_up{job="openwrt", router="$router"} == 1)',
         x=0, y=y, w=6, h=4, unit="short",
         desc="Devices currently seen as online by the router",
         thresholds=[{"color": "blue", "value": 0}]))
 
     panels.append(stat(2, "Offline Devices",
-        'count(router_device_up{job="openwrt"} == 0)',
+        'count(router_device_up{job="openwrt", router="$router"} == 0)',
         x=6, y=y, w=6, h=4, unit="short",
         desc="Devices with known leases that are currently offline",
         thresholds=[
@@ -1123,13 +1148,13 @@ def build_devices():
         ]))
 
     panels.append(stat(3, "DHCP Leases",
-        'count(dhcp_lease{job="openwrt"})',
+        'count(dhcp_lease{job="openwrt", router="$router"})',
         x=12, y=y, w=6, h=4, unit="short",
         desc="Total DHCP leases (active + recently expired)",
         thresholds=[{"color": "blue", "value": 0}]))
 
     panels.append(stat(4, "Packet Loss %",
-        'packet_loss{job="openwrt"}',
+        'packet_loss{job="openwrt", router="$router"}',
         x=18, y=y, w=6, h=4, unit="percent",
         desc="Current WAN packet loss percentage",
         thresholds=[
@@ -1142,8 +1167,8 @@ def build_devices():
     # ── Online devices over time ──────────────────────────────────────────────
     panels.append(ts(5, "Online Device Count Over Time",
         targets=[
-            tgt('count(router_device_up{job="openwrt"} == 1)', "Online",  "A"),
-            tgt('count(router_device_up{job="openwrt"} == 0)', "Offline", "B"),
+            tgt('count(router_device_up{job="openwrt", router="$router"} == 1)', "Online",  "A"),
+            tgt('count(router_device_up{job="openwrt", router="$router"} == 0)', "Offline", "B"),
         ],
         x=0, y=y, w=12, h=8, unit="short",
         desc="How many devices are online vs offline over time",
@@ -1156,7 +1181,7 @@ def build_devices():
 
     panels.append(bargauge(6, "Top Devices by NAT Traffic (bytes)",
         targets=[tgt(
-            'topk(10, sum by(src)(node_nat_traffic{job="openwrt"}))',
+            'topk(10, sum by(src)(node_nat_traffic{job="openwrt", router="$router"}))',
             "{{src}}", "A",
         )],
         x=12, y=y, w=12, h=8, unit="bytes",
@@ -1174,13 +1199,13 @@ def build_devices():
 
     panels.append(ts(11, "WiFi AP Throughput",
         targets=[
-            tgt('rate(node_network_receive_bytes_total{job="openwrt", device="phy0-ap0"}[$__rate_interval])',
+            tgt('rate(node_network_receive_bytes_total{job="openwrt", router="$router", device="$wifi24_interface"}[$__rate_interval])',
                 "2.4 GHz RX (phy0-ap0)", "A"),
-            tgt('rate(node_network_transmit_bytes_total{job="openwrt", device="phy0-ap0"}[$__rate_interval])',
+            tgt('rate(node_network_transmit_bytes_total{job="openwrt", router="$router", device="$wifi24_interface"}[$__rate_interval])',
                 "2.4 GHz TX (phy0-ap0)", "B"),
-            tgt('rate(node_network_receive_bytes_total{job="openwrt", device="phy1-ap0"}[$__rate_interval])',
+            tgt('rate(node_network_receive_bytes_total{job="openwrt", router="$router", device="$wifi5_interface"}[$__rate_interval])',
                 "5 GHz RX (phy1-ap0)", "C"),
-            tgt('rate(node_network_transmit_bytes_total{job="openwrt", device="phy1-ap0"}[$__rate_interval])',
+            tgt('rate(node_network_transmit_bytes_total{job="openwrt", router="$router", device="$wifi5_interface"}[$__rate_interval])',
                 "5 GHz TX (phy1-ap0)", "D"),
         ],
         x=0, y=y, w=24, h=8, unit="Bps",
@@ -1189,7 +1214,7 @@ def build_devices():
 
     panels.append(bargauge(12, "WiFi Client Signal",
         targets=[tgt(
-            'sort_desc(wifi_station_signal_dbm{job="openwrt"})',
+            'sort_desc(wifi_station_signal_dbm{job="openwrt", router="$router"})',
             '{{mac}} {{ifname}}', "A")],
         x=0, y=y, w=12, h=8, unit="dBm", min=-95, max=-30,
         desc="Current WiFi client signal strength per station. Stronger signals are closer to -40 dBm; weaker clients trend toward -80 dBm or below.",
@@ -1201,9 +1226,9 @@ def build_devices():
 
     panels.append(ts(13, "WiFi Client Aggregate Bitrate",
         targets=[
-            tgt('1000 * sum by(ifname) (wifi_station_receive_kilobits_per_second{job="openwrt"})',
+            tgt('1000 * sum by(ifname) (wifi_station_receive_kilobits_per_second{job="openwrt", router="$router"})',
                 '{{ifname}} RX', "A"),
-            tgt('1000 * sum by(ifname) (wifi_station_transmit_kilobits_per_second{job="openwrt"})',
+            tgt('1000 * sum by(ifname) (wifi_station_transmit_kilobits_per_second{job="openwrt", router="$router"})',
                 '{{ifname}} TX', "B"),
         ],
         x=12, y=y, w=12, h=8, unit="bps",
@@ -1212,7 +1237,7 @@ def build_devices():
 
     panels.append(bargauge(14, "Top WiFi Stations by Packet Rate",
         targets=[tgt(
-            'topk(10, rate(wifi_station_receive_packets_total{job="openwrt"}[$__rate_interval]) + rate(wifi_station_transmit_packets_total{job="openwrt"}[$__rate_interval]))',
+            'topk(10, rate(wifi_station_receive_packets_total{job="openwrt", router="$router"}[$__rate_interval]) + rate(wifi_station_transmit_packets_total{job="openwrt", router="$router"}[$__rate_interval]))',
             '{{mac}} {{ifname}}', "A")],
         x=0, y=y, w=12, h=8, unit="pps",
         desc="Most active WiFi stations by combined packet rate. Uses the station RX and TX packet counters exposed by the wifi_stations collector.",
@@ -1224,7 +1249,7 @@ def build_devices():
 
     panels.append(bargauge(15, "Most Inactive WiFi Stations",
         targets=[tgt(
-            'sort_desc(wifi_station_inactive_milliseconds{job="openwrt"})',
+            'sort_desc(wifi_station_inactive_milliseconds{job="openwrt", router="$router"})',
             '{{mac}} {{ifname}}', "A")],
         x=12, y=y, w=12, h=8, unit="ms",
         desc="Current inactivity timer for each WiFi client. Larger values mean the station has been quiet for longer.",
@@ -1241,7 +1266,7 @@ def build_devices():
 
     panels.append(table(21, "All Devices — Online Status",
         targets=[tgt(
-            'router_device_up{job="openwrt"}',
+            'router_device_up{job="openwrt", router="$router"}',
             "", "A", fmt="table", instant=True,
         )],
         x=0, y=y, w=24, h=12,
@@ -1279,7 +1304,7 @@ def build_devices():
 
     panels.append(table(22, "DHCP Lease Expiry",
         targets=[tgt(
-            'dhcp_lease{job="openwrt"}',
+            'dhcp_lease{job="openwrt", router="$router"}',
             "", "A", fmt="table", instant=True,
         )],
         x=0, y=y, w=12, h=10,
@@ -1298,7 +1323,7 @@ def build_devices():
 
     panels.append(table(23, "Static DHCP Reservations",
         targets=[tgt(
-            'uci_dhcp_host{job="openwrt"}',
+            'uci_dhcp_host{job="openwrt", router="$router"}',
             "", "A", fmt="table", instant=True,
         )],
         x=12, y=y, w=12, h=10,
@@ -1317,7 +1342,7 @@ def build_devices():
 
     return make_dashboard(
         uid="openwrt-devices",
-        title="OpenWRT — Devices",
+        title="OpenWrt — Devices",
         description="LAN device tracking via ping-based presence, NAT traffic per device, DHCP leases, static reservations, and WiFi AP throughput.",
         panels=panels,
         tags=["openwrt", "devices"],
@@ -1427,49 +1452,54 @@ def build_logs():
             "current": {"text": "Loki", "value": "loki"},
             "hide": 0, "label": "Loki",
         },
+        {
+            "name": "router", "type": "custom", "query": "openwrt",
+            "current": {"text": "openwrt", "value": "openwrt"},
+            "hide": 0, "label": "Router",
+        },
     ]}
 
     # Stats row
     panels.append(loki_stat(1, "Errors (1h)",
-        'count_over_time({job="openwrt-syslog"} |~ "(?i)error|err" [1h])',
+        'count_over_time({job="openwrt-syslog", router="$router"} |~ "(?i)error|err" [1h])',
         x=0, y=y, w=4, h=4, desc="Log lines containing 'error' in the last hour",
         thresholds=[{"color": "green", "value": 0}, {"color": "yellow", "value": 1}, {"color": "red", "value": 10}]))
 
     panels.append(loki_stat(2, "Warnings (1h)",
-        'count_over_time({job="openwrt-syslog"} |~ "(?i)warn" [1h])',
+        'count_over_time({job="openwrt-syslog", router="$router"} |~ "(?i)warn" [1h])',
         x=4, y=y, w=4, h=4, desc="Log lines containing 'warn' in the last hour",
         thresholds=[{"color": "green", "value": 0}, {"color": "yellow", "value": 1}, {"color": "orange", "value": 20}]))
 
     panels.append(loki_stat(3, "DHCP Events (1h)",
-        'count_over_time({job="openwrt-syslog"} |= "DHCP" [1h])',
+        'count_over_time({job="openwrt-syslog", router="$router"} |= "DHCP" [1h])',
         x=8, y=y, w=4, h=4, desc="DHCP-related log events in the last hour",
         thresholds=[{"color": "blue", "value": 0}]))
 
     panels.append(loki_stat(4, "Firewall Drops (1h)",
-        'count_over_time({job="openwrt-syslog"} |~ "DROP|REJECT" [1h])',
+        'count_over_time({job="openwrt-syslog", router="$router"} |~ "DROP|REJECT" [1h])',
         x=12, y=y, w=4, h=4, desc="Firewall drop/reject events in the last hour",
         thresholds=[{"color": "green", "value": 0}, {"color": "yellow", "value": 10}, {"color": "red", "value": 100}]))
 
     panels.append(loki_stat(5, "Total Log Lines (1h)",
-        'count_over_time({job="openwrt-syslog"} [1h])',
+        'count_over_time({job="openwrt-syslog", router="$router"} [1h])',
         x=16, y=y, w=4, h=4, desc="Total log lines received from the router in the last hour",
         thresholds=[{"color": "gray", "value": 0}]))
 
     panels.append(loki_stat(6, "Kernel Messages (1h)",
-        'count_over_time({job="openwrt-syslog"} |= "kernel" [1h])',
+        'count_over_time({job="openwrt-syslog", router="$router"} |= "kernel" [1h])',
         x=20, y=y, w=4, h=4, desc="Kernel log messages (interface changes, OOM, driver events)",
         thresholds=[{"color": "blue", "value": 0}]))
     y += 4
 
     # Log rate over time
     panels.append(loki_ts(7, "Log Rate by Severity",
-        'sum by(message_severity) (rate({job="openwrt-syslog"}[$__interval]))',
+        'sum by(message_severity) (rate({job="openwrt-syslog", router="$router"}[$__interval]))',
         x=0, y=y, w=12, h=7,
         desc="Rate of log lines over time, grouped by syslog severity.",
         legend="{{message_severity}}"))
 
     panels.append(loki_ts(13, "Log Rate by App",
-        'sum by(message_app_name) (rate({job="openwrt-syslog"}[$__interval]))',
+        'sum by(message_app_name) (rate({job="openwrt-syslog", router="$router"}[$__interval]))',
         x=12, y=y, w=12, h=7,
         desc="Which daemons are emitting the most logs over time. Requires the syslog app-name label to be preserved.",
         legend="{{message_app_name}}"))
@@ -1477,30 +1507,30 @@ def build_logs():
 
     # All logs
     panels.append(loki_logs(8, "All System Logs",
-        '{job="openwrt-syslog"}',
+        '{job="openwrt-syslog", router="$router"}',
         x=0, y=y, w=24, h=14,
-        desc="Full log stream from OpenWRT's logd. Use the search bar to filter by keyword."))
+        desc="Full log stream from OpenWrt's logd. Use the search bar to filter by keyword."))
     y += 14
 
     # Specialized log panels
     panels.append(loki_logs(9, "DHCP Events",
-        '{job="openwrt-syslog"} |= "DHCP"',
+        '{job="openwrt-syslog", router="$router"} |= "DHCP"',
         x=0, y=y, w=12, h=10,
         desc="DHCP lease assignments, renewals, and releases. Shows which devices got IPs and when."))
 
     panels.append(loki_logs(10, "Firewall Events (DROP / REJECT)",
-        '{job="openwrt-syslog"} |~ "DROP|REJECT"',
+        '{job="openwrt-syslog", router="$router"} |~ "DROP|REJECT"',
         x=12, y=y, w=12, h=10,
         desc="Firewall blocked connections. Enable firewall logging with 'option log 1' in /etc/config/firewall."))
     y += 10
 
     panels.append(loki_logs(11, "Kernel Messages",
-        '{job="openwrt-syslog"} |= "kernel"',
+        '{job="openwrt-syslog", router="$router"} |= "kernel"',
         x=0, y=y, w=12, h=10,
         desc="Kernel events: network interface state changes, driver errors, OOM events."))
 
     panels.append(loki_logs(12, "Error & Warning Events",
-        '{job="openwrt-syslog"} |~ "(?i)error|warn|fail|critical"',
+        '{job="openwrt-syslog", router="$router"} |~ "(?i)error|warn|fail|critical"',
         x=12, y=y, w=12, h=10,
         desc="All log lines containing error, warning, fail, or critical keywords."))
 
@@ -1511,9 +1541,9 @@ def build_logs():
             f"Panel {p['id']} [{p['title']}] overflows grid"
 
     return {
-        "title": "OpenWRT — Logs",
+        "title": "OpenWrt — Logs",
         "uid": "openwrt-logs",
-        "description": "System logs from OpenWRT's logd via remote syslog → Loki: DHCP events, firewall drops, kernel messages.",
+        "description": "System logs from OpenWrt's logd via remote syslog → Loki: DHCP events, firewall drops, kernel messages.",
         "tags": ["openwrt", "logs"],
         "schemaVersion": 42,
         "version": 1,

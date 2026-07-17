@@ -38,8 +38,10 @@ Edit `.env`:
 ```env
 ROUTER_IP=192.168.0.1          # Your router's IP
 ROUTER_NAME=openwrt             # Label used in Grafana
+ROUTER_METRICS_PORT=9100        # prometheus-node-exporter-lua port
 MONITORING_HOST_IP=192.168.0.100 # This machine's LAN IP
 GRAFANA_ADMIN_PASSWORD=changeme  # Change this!
+SYSLOG_PORT=514                 # Host port for Alloy syslog
 ```
 
 ### 3. Start
@@ -61,9 +63,13 @@ Go to **http://localhost:3000**
 
 Login: `admin` / value from `GRAFANA_ADMIN_PASSWORD` in `.env`
 
-The OpenWRT dashboards load automatically from `grafana/provisioning/dashboards/`.
+The four classic OpenWrt dashboards load automatically from `grafana/provisioning/dashboards/`.
+
+The optional v2beta1 operations dashboard is generated separately into `grafana-dashboard-exports/openwrt-operations-v2.json` for manual import.
 
 For a complete dashboard, make sure you ran the router-side setup by copying the whole `openwrt/` directory and executing `openwrt/setup.sh`, not just by installing the base exporter packages.
+
+The dashboards include variables for `router`, `wan_interface`, `wifi24_interface`, `wifi5_interface`, and `vpn_interface`; adjust those in Grafana if your router uses different labels.
 
 ---
 
@@ -72,15 +78,15 @@ For a complete dashboard, make sure you ran the router-side setup by copying the
 | Port | Service | Purpose |
 |------|---------|---------|
 | 3000 | Grafana | Web UI |
-| 514/UDP | Alloy | Syslog receiver (supported) |
-| 514/TCP | Alloy | Recommended router syslog transport |
+| 514/UDP | Alloy | Default router syslog receiver |
+| 514/TCP | Alloy | Syslog receiver fallback |
 | 9090 | Prometheus | Metrics database (also used by Alloy remote_write) |
 | 3100 | Loki | Logs database |
 | 3200 | Tempo | Traces database |
-| 3500 | Pyroscope | Profiling (unused for OpenWRT) |
+| 3500 | Pyroscope | Profiling (unused for OpenWrt) |
 | 4317 | OTel Collector | OTLP gRPC |
 | 4318 | OTel Collector | OTLP HTTP |
-| 12345 | Alloy UI | Alloy debug/config UI |
+| 1234 | Alloy UI | Alloy debug/config UI |
 
 ---
 
@@ -128,7 +134,7 @@ or rely on the `log_hostname` label (set per router via `uci set system.@system[
 
 ## Alloy UI
 
-The Alloy debug interface is available at **http://localhost:12345**
+The Alloy debug interface is available at **http://localhost:1234**
 
 Useful for:
 - Checking if targets are being scraped

@@ -1,5 +1,5 @@
 {
-  "title": "OpenWRT \u2014 Network",
+  "title": "OpenWrt \u2014 Network",
   "uid": "openwrt-network",
   "description": "WAN throughput and quality, WiFi AP traffic and client counts, Tailscale VPN, router storage/service health, LAN interfaces, DNS/DHCP stats.",
   "tags": [
@@ -91,7 +91,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", device=\"wan\"}[$__rate_interval])",
+          "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", router=\"$router\", device=\"$wan_interface\"}[$__rate_interval])",
           "legendFormat": "WAN Download",
           "refId": "A"
         }
@@ -194,7 +194,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", device=\"wan\"}[$__rate_interval])",
+          "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", router=\"$router\", device=\"$wan_interface\"}[$__rate_interval])",
           "legendFormat": "WAN Upload",
           "refId": "A"
         }
@@ -297,7 +297,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_receive_packets_total{job=\"openwrt\", device=\"wan\"}[$__rate_interval])",
+          "expr": "rate(node_network_receive_packets_total{job=\"openwrt\", router=\"$router\", device=\"$wan_interface\"}[$__rate_interval])",
           "legendFormat": "RX packets",
           "refId": "A"
         },
@@ -306,7 +306,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_transmit_packets_total{job=\"openwrt\", device=\"wan\"}[$__rate_interval])",
+          "expr": "rate(node_network_transmit_packets_total{job=\"openwrt\", router=\"$router\", device=\"$wan_interface\"}[$__rate_interval])",
           "legendFormat": "TX packets",
           "refId": "B"
         }
@@ -393,7 +393,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_receive_errs_total{job=\"openwrt\", device=\"wan\"}[$__rate_interval])",
+          "expr": "rate(node_network_receive_errs_total{job=\"openwrt\", router=\"$router\", device=\"$wan_interface\"}[$__rate_interval])",
           "legendFormat": "RX errors",
           "refId": "A"
         },
@@ -402,7 +402,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_receive_drop_total{job=\"openwrt\", device=\"wan\"}[$__rate_interval])",
+          "expr": "rate(node_network_receive_drop_total{job=\"openwrt\", router=\"$router\", device=\"$wan_interface\"}[$__rate_interval])",
           "legendFormat": "RX drops",
           "refId": "B"
         },
@@ -411,7 +411,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_transmit_errs_total{job=\"openwrt\", device=\"wan\"}[$__rate_interval])",
+          "expr": "rate(node_network_transmit_errs_total{job=\"openwrt\", router=\"$router\", device=\"$wan_interface\"}[$__rate_interval])",
           "legendFormat": "TX errors",
           "refId": "C"
         }
@@ -529,7 +529,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_wan_probe_latency_milliseconds{job=\"openwrt\"}",
+          "expr": "openwrt_wan_probe_latency_milliseconds{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "latency {{target}} ({{address}})",
           "refId": "A"
         },
@@ -538,7 +538,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_wan_probe_jitter_milliseconds{job=\"openwrt\"}",
+          "expr": "openwrt_wan_probe_jitter_milliseconds{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "jitter {{target}} ({{address}})",
           "refId": "B"
         }
@@ -625,7 +625,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_wan_probe_packet_loss_percent{job=\"openwrt\"}",
+          "expr": "openwrt_wan_probe_packet_loss_percent{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "{{target}} ({{address}})",
           "refId": "A"
         }
@@ -725,7 +725,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", device=\"phy0-ap0\"}[$__rate_interval])",
+          "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", router=\"$router\", device=\"$wifi24_interface\"}[$__rate_interval])",
           "legendFormat": "2.4 GHz RX",
           "refId": "A"
         },
@@ -734,7 +734,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", device=\"phy0-ap0\"}[$__rate_interval])",
+          "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", router=\"$router\", device=\"$wifi24_interface\"}[$__rate_interval])",
           "legendFormat": "2.4 GHz TX",
           "refId": "B"
         },
@@ -743,7 +743,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", device=\"phy1-ap0\"}[$__rate_interval])",
+          "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", router=\"$router\", device=\"$wifi5_interface\"}[$__rate_interval])",
           "legendFormat": "5 GHz RX",
           "refId": "C"
         },
@@ -752,7 +752,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", device=\"phy1-ap0\"}[$__rate_interval])",
+          "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", router=\"$router\", device=\"$wifi5_interface\"}[$__rate_interval])",
           "legendFormat": "5 GHz TX",
           "refId": "D"
         }
@@ -839,7 +839,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "count(wifi_stations{job=\"openwrt\"}) or vector(0)",
+          "expr": "count(wifi_stations{job=\"openwrt\", router=\"$router\"}) or vector(0)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -905,7 +905,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "wifi_stations{job=\"openwrt\"}",
+          "expr": "wifi_stations{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "{{ifname}}",
           "refId": "A"
         }
@@ -992,7 +992,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "wifi_network_signal_dbm{job=\"openwrt\"}",
+          "expr": "wifi_network_signal_dbm{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "{{ifname}} {{ssid}}",
           "refId": "A"
         }
@@ -1079,7 +1079,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "wifi_network_quality{job=\"openwrt\"}",
+          "expr": "wifi_network_quality{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "{{ifname}} {{ssid}}",
           "refId": "A"
         }
@@ -1166,7 +1166,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "1000 * wifi_network_bitrate{job=\"openwrt\"}",
+          "expr": "1000 * wifi_network_bitrate{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "{{ifname}} {{ssid}}",
           "refId": "A"
         }
@@ -1266,7 +1266,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", device!~\"lo|lan2|lan3\"}[$__rate_interval])",
+          "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", router=\"$router\", device!~\"lo|lan2|lan3\"}[$__rate_interval])",
           "legendFormat": "{{device}}",
           "refId": "A"
         }
@@ -1353,7 +1353,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", device!~\"lo|lan2|lan3\"}[$__rate_interval])",
+          "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", router=\"$router\", device!~\"lo|lan2|lan3\"}[$__rate_interval])",
           "legendFormat": "{{device}}",
           "refId": "A"
         }
@@ -1453,7 +1453,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", device=\"tailscale0\"}[$__rate_interval])",
+          "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", router=\"$router\", device=\"$vpn_interface\"}[$__rate_interval])",
           "legendFormat": "VPN RX",
           "refId": "A"
         },
@@ -1462,7 +1462,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", device=\"tailscale0\"}[$__rate_interval])",
+          "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", router=\"$router\", device=\"$vpn_interface\"}[$__rate_interval])",
           "legendFormat": "VPN TX",
           "refId": "B"
         }
@@ -1549,7 +1549,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_nf_conntrack_entries{job=\"openwrt\"}",
+          "expr": "node_nf_conntrack_entries{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Active sessions",
           "refId": "A"
         },
@@ -1558,7 +1558,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_nf_conntrack_entries_limit{job=\"openwrt\"}",
+          "expr": "node_nf_conntrack_entries_limit{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Limit",
           "refId": "B"
         }
@@ -1658,7 +1658,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(dnsmasq_dns_queries_forwarded{job=\"openwrt\"}[$__rate_interval])",
+          "expr": "rate(dnsmasq_dns_queries_forwarded{job=\"openwrt\", router=\"$router\"}[$__rate_interval])",
           "legendFormat": "Forwarded",
           "refId": "A"
         },
@@ -1667,7 +1667,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(dnsmasq_dns_local_answered{job=\"openwrt\"}[$__rate_interval])",
+          "expr": "rate(dnsmasq_dns_local_answered{job=\"openwrt\", router=\"$router\"}[$__rate_interval])",
           "legendFormat": "Local (cached)",
           "refId": "B"
         },
@@ -1676,7 +1676,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(dnsmasq_dns_unanswered{job=\"openwrt\"}[$__rate_interval])",
+          "expr": "rate(dnsmasq_dns_unanswered{job=\"openwrt\", router=\"$router\"}[$__rate_interval])",
           "legendFormat": "Unanswered",
           "refId": "C"
         }
@@ -1763,7 +1763,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(dnsmasq_dhcp_ack{job=\"openwrt\"}[$__rate_interval])",
+          "expr": "rate(dnsmasq_dhcp_ack{job=\"openwrt\", router=\"$router\"}[$__rate_interval])",
           "legendFormat": "ACK (granted)",
           "refId": "A"
         },
@@ -1772,7 +1772,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(dnsmasq_dhcp_request{job=\"openwrt\"}[$__rate_interval])",
+          "expr": "rate(dnsmasq_dhcp_request{job=\"openwrt\", router=\"$router\"}[$__rate_interval])",
           "legendFormat": "Request",
           "refId": "B"
         },
@@ -1781,7 +1781,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(dnsmasq_dhcp_discover{job=\"openwrt\"}[$__rate_interval])",
+          "expr": "rate(dnsmasq_dhcp_discover{job=\"openwrt\", router=\"$router\"}[$__rate_interval])",
           "legendFormat": "Discover (new)",
           "refId": "C"
         }
@@ -1881,7 +1881,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_filesystem_used_percent{job=\"openwrt\"}",
+          "expr": "openwrt_filesystem_used_percent{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "{{mount}}",
           "refId": "A"
         }
@@ -1968,7 +1968,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_service_up{job=\"openwrt\"}",
+          "expr": "openwrt_service_up{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "{{service}}",
           "refId": "A"
         }
@@ -2046,7 +2046,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_filesystem_inode_used_percent{job=\"openwrt\"}",
+          "expr": "openwrt_filesystem_inode_used_percent{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "{{mount}}",
           "refId": "A"
         }
@@ -2133,7 +2133,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_dhcp_pool_utilization_percent{job=\"openwrt\"}",
+          "expr": "openwrt_dhcp_pool_utilization_percent{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Pool used %",
           "refId": "A"
         },
@@ -2142,7 +2142,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_dhcp_leases_used{job=\"openwrt\"}",
+          "expr": "openwrt_dhcp_leases_used{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Active leases",
           "refId": "B"
         },
@@ -2151,7 +2151,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_dhcp_pool_size_total{job=\"openwrt\"}",
+          "expr": "openwrt_dhcp_pool_size_total{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Pool size",
           "refId": "C"
         }
@@ -2251,7 +2251,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_dhcp_pool_size{job=\"openwrt\"}",
+          "expr": "openwrt_dhcp_pool_size{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "{{interface}}",
           "refId": "A"
         }
@@ -2324,7 +2324,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_dhcp_lease_remaining_seconds_min{job=\"openwrt\"}",
+          "expr": "openwrt_dhcp_lease_remaining_seconds_min{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Min remaining",
           "refId": "A"
         },
@@ -2333,7 +2333,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_dhcp_lease_remaining_seconds_max{job=\"openwrt\"}",
+          "expr": "openwrt_dhcp_lease_remaining_seconds_max{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Max remaining",
           "refId": "B"
         }
@@ -2433,7 +2433,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "time() - node_textfile_mtime_seconds{job=\"openwrt\"}",
+          "expr": "time() - node_textfile_mtime_seconds{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "",
           "refId": "A",
           "format": "table",
@@ -2521,7 +2521,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_service_enabled{job=\"openwrt\"}",
+          "expr": "openwrt_service_enabled{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "",
           "refId": "A",
           "format": "table",
@@ -2662,7 +2662,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "node_network_info{job=\"openwrt\"}",
+          "expr": "node_network_info{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "",
           "refId": "A",
           "format": "table",
@@ -2811,7 +2811,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_wan6_up{job=\"openwrt\"}",
+          "expr": "openwrt_wan6_up{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "WAN6 up",
           "refId": "A"
         },
@@ -2820,7 +2820,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_ipv6_default_route_up{job=\"openwrt\"}",
+          "expr": "openwrt_ipv6_default_route_up{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Default route up",
           "refId": "B"
         },
@@ -2829,7 +2829,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_ipv6_global_addresses{job=\"openwrt\"}",
+          "expr": "openwrt_ipv6_global_addresses{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Global addresses",
           "refId": "C"
         }
@@ -2916,7 +2916,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_ipv6_prefix_valid_seconds{job=\"openwrt\"}",
+          "expr": "openwrt_ipv6_prefix_valid_seconds{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Valid lifetime",
           "refId": "A"
         },
@@ -2925,7 +2925,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_ipv6_prefix_preferred_seconds{job=\"openwrt\"}",
+          "expr": "openwrt_ipv6_prefix_preferred_seconds{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "Preferred lifetime",
           "refId": "B"
         }
@@ -3012,7 +3012,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_link_up{job=\"openwrt\", device!=\"lo\"}",
+          "expr": "openwrt_link_up{job=\"openwrt\", router=\"$router\", device!=\"lo\"}",
           "legendFormat": "{{device}}",
           "refId": "A"
         }
@@ -3099,7 +3099,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_link_speed_bits_per_second{job=\"openwrt\", device!=\"lo\"}",
+          "expr": "openwrt_link_speed_bits_per_second{job=\"openwrt\", router=\"$router\", device!=\"lo\"}",
           "legendFormat": "{{device}}",
           "refId": "A"
         }
@@ -3186,7 +3186,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(openwrt_softnet_dropped_total{job=\"openwrt\"}[$__rate_interval])",
+          "expr": "rate(openwrt_softnet_dropped_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval])",
           "legendFormat": "cpu {{cpu}}",
           "refId": "A"
         }
@@ -3273,7 +3273,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(openwrt_softnet_times_squeezed_total{job=\"openwrt\"}[$__rate_interval])",
+          "expr": "rate(openwrt_softnet_times_squeezed_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval])",
           "legendFormat": "cpu {{cpu}}",
           "refId": "A"
         }
@@ -3360,7 +3360,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(openwrt_softnet_processed_total{job=\"openwrt\"}[$__rate_interval])",
+          "expr": "rate(openwrt_softnet_processed_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval])",
           "legendFormat": "cpu {{cpu}}",
           "refId": "A"
         }
@@ -3447,7 +3447,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(openwrt_tcp_listen_drops_total{job=\"openwrt\"}[$__rate_interval])",
+          "expr": "rate(openwrt_tcp_listen_drops_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval])",
           "legendFormat": "Listen drops",
           "refId": "A"
         },
@@ -3456,7 +3456,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(openwrt_tcp_listen_overflows_total{job=\"openwrt\"}[$__rate_interval])",
+          "expr": "rate(openwrt_tcp_listen_overflows_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval])",
           "legendFormat": "Listen overflows",
           "refId": "B"
         }
@@ -3587,7 +3587,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by(chain, target, family) (rate(openwrt_firewall_drop_packets_total{job=\"openwrt\"}[$__rate_interval]))",
+          "expr": "sum by(chain, target, family) (rate(openwrt_firewall_drop_packets_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]))",
           "legendFormat": "{{family}} {{chain}} {{target}}",
           "refId": "A"
         }
@@ -3674,7 +3674,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by(chain, family) (rate(openwrt_firewall_chain_bytes_total{job=\"openwrt\"}[$__rate_interval]))",
+          "expr": "sum by(chain, family) (rate(openwrt_firewall_chain_bytes_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]))",
           "legendFormat": "{{family}} {{chain}}",
           "refId": "A"
         }
@@ -3761,7 +3761,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "max(openwrt_tc_available{job=\"openwrt\"})",
+          "expr": "max(openwrt_tc_available{job=\"openwrt\", router=\"$router\"})",
           "legendFormat": "",
           "refId": "A"
         }
@@ -3827,7 +3827,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by(device, qdisc) (rate(openwrt_tc_qdisc_drops_total{job=\"openwrt\"}[$__rate_interval]))",
+          "expr": "sum by(device, qdisc) (rate(openwrt_tc_qdisc_drops_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]))",
           "legendFormat": "drops {{device}} {{qdisc}}",
           "refId": "A"
         },
@@ -3836,7 +3836,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by(device, qdisc) (rate(openwrt_tc_qdisc_overlimits_total{job=\"openwrt\"}[$__rate_interval]))",
+          "expr": "sum by(device, qdisc) (rate(openwrt_tc_qdisc_overlimits_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]))",
           "legendFormat": "overlimits {{device}} {{qdisc}}",
           "refId": "B"
         }
@@ -3923,7 +3923,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by(device, qdisc) (openwrt_tc_qdisc_backlog_bytes{job=\"openwrt\"})",
+          "expr": "sum by(device, qdisc) (openwrt_tc_qdisc_backlog_bytes{job=\"openwrt\", router=\"$router\"})",
           "legendFormat": "bytes {{device}} {{qdisc}}",
           "refId": "A"
         },
@@ -3932,7 +3932,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by(device, qdisc) (openwrt_tc_qdisc_backlog_packets{job=\"openwrt\"})",
+          "expr": "sum by(device, qdisc) (openwrt_tc_qdisc_backlog_packets{job=\"openwrt\", router=\"$router\"})",
           "legendFormat": "packets {{device}} {{qdisc}}",
           "refId": "B"
         }
@@ -4019,7 +4019,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by(device, qdisc) (rate(openwrt_tc_qdisc_sent_bytes_total{job=\"openwrt\"}[$__rate_interval]))",
+          "expr": "sum by(device, qdisc) (rate(openwrt_tc_qdisc_sent_bytes_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]))",
           "legendFormat": "{{device}} {{qdisc}}",
           "refId": "A"
         }
@@ -4106,7 +4106,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by(device, qdisc) (rate(openwrt_tc_qdisc_requeues_total{job=\"openwrt\"}[$__rate_interval]))",
+          "expr": "sum by(device, qdisc) (rate(openwrt_tc_qdisc_requeues_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]))",
           "legendFormat": "{{device}} {{qdisc}}",
           "refId": "A"
         }
@@ -4206,7 +4206,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "max(openwrt_wifi_radio_collector_available{job=\"openwrt\"})",
+          "expr": "max(openwrt_wifi_radio_collector_available{job=\"openwrt\", router=\"$router\"})",
           "legendFormat": "",
           "refId": "A"
         }
@@ -4272,7 +4272,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_wifi_channel{job=\"openwrt\"}",
+          "expr": "openwrt_wifi_channel{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "channel {{ifname}}",
           "refId": "A"
         },
@@ -4281,7 +4281,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_wifi_frequency_hz{job=\"openwrt\"}",
+          "expr": "openwrt_wifi_frequency_hz{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "freq {{ifname}}",
           "refId": "B"
         }
@@ -4381,7 +4381,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_wifi_noise_dbm{job=\"openwrt\"}",
+          "expr": "openwrt_wifi_noise_dbm{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "noise {{ifname}}",
           "refId": "A"
         },
@@ -4390,7 +4390,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_wifi_tx_power_dbm{job=\"openwrt\"}",
+          "expr": "openwrt_wifi_tx_power_dbm{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "tx power {{ifname}}",
           "refId": "B"
         },
@@ -4399,7 +4399,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "openwrt_wifi_quality_percent{job=\"openwrt\"}",
+          "expr": "openwrt_wifi_quality_percent{job=\"openwrt\", router=\"$router\"}",
           "legendFormat": "quality {{ifname}}",
           "refId": "C"
         }
@@ -4501,6 +4501,61 @@
         },
         "hide": 0,
         "label": "Datasource"
+      },
+      {
+        "name": "router",
+        "type": "custom",
+        "query": "openwrt",
+        "current": {
+          "text": "openwrt",
+          "value": "openwrt"
+        },
+        "hide": 0,
+        "label": "Router"
+      },
+      {
+        "name": "wan_interface",
+        "type": "custom",
+        "query": "wan",
+        "current": {
+          "text": "wan",
+          "value": "wan"
+        },
+        "hide": 0,
+        "label": "WAN interface"
+      },
+      {
+        "name": "wifi24_interface",
+        "type": "custom",
+        "query": "phy0-ap0",
+        "current": {
+          "text": "phy0-ap0",
+          "value": "phy0-ap0"
+        },
+        "hide": 0,
+        "label": "2.4 GHz interface"
+      },
+      {
+        "name": "wifi5_interface",
+        "type": "custom",
+        "query": "phy1-ap0",
+        "current": {
+          "text": "phy1-ap0",
+          "value": "phy1-ap0"
+        },
+        "hide": 0,
+        "label": "5 GHz interface"
+      },
+      {
+        "name": "vpn_interface",
+        "type": "custom",
+        "query": "tailscale0",
+        "current": {
+          "text": "tailscale0",
+          "value": "tailscale0"
+        },
+        "hide": 0,
+        "label": "VPN interface"
       }
     ]
   }

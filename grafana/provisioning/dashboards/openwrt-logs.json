@@ -1,7 +1,7 @@
 {
-  "title": "OpenWRT \u2014 Logs",
+  "title": "OpenWrt \u2014 Logs",
   "uid": "openwrt-logs",
-  "description": "System logs from OpenWRT's logd via remote syslog \u2192 Loki: DHCP events, firewall drops, kernel messages.",
+  "description": "System logs from OpenWrt's logd via remote syslog \u2192 Loki: DHCP events, firewall drops, kernel messages.",
   "tags": [
     "openwrt",
     "logs"
@@ -72,7 +72,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\"} |~ \"(?i)error|err\" [1h])",
+          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} |~ \"(?i)error|err\" [1h])",
           "refId": "A",
           "queryType": "range"
         }
@@ -141,7 +141,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\"} |~ \"(?i)warn\" [1h])",
+          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} |~ \"(?i)warn\" [1h])",
           "refId": "A",
           "queryType": "range"
         }
@@ -210,7 +210,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\"} |= \"DHCP\" [1h])",
+          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} |= \"DHCP\" [1h])",
           "refId": "A",
           "queryType": "range"
         }
@@ -271,7 +271,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\"} |~ \"DROP|REJECT\" [1h])",
+          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} |~ \"DROP|REJECT\" [1h])",
           "refId": "A",
           "queryType": "range"
         }
@@ -340,7 +340,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\"} [1h])",
+          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} [1h])",
           "refId": "A",
           "queryType": "range"
         }
@@ -401,7 +401,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "count_over_time({job=\"openwrt-syslog\"} |= \"kernel\" [1h])",
+          "expr": "count_over_time({job=\"openwrt-syslog\", router=\"$router\"} |= \"kernel\" [1h])",
           "refId": "A",
           "queryType": "range"
         }
@@ -462,7 +462,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "sum by(message_severity) (rate({job=\"openwrt-syslog\"}[$__interval]))",
+          "expr": "sum by(message_severity) (rate({job=\"openwrt-syslog\", router=\"$router\"}[$__interval]))",
           "refId": "A",
           "queryType": "range",
           "legendFormat": "{{message_severity}}"
@@ -523,7 +523,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "sum by(message_app_name) (rate({job=\"openwrt-syslog\"}[$__interval]))",
+          "expr": "sum by(message_app_name) (rate({job=\"openwrt-syslog\", router=\"$router\"}[$__interval]))",
           "refId": "A",
           "queryType": "range",
           "legendFormat": "{{message_app_name}}"
@@ -573,7 +573,7 @@
       "type": "logs",
       "id": 8,
       "title": "All System Logs",
-      "description": "Full log stream from OpenWRT's logd. Use the search bar to filter by keyword.",
+      "description": "Full log stream from OpenWrt's logd. Use the search bar to filter by keyword.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -584,7 +584,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "{job=\"openwrt-syslog\"}",
+          "expr": "{job=\"openwrt-syslog\", router=\"$router\"}",
           "refId": "A",
           "queryType": "range"
         }
@@ -622,7 +622,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "{job=\"openwrt-syslog\"} |= \"DHCP\"",
+          "expr": "{job=\"openwrt-syslog\", router=\"$router\"} |= \"DHCP\"",
           "refId": "A",
           "queryType": "range"
         }
@@ -660,7 +660,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "{job=\"openwrt-syslog\"} |~ \"DROP|REJECT\"",
+          "expr": "{job=\"openwrt-syslog\", router=\"$router\"} |~ \"DROP|REJECT\"",
           "refId": "A",
           "queryType": "range"
         }
@@ -698,7 +698,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "{job=\"openwrt-syslog\"} |= \"kernel\"",
+          "expr": "{job=\"openwrt-syslog\", router=\"$router\"} |= \"kernel\"",
           "refId": "A",
           "queryType": "range"
         }
@@ -736,7 +736,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "{job=\"openwrt-syslog\"} |~ \"(?i)error|warn|fail|critical\"",
+          "expr": "{job=\"openwrt-syslog\", router=\"$router\"} |~ \"(?i)error|warn|fail|critical\"",
           "refId": "A",
           "queryType": "range"
         }
@@ -776,6 +776,17 @@
         },
         "hide": 0,
         "label": "Loki"
+      },
+      {
+        "name": "router",
+        "type": "custom",
+        "query": "openwrt",
+        "current": {
+          "text": "openwrt",
+          "value": "openwrt"
+        },
+        "hide": 0,
+        "label": "Router"
       }
     ]
   }

@@ -1,1 +1,6 @@
+# Local agent/tooling state and private branch-collateral.
+old/
+.agents/
 .claude/
+.codex/
+claude/

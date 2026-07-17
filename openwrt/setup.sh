@@ -1,37 +1,82 @@
 #!/bin/sh
 # =============================================================================
-# OpenWRT Grafana Monitor — Router Setup Script
+# OpenWrt Grafana Monitor — Router Setup Script
 # =============================================================================
 #
-# Run this script ON your OpenWRT router via SSH.
+# Run this script ON your OpenWrt router via SSH.
 # It expects the whole `openwrt/` directory so it can copy the bundled
 # collector files and helper scripts alongside the setup script.
 #
-#   scp -r openwrt root@192.168.0.1:/tmp/
+#   scp -O -r openwrt root@192.168.0.1:/tmp/
 #   ssh root@192.168.0.1 "sh /tmp/openwrt/setup.sh <MONITORING_HOST_IP>"
 #
 # Arguments:
 #   $1  IP address of the machine running the Docker monitoring stack
 #       (required — the router will send syslog here)
 #
+# Optional environment variables:
+#   EXPORTER_LISTEN_INTERFACE  Interface for :9100; default: lan
+#   SYSLOG_PORT                Remote syslog port; default: 514
+#   SYSLOG_PROTO               Remote syslog protocol; default: udp
+#
 # =============================================================================
 
-set -e
+set -eu
 
-MONITORING_HOST="${1}"
+MONITORING_HOST="${1:-}"
+EXPORTER_LISTEN_INTERFACE="${EXPORTER_LISTEN_INTERFACE:-lan}"
+SYSLOG_PORT="${SYSLOG_PORT:-514}"
+SYSLOG_PROTO="${SYSLOG_PROTO:-udp}"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 COLLECTOR_SRC_DIR="$SCRIPT_DIR/collectors"
 HELPER_SRC_DIR="$SCRIPT_DIR/scripts"
 CRONTAB_FILE="/etc/crontabs/root"
 
-install_if_available() {
-  pkg="$1"
+log() {
+  printf '%s\n' "$*"
+}
 
-  if opkg list | grep -q "^$pkg -"; then
-    echo "==> Installing optional package: $pkg"
-    opkg install "$pkg"
+die() {
+  log "ERROR: $*"
+  exit 1
+}
+
+pkg_update() {
+  case "$PKG_MANAGER" in
+    apk) apk update ;;
+    opkg) opkg update ;;
+  esac
+}
+
+pkg_install_required() {
+  case "$PKG_MANAGER" in
+    apk) apk add "$@" ;;
+    opkg) opkg install "$@" ;;
+  esac
+}
+
+pkg_install_optional() {
+  case "$PKG_MANAGER" in
+    apk) apk add "$@" ;;
+    opkg) opkg install "$@" ;;
+  esac
+}
+
+pkg_installed() {
+  case "$PKG_MANAGER" in
+    apk) apk info "$1" >/dev/null 2>&1 ;;
+    opkg) opkg list-installed 2>/dev/null | grep -q "^$1 " ;;
+  esac
+}
+
+fetch_url() {
+  url="$1"
+  if command -v wget >/dev/null 2>&1; then
+    wget -qO- "$url"
+  elif command -v curl >/dev/null 2>&1; then
+    curl -fsS "$url"
   else
-    echo "==> Optional package not available on this OpenWRT build: $pkg"
+    return 1
   fi
 }
 
@@ -61,50 +106,81 @@ install_file() {
 
 # ── Validate ──────────────────────────────────────────────────────────────────
 
+REQUIRED_PACKAGES="
+prometheus-node-exporter-lua
+prometheus-node-exporter-lua-textfile
+prometheus-node-exporter-lua-uci_dhcp_host
+prometheus-node-exporter-lua-openwrt
+prometheus-node-exporter-lua-nat_traffic
+prometheus-node-exporter-lua-netstat
+"
+
+OPTIONAL_PACKAGES="
+prometheus-node-exporter-lua-wifi
+prometheus-node-exporter-lua-wifi_stations
+prometheus-node-exporter-lua-hostapd_stations
+prometheus-node-exporter-lua-hwmon
+prometheus-node-exporter-lua-thermal
+prometheus-node-exporter-lua-nft-counters
+prometheus-node-exporter-lua-snmp6
+"
+
 if [ -z "$MONITORING_HOST" ]; then
-  echo "Usage: $0 <MONITORING_HOST_IP>"
-  echo "  Example: $0 192.168.0.100"
+  log "Usage: $0 <MONITORING_HOST_IP>"
+  log "  Example: $0 192.168.0.100"
   exit 1
 fi
 
 if [ ! -d "$COLLECTOR_SRC_DIR" ] || [ ! -d "$HELPER_SRC_DIR" ]; then
-  echo "ERROR: setup.sh expects the whole openwrt/ directory."
-  echo "Copy it with: scp -r openwrt root@<router>:/tmp/"
-  exit 1
+  die "setup.sh expects the whole openwrt/ directory. Copy it with: scp -O -r openwrt root@<router>:/tmp/"
 fi
 
-echo "==> OpenWRT Grafana Monitor setup"
-echo "    Monitoring host: $MONITORING_HOST"
-echo ""
+if command -v apk >/dev/null 2>&1; then
+  PKG_MANAGER="apk"
+elif command -v opkg >/dev/null 2>&1; then
+  PKG_MANAGER="opkg"
+else
+  die "neither apk nor opkg was found. This script supports OpenWrt 24.10/opkg and OpenWrt 25.12/apk."
+fi
+
+case "$SYSLOG_PROTO" in
+  udp|tcp) ;;
+  *) die "SYSLOG_PROTO must be udp or tcp" ;;
+esac
+
+log "==> OpenWrt Grafana Monitor setup"
+log "    Monitoring host: $MONITORING_HOST"
+log "    Package manager: $PKG_MANAGER"
+log "    Exporter interface: $EXPORTER_LISTEN_INTERFACE"
+log "    Syslog: $MONITORING_HOST:$SYSLOG_PORT/$SYSLOG_PROTO"
+log ""
 
 # ── Install packages ──────────────────────────────────────────────────────────
 
-echo "==> Updating package list..."
-opkg update
+log "==> Updating package list..."
+pkg_update
 
-echo "==> Installing required Prometheus exporters..."
-opkg install \
-  prometheus-node-exporter-lua \
-  prometheus-node-exporter-lua-textfile \
-  prometheus-node-exporter-lua-uci_dhcp_host \
-  prometheus-node-exporter-lua-openwrt \
-  prometheus-node-exporter-lua-wifi \
-  prometheus-node-exporter-lua-wifi_stations \
-  prometheus-node-exporter-lua-nat_traffic \
-  prometheus-node-exporter-lua-netstat
+log "==> Installing required Prometheus exporters..."
+pkg_install_required $REQUIRED_PACKAGES
 
-install_if_available prometheus-node-exporter-lua-hwmon
-install_if_available prometheus-node-exporter-lua-thermal
+for package in $OPTIONAL_PACKAGES; do
+  log "==> Installing optional package: $package"
+  if ! pkg_install_optional "$package"; then
+    log "    WARNING: optional package unavailable or failed to install: $package"
+  fi
+done
 
 # Install mwan3 exporter only if mwan3 is installed
-if opkg list-installed | grep -q "^mwan3 "; then
-  echo "==> mwan3 detected, installing mwan3 exporter..."
-  opkg install prometheus-node-exporter-lua-mwan3
+if pkg_installed mwan3; then
+  log "==> mwan3 detected, installing mwan3 exporter..."
+  if ! pkg_install_optional prometheus-node-exporter-lua-mwan3; then
+    log "    WARNING: mwan3 exporter unavailable or failed to install"
+  fi
 fi
 
 # ── Install bundled helper files ───────────────────────────────────────────────
 
-echo "==> Installing bundled collector files and helper scripts..."
+log "==> Installing bundled collector files and helper scripts..."
 ensure_dir /usr/lib/lua/prometheus-collectors
 ensure_dir /usr/bin
 ensure_dir /var/prometheus
@@ -131,14 +207,14 @@ install_file "$HELPER_SRC_DIR/openwrt-monitor-wifi-radio.sh" /usr/bin/openwrt-mo
 
 # ── Configure exporter listener ────────────────────────────────────────────────
 
-echo "==> Configuring exporter listener on LAN..."
-uci set prometheus-node-exporter-lua.main.listen_interface='lan'
+log "==> Configuring exporter listener on $EXPORTER_LISTEN_INTERFACE..."
+uci set prometheus-node-exporter-lua.main.listen_interface="$EXPORTER_LISTEN_INTERFACE"
 uci set prometheus-node-exporter-lua.main.listen_port='9100'
 uci commit prometheus-node-exporter-lua
 
 # ── Configure scheduled helper scripts ─────────────────────────────────────────
 
-echo "==> Configuring helper cron jobs..."
+log "==> Configuring helper cron jobs..."
 ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-device-status.sh'
 ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-service-health.sh'
 ensure_cron_line '*/5 * * * * /usr/bin/openwrt-monitor-packet-loss.sh'
@@ -154,7 +230,7 @@ ensure_cron_line '*/2 * * * * /usr/bin/openwrt-monitor-firewall-counters.sh'
 ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-sqm.sh'
 ensure_cron_line '*/2 * * * * /usr/bin/openwrt-monitor-wifi-radio.sh'
 
-echo "==> Running helper scripts once so custom metrics appear immediately..."
+log "==> Running helper scripts once so custom metrics appear immediately..."
 /usr/bin/openwrt-monitor-device-status.sh
 /usr/bin/openwrt-monitor-service-health.sh
 /usr/bin/openwrt-monitor-packet-loss.sh
@@ -172,48 +248,50 @@ echo "==> Running helper scripts once so custom metrics appear immediately..."
 
 # ── Start and enable the exporter ─────────────────────────────────────────────
 
-echo "==> Enabling and starting prometheus-node-exporter-lua..."
+log "==> Enabling and starting prometheus-node-exporter-lua..."
 /etc/init.d/prometheus-node-exporter-lua enable
 /etc/init.d/prometheus-node-exporter-lua restart
 
-echo "==> Enabling and restarting cron..."
+log "==> Enabling and restarting cron..."
 /etc/init.d/cron enable
 /etc/init.d/cron restart
 
 # Give it a moment to start
 sleep 2
 
-# Verify it's running
-if wget -qO- "http://127.0.0.1:9100/metrics" > /dev/null 2>&1; then
-  echo "    OK: metrics endpoint is up at :9100/metrics"
+LAN_IP="$(uci get network.lan.ipaddr 2>/dev/null || printf '%s' '<ROUTER_IP>')"
+METRICS_URL="http://$LAN_IP:9100/metrics"
+
+if fetch_url "$METRICS_URL" > /dev/null 2>&1; then
+  log "    OK: metrics endpoint is up at $METRICS_URL"
 else
-  echo "    WARNING: metrics endpoint not responding yet, check with:"
-  echo "    wget -qO- http://127.0.0.1:9100/metrics"
+  log "    WARNING: metrics endpoint not responding yet, check with:"
+  log "    wget -qO- $METRICS_URL"
 fi
 
 # ── Configure remote syslog ───────────────────────────────────────────────────
 
-echo "==> Configuring remote syslog → $MONITORING_HOST:514 ..."
+log "==> Configuring remote syslog to $MONITORING_HOST:$SYSLOG_PORT/$SYSLOG_PROTO ..."
 uci set system.@system[0].log_ip="$MONITORING_HOST"
 uci set system.@system[0].log_remote='1'
-uci set system.@system[0].log_port=514
-uci set system.@system[0].log_proto=tcp
+uci set system.@system[0].log_port="$SYSLOG_PORT"
+uci set system.@system[0].log_proto="$SYSLOG_PROTO"
 uci set system.@system[0].log_hostname="$(uci get system.@system[0].hostname 2>/dev/null || echo openwrt)"
 uci commit system
 
 /etc/init.d/log restart
-echo "    OK: syslog configured"
+log "    OK: syslog configured"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
-echo ""
-echo "==> Setup complete!"
-echo ""
-echo "    Metrics:  http://$(uci get network.lan.ipaddr 2>/dev/null || printf '%s' '<ROUTER_IP>'):9100/metrics"
-echo "    Syslog:   → $MONITORING_HOST:514 (TCP)"
-echo "    Helpers:  device status, packet loss, WAN/public IP, WAN quality, filesystem, service health"
-echo "              DHCP pool, link health, softnet, IPv6 WAN health, inodes, firewall counters, SQM, WiFi radio"
-echo ""
-echo "    Now start the Docker stack on $MONITORING_HOST:"
-echo "    docker compose up -d"
-echo ""
+log ""
+log "==> Setup complete!"
+log ""
+log "    Metrics:  $METRICS_URL"
+log "    Syslog:   $MONITORING_HOST:$SYSLOG_PORT/$SYSLOG_PROTO"
+log "    Helpers:  device status, packet loss, WAN/public IP, WAN quality, filesystem, service health"
+log "              DHCP pool, link health, softnet, IPv6 WAN health, inodes, firewall counters, SQM, WiFi radio"
+log ""
+log "    Now start the Docker stack on $MONITORING_HOST:"
+log "    docker compose up -d"
+log ""

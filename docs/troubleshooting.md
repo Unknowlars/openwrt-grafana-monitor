@@ -12,7 +12,7 @@ curl http://192.168.0.1:9100/metrics
 
 If this fails:
 - Is prometheus-node-exporter-lua running? `ssh root@192.168.0.1 "/etc/init.d/prometheus-node-exporter-lua status"`
-- Is port 9100 blocked by the router firewall? Try from the router itself: `wget -qO- http://127.0.0.1:9100/metrics`
+- Is port 9100 blocked by the router firewall? Try from the router itself with the LAN IP: `LAN_IP="$(uci get network.lan.ipaddr 2>/dev/null)"; wget -qO- "http://$LAN_IP:9100/metrics"`
 - Is the exporter still bound to loopback only? Check `uci get prometheus-node-exporter-lua.main.listen_interface` and make sure it is `lan`
 
 ### 1a. Check which collectors are actually succeeding
@@ -31,7 +31,7 @@ If a package is installed but a collector does not appear here, the exporter is 
 
 ### 2. Check Alloy is scraping
 
-Open the Alloy UI at http://localhost:12345 → Graph → look for `prometheus.scrape.openwrt`.
+Open the Alloy UI at http://localhost:1234 → Graph → look for `prometheus.scrape.openwrt`.
 
 Or check Alloy logs:
 
@@ -52,7 +52,7 @@ If empty, Alloy isn't writing to Prometheus. Check the `prometheus.remote_write`
 The repo's dashboards also expect these router-side custom metrics:
 
 ```sh
-curl http://192.168.0.1:9100/metrics | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info|openwrt_service_up|openwrt_filesystem_used_percent|openwrt_wan_probe_latency_milliseconds|openwrt_dhcp_pool_size_total|openwrt_link_up|openwrt_softnet_dropped_total|openwrt_wan6_up|openwrt_filesystem_inode_used_percent|openwrt_firewall_chain_packets_total|openwrt_tc_available|openwrt_wifi_channel)'
+curl http://192.168.0.1:9100/metrics | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info|openwrt_service_up|openwrt_filesystem_used_percent|openwrt_wan_probe_latency_milliseconds|openwrt_dhcp_pool_size_total|openwrt_link_up|openwrt_softnet_dropped_total|openwrt_wan6_up|openwrt_filesystem_inode_used_percent|openwrt_firewall_chain_packets_total|openwrt_tc_available|openwrt_wifi_channel|openwrt_wifi_station_connected_seconds)'
 ```
 
 If these are missing, you probably copied only `openwrt/setup.sh` instead of the whole `openwrt/` directory, or the helper cron jobs are not running.
@@ -74,6 +74,7 @@ On the router:
 ```sh
 uci show system | grep log_
 # Should show: system.@system[0].log_ip='192.168.0.100'
+# and normally: system.@system[0].log_proto='udp'
 ```
 
 Force a log message and watch if it arrives:
@@ -93,17 +94,21 @@ docker logs alloy --tail 50 | grep -i "syslog\|514"
 
 ```sh
 # From the monitoring host (listening):
-sudo tcpdump -i any port 514 -n
+sudo tcpdump -i any udp port 514 -n
 
 # From the router (sending):
 logger "test"
 ```
 
-If nothing arrives, check if something else is using port 514 on the host (`ss -lntup | grep 514`).
+If nothing arrives, check if something else is using port 514 on the host (`ss -ulnp | grep 514`).
 
 If running Linux with systemd-journald, port 514 may be in use by rsyslog or systemd-journal-remote.
 
-Fix: Change `SYSLOG_PORT` in `.env` to e.g. `1514` and update the router's `log_port` UCI setting.
+Fix: Change `SYSLOG_PORT` in `.env` to e.g. `1514`, then rerun router setup with the same port:
+
+```sh
+SYSLOG_PORT=1514 sh /tmp/openwrt/setup.sh 192.168.0.100
+```
 
 ### 4. Check Loki received logs
 
@@ -234,7 +239,7 @@ Find your WAN interface:
 ssh root@192.168.0.1 "ip route | grep default"
 ```
 
-Then in Grafana, edit the WAN panels and replace `wan` with your interface name if your router exposes a different label.
+Then in Grafana, change the `wan_interface` dashboard variable. The dashboards also expose `router`, `wifi24_interface`, `wifi5_interface`, and `vpn_interface` variables.
 
 ---
 
