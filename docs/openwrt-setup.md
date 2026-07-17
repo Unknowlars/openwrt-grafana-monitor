@@ -106,6 +106,17 @@ These are useful depending on your router and feature set:
 - `prometheus-node-exporter-lua-ethtool`: lower-level Ethernet/NIC stats
 - `tc` (from `ip-full` on some builds): detailed SQM/qdisc counters used by `openwrt-monitor-sqm.sh`
 
+## Setup Options
+
+`openwrt/setup.sh` accepts these optional environment variables:
+
+- `EXPORTER_LISTEN_INTERFACE`: interface for port 9100; default `lan`
+- `SYSLOG_PORT`: remote syslog port; default `514`
+- `SYSLOG_PROTO`: remote syslog protocol; default `udp`
+- `PING_TARGET`: packet-loss and WAN internet probe target; default `1.1.1.1`
+- `DNS_PROBE_HOST`: DNS resolution probe host; default `openwrt.org`
+- `DNS_PROBE_TIMEOUT`: DNS probe ping fallback timeout in seconds; default `5`
+
 ## Manual Setup
 
 Use the script if possible. Manual setup is mostly useful when you want to inspect or customize the router-side files.
@@ -214,7 +225,7 @@ wget -qO- "http://$LAN_IP:9100/metrics" | head -40
 Verify the custom metrics exist:
 
 ```sh
-wget -qO- "http://$LAN_IP:9100/metrics" | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info|openwrt_service_up|openwrt_filesystem_used_percent|openwrt_wan_probe_latency_milliseconds|openwrt_dhcp_pool_size_total|openwrt_link_up|openwrt_softnet_dropped_total|openwrt_wan6_up|openwrt_filesystem_inode_used_percent|openwrt_firewall_chain_packets_total|openwrt_tc_available|openwrt_wifi_channel|openwrt_wifi_station_connected_seconds)'
+wget -qO- "http://$LAN_IP:9100/metrics" | grep -E '^(router_device_up|dhcp_lease|packet_loss|wan_info|openwrt_service_up|openwrt_filesystem_used_percent|openwrt_wan_probe_latency_milliseconds|openwrt_dhcp_pool_size_total|openwrt_link_up|openwrt_softnet_dropped_total|openwrt_wan6_up|openwrt_filesystem_inode_used_percent|openwrt_firewall_chain_packets_total|openwrt_tc_available|openwrt_wifi_channel|openwrt_wifi_station_connected_seconds|dns_probe_success|gateway_packet_loss|overlay_bytes_total|wan_public_ip_changed|dhcpv6_lease_count|sqm_backlog_bytes)'
 ```
 
 Verify the exporter is scraping the collectors you expect:

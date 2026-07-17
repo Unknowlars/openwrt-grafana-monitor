@@ -17,6 +17,10 @@ mkdir -p "$OUTDIR"
   printf '# TYPE openwrt_filesystem_avail_bytes gauge\n'
   printf '# HELP openwrt_filesystem_used_percent Filesystem space used percentage.\n'
   printf '# TYPE openwrt_filesystem_used_percent gauge\n'
+  printf '# HELP overlay_bytes_total Total overlay rootfs_data filesystem size in bytes. Compatibility alias for older dashboards.\n'
+  printf '# TYPE overlay_bytes_total gauge\n'
+  printf '# HELP overlay_bytes_used Used overlay rootfs_data filesystem bytes. Compatibility alias for older dashboards.\n'
+  printf '# TYPE overlay_bytes_used gauge\n'
 
   for mount in /overlay /tmp; do
     [ -e "$mount" ] || continue
@@ -28,6 +32,10 @@ mkdir -p "$OUTDIR"
         printf "openwrt_filesystem_used_bytes{mount=\"%s\"} %.0f\n", mount, $3 * 1024
         printf "openwrt_filesystem_avail_bytes{mount=\"%s\"} %.0f\n", mount, $4 * 1024
         printf "openwrt_filesystem_used_percent{mount=\"%s\"} %s\n", mount, $5
+        if (mount == "/overlay") {
+          printf "overlay_bytes_total %.0f\n", $2 * 1024
+          printf "overlay_bytes_used %.0f\n", $3 * 1024
+        }
       }
     '
   done

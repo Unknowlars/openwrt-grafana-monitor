@@ -63,9 +63,9 @@ Go to **http://localhost:3000**
 
 Login: `admin` / value from `GRAFANA_ADMIN_PASSWORD` in `.env`
 
-The four classic OpenWrt dashboards load automatically from `grafana/provisioning/dashboards/`.
+The classic OpenWrt dashboards and the v2beta1 Operations dashboard load automatically from `grafana/provisioning/dashboards/`.
 
-The optional v2beta1 operations dashboard is generated separately into `grafana-dashboard-exports/openwrt-operations-v2.json` for manual import.
+The Operations dashboard is also generated into `grafana-dashboard-exports/openwrt-operations-v2.json` as a manual-import copy.
 
 For a complete dashboard, make sure you ran the router-side setup by copying the whole `openwrt/` directory and executing `openwrt/setup.sh`, not just by installing the base exporter packages.
 
