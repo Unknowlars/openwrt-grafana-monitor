@@ -2,7 +2,12 @@
 
 set -e
 
-target="${1:-1.1.1.1}"
+CONF="/etc/openwrt-grafana-monitor.conf"
+PING_TARGET="${PING_TARGET:-1.1.1.1}"
+
+[ -r "$CONF" ] && . "$CONF"
+
+target="${1:-$PING_TARGET}"
 count="${2:-10}"
 tmp_file="/tmp/packetloss.out.$$"
 

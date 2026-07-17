@@ -5,10 +5,20 @@ set -e
 OUTDIR="/var/prometheus"
 OUTFILE="$OUTDIR/openwrt_wan_quality.prom"
 TMPFILE="$OUTFILE.$$"
+CONF="/etc/openwrt-grafana-monitor.conf"
 COUNT="${1:-5}"
 TIMEOUT="${2:-1}"
+WAN_PROBE_TARGET="${WAN_PROBE_TARGET:-1.1.1.1}"
+DNS_PROBE_HOST="${DNS_PROBE_HOST:-openwrt.org}"
+DNS_PROBE_TIMEOUT="${DNS_PROBE_TIMEOUT:-5}"
+
+[ -r "$CONF" ] && . "$CONF"
 
 mkdir -p "$OUTDIR"
+
+escape_label() {
+  printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
 
 get_default_gateway() {
   ip route | awk '/^default/ {print $3; exit}'
@@ -81,6 +91,39 @@ write_probe() {
   printf 'openwrt_wan_probe_jitter_milliseconds{target="%s",address="%s"} %s\n' "$target" "$address" "$jitter" >> "$TMPFILE"
   printf 'openwrt_wan_probe_packet_loss_percent{target="%s",address="%s"} %s\n' "$target" "$address" "$loss" >> "$TMPFILE"
   printf 'openwrt_wan_probe_success{target="%s",address="%s"} %s\n' "$target" "$address" "$success" >> "$TMPFILE"
+
+  if [ "$target" = "gateway" ]; then
+    printf 'gateway_packet_loss{gateway="%s"} %s\n' "$(escape_label "$address")" "$loss" >> "$TMPFILE"
+  fi
+}
+
+write_dns_probe() {
+  dns_success="0"
+  dns_duration=""
+
+  case "$DNS_PROBE_TIMEOUT" in
+    ''|*[!0-9]*) DNS_PROBE_TIMEOUT="5" ;;
+  esac
+
+  dns_start="$(date +%s 2>/dev/null || printf '0')"
+  if command -v nslookup >/dev/null 2>&1; then
+    if nslookup "$DNS_PROBE_HOST" >/dev/null 2>&1; then
+      dns_success="1"
+    fi
+  elif command -v ping >/dev/null 2>&1; then
+    if ping -c 1 -W "$DNS_PROBE_TIMEOUT" "$DNS_PROBE_HOST" >/dev/null 2>&1; then
+      dns_success="1"
+    fi
+  fi
+  dns_end="$(date +%s 2>/dev/null || printf '0')"
+
+  case "$dns_start:$dns_end" in
+    *[!0-9:]*|0:*) dns_duration="" ;;
+    *) dns_duration="$((dns_end - dns_start))" ;;
+  esac
+
+  printf 'dns_probe_success{host="%s"} %s\n' "$(escape_label "$DNS_PROBE_HOST")" "$dns_success" >> "$TMPFILE"
+  [ -n "$dns_duration" ] && printf 'dns_probe_duration_seconds{host="%s"} %s\n' "$(escape_label "$DNS_PROBE_HOST")" "$dns_duration" >> "$TMPFILE"
 }
 
 gateway="$(get_default_gateway 2>/dev/null || true)"
@@ -95,6 +138,12 @@ resolver="$(get_upstream_dns 2>/dev/null || true)"
   printf '# TYPE openwrt_wan_probe_packet_loss_percent gauge\n'
   printf '# HELP openwrt_wan_probe_success Whether the probe succeeded.\n'
   printf '# TYPE openwrt_wan_probe_success gauge\n'
+  printf '# HELP gateway_packet_loss Packet loss percentage to the IPv4 default gateway. Compatibility alias for older dashboards.\n'
+  printf '# TYPE gateway_packet_loss gauge\n'
+  printf '# HELP dns_probe_success DNS resolution probe result for the configured host. Compatibility alias for older dashboards.\n'
+  printf '# TYPE dns_probe_success gauge\n'
+  printf '# HELP dns_probe_duration_seconds DNS resolution probe duration in whole seconds. Compatibility alias for older dashboards.\n'
+  printf '# TYPE dns_probe_duration_seconds gauge\n'
 } > "$TMPFILE"
 
 write_probe gateway "$gateway"
@@ -103,6 +152,7 @@ if [ -n "$resolver" ] && [ "$resolver" != "$gateway" ]; then
   write_probe resolver "$resolver"
 fi
 
-write_probe internet 1.1.1.1
+write_probe internet "$WAN_PROBE_TARGET"
+write_dns_probe
 
 mv "$TMPFILE" "$OUTFILE"

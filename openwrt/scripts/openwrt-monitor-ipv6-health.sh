@@ -13,6 +13,7 @@ default_route_up=0
 prefix_valid=0
 prefix_preferred=0
 global_addr_count=0
+dhcpv6_lease_count=0
 
 if command -v ip >/dev/null 2>&1; then
   if ip -6 route show default 2>/dev/null | awk 'NR==1 {found=1} END {exit !found}'; then
@@ -47,6 +48,10 @@ if command -v ifstatus >/dev/null 2>&1 && command -v jsonfilter >/dev/null 2>&1;
   fi
 fi
 
+if [ -r /tmp/hosts/odhcpd ]; then
+  dhcpv6_lease_count="$(wc -l < /tmp/hosts/odhcpd 2>/dev/null || printf '0')"
+fi
+
 {
   printf '# HELP openwrt_wan6_up Whether WAN IPv6 interface is up.\n'
   printf '# TYPE openwrt_wan6_up gauge\n'
@@ -58,12 +63,15 @@ fi
   printf '# TYPE openwrt_ipv6_prefix_preferred_seconds gauge\n'
   printf '# HELP openwrt_ipv6_global_addresses Number of global IPv6 addresses present on the router.\n'
   printf '# TYPE openwrt_ipv6_global_addresses gauge\n'
+  printf '# HELP dhcpv6_lease_count Number of active DHCPv6/RA leases known to odhcpd. Compatibility alias for older dashboards.\n'
+  printf '# TYPE dhcpv6_lease_count gauge\n'
 
   printf 'openwrt_wan6_up %s\n' "$wan6_up"
   printf 'openwrt_ipv6_default_route_up %s\n' "$default_route_up"
   printf 'openwrt_ipv6_prefix_valid_seconds %s\n' "$prefix_valid"
   printf 'openwrt_ipv6_prefix_preferred_seconds %s\n' "$prefix_preferred"
   printf 'openwrt_ipv6_global_addresses %s\n' "$global_addr_count"
+  printf 'dhcpv6_lease_count %s\n' "$dhcpv6_lease_count"
 } > "$TMPFILE"
 
 mv "$TMPFILE" "$OUTFILE"

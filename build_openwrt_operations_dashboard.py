@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Build a manually importable Grafana v2beta1 dashboard for OpenWrt operations.
+Build the Grafana v2beta1 dashboard for OpenWrt operations.
 
-The generated JSON is the artifact. This script is the source of truth.
-It intentionally does not touch the existing provisioned dashboards.
+The generated JSON files are artifacts. This script is the source of truth.
+It writes both the manual import export and the provisioned dashboard copy.
 """
 
 from __future__ import annotations
@@ -16,7 +16,10 @@ from pathlib import Path
 from typing import Any
 
 
-OUT = Path("grafana-dashboard-exports/openwrt-operations-v2.json")
+OUTS = [
+    Path("grafana-dashboard-exports/openwrt-operations-v2.json"),
+    Path("grafana/provisioning/dashboards/openwrt-operations-v2.json"),
+]
 
 PROM_DS = "${DS_PROMETHEUS}"
 LOKI_DS = "${DS_LOKI}"
@@ -1008,16 +1011,18 @@ def main() -> None:
     parsed = json.loads(rendered)
     assert parsed == dashboard
 
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    old = OUT.read_text(encoding="utf-8") if OUT.exists() else None
-    OUT.write_text(rendered, encoding="utf-8")
-    new = OUT.read_text(encoding="utf-8")
-    assert new == rendered
     second = stable_json(build_dashboard())
     assert second == rendered, "non-deterministic output"
     digest = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
-    changed = "updated" if old != rendered else "unchanged"
-    print(f"{OUT}: {changed}, panels={len(dashboard['spec']['elements'])}, sha256={digest}")
+
+    for out in OUTS:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        old = out.read_text(encoding="utf-8") if out.exists() else None
+        out.write_text(rendered, encoding="utf-8")
+        new = out.read_text(encoding="utf-8")
+        assert new == rendered
+        changed = "updated" if old != rendered else "unchanged"
+        print(f"{out}: {changed}, panels={len(dashboard['spec']['elements'])}, sha256={digest}")
 
 
 if __name__ == "__main__":

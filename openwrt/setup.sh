@@ -18,6 +18,9 @@
 #   EXPORTER_LISTEN_INTERFACE  Interface for :9100; default: lan
 #   SYSLOG_PORT                Remote syslog port; default: 514
 #   SYSLOG_PROTO               Remote syslog protocol; default: udp
+#   PING_TARGET                Packet-loss and WAN internet probe target; default: 1.1.1.1
+#   DNS_PROBE_HOST             DNS resolution probe host; default: openwrt.org
+#   DNS_PROBE_TIMEOUT          DNS probe ping fallback timeout; default: 5
 #
 # =============================================================================
 
@@ -27,6 +30,9 @@ MONITORING_HOST="${1:-}"
 EXPORTER_LISTEN_INTERFACE="${EXPORTER_LISTEN_INTERFACE:-lan}"
 SYSLOG_PORT="${SYSLOG_PORT:-514}"
 SYSLOG_PROTO="${SYSLOG_PROTO:-udp}"
+PING_TARGET="${PING_TARGET:-1.1.1.1}"
+DNS_PROBE_HOST="${DNS_PROBE_HOST:-openwrt.org}"
+DNS_PROBE_TIMEOUT="${DNS_PROBE_TIMEOUT:-5}"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 COLLECTOR_SRC_DIR="$SCRIPT_DIR/collectors"
 HELPER_SRC_DIR="$SCRIPT_DIR/scripts"
@@ -184,6 +190,13 @@ log "==> Installing bundled collector files and helper scripts..."
 ensure_dir /usr/lib/lua/prometheus-collectors
 ensure_dir /usr/bin
 ensure_dir /var/prometheus
+
+cat >/etc/openwrt-grafana-monitor.conf <<EOF
+PING_TARGET="$PING_TARGET"
+WAN_PROBE_TARGET="$PING_TARGET"
+DNS_PROBE_HOST="$DNS_PROBE_HOST"
+DNS_PROBE_TIMEOUT="$DNS_PROBE_TIMEOUT"
+EOF
 
 install_file "$COLLECTOR_SRC_DIR/dnsmasq.lua" /usr/lib/lua/prometheus-collectors/dnsmasq.lua 0644
 install_file "$COLLECTOR_SRC_DIR/device_status.lua" /usr/lib/lua/prometheus-collectors/device_status.lua 0644

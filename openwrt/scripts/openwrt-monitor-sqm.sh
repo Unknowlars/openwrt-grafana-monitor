@@ -40,6 +40,12 @@ fi
   printf '# TYPE openwrt_tc_qdisc_backlog_packets gauge\n'
   printf '# HELP openwrt_tc_wan_device_info Label-only metric for selected WAN device.\n'
   printf '# TYPE openwrt_tc_wan_device_info gauge\n'
+  printf '# HELP sqm_backlog_bytes SQM/cake qdisc backlog bytes by interface. Compatibility alias for older dashboards.\n'
+  printf '# TYPE sqm_backlog_bytes gauge\n'
+  printf '# HELP sqm_dropped_packets_total SQM/cake qdisc dropped packets by interface. Compatibility alias for older dashboards.\n'
+  printf '# TYPE sqm_dropped_packets_total counter\n'
+  printf '# HELP sqm_overlimits_total SQM/cake qdisc overlimits by interface. Compatibility alias for older dashboards.\n'
+  printf '# TYPE sqm_overlimits_total counter\n'
 
   if command -v tc >/dev/null 2>&1; then
     printf 'openwrt_tc_available 1\n'
@@ -50,6 +56,7 @@ fi
         qtype = $2
         qid = $3
         sub(/:$/, "", qid)
+        direction = (dev ~ /^ifb/) ? "ingress" : "egress"
         next
       }
 
@@ -85,6 +92,8 @@ fi
         printf "openwrt_tc_qdisc_drops_total{device=\"%s\",qdisc=\"%s\",id=\"%s\"} %.0f\n", dev, qtype, qid, dropped
         printf "openwrt_tc_qdisc_overlimits_total{device=\"%s\",qdisc=\"%s\",id=\"%s\"} %.0f\n", dev, qtype, qid, overlimits
         printf "openwrt_tc_qdisc_requeues_total{device=\"%s\",qdisc=\"%s\",id=\"%s\"} %.0f\n", dev, qtype, qid, requeues
+        printf "sqm_dropped_packets_total{iface=\"%s\",direction=\"%s\"} %.0f\n", dev, direction, dropped
+        printf "sqm_overlimits_total{iface=\"%s\",direction=\"%s\"} %.0f\n", dev, direction, overlimits
         next
       }
 
@@ -108,6 +117,7 @@ fi
 
         printf "openwrt_tc_qdisc_backlog_bytes{device=\"%s\",qdisc=\"%s\",id=\"%s\"} %.0f\n", dev, qtype, qid, backlog_bytes
         printf "openwrt_tc_qdisc_backlog_packets{device=\"%s\",qdisc=\"%s\",id=\"%s\"} %.0f\n", dev, qtype, qid, backlog_packets
+        printf "sqm_backlog_bytes{iface=\"%s\",direction=\"%s\"} %.0f\n", dev, direction, backlog_bytes
       }
     '
   else
