@@ -12,7 +12,7 @@ install depend on nftables JSON, usteer, or Netifyd.
 | `traffic` | Read-only nftables per-device byte and packet counters | `openwrt_device_traffic_collector_available` |
 | `wifi_mesh` | Radio settings, 802.11r/k/v flags, and usteer local metrics | `openwrt_wifi_mesh_collector_available` |
 | `dpi` | Bounded Netifyd application/protocol snapshot metrics | `openwrt_dpi_collector_available` |
-| `clients` | Unified per-client identity plus nlbwmon MAC-keyed service traffic | `openwrt_client_inventory_collector_available`, `openwrt_client_traffic_collector_available` |
+| `clients` | Unified per-client identity, bounded conntrack occupancy, nlbwmon MAC-keyed service traffic, and Loki-first WiFi roaming | `openwrt_client_inventory_collector_available`, `openwrt_client_traffic_collector_available`, `openwrt_client_conntrack_collector_available` |
 | `full` | All optional profiles | All optional-profile metrics above |
 
 Enable a profile during router setup. `OPENWRT_MONITOR_PROFILE` also accepts a
@@ -98,7 +98,11 @@ does not know: which radio/SSID a client is associated with (from
 `ubus call network.wireless status` joined with `iwinfo.assoclist` and the
 `wireless.wifi-iface` UCI section, the same calls `wifi_dethrash.lua` and
 upstream `wifi_stations.lua` already make) and the client's UCI network zone,
-static-lease status, and IPv6 address count.
+static-lease status, and IPv6 address count. WiFi clients use the network name
+reported by `network.wireless status`; wired clients resolve their ARP device
+against `network.interface` UCI `device`/`ifname`. If a wired device cannot be
+resolved, its `network="unknown"` label is explicit rather than assuming it is
+trusted `lan`.
 
 Requires `rpcd-mod-luci` (for `getHostHints`), `libubus-lua`, `libiwinfo-lua`,
 and `libuci-lua`. If `rpcd-mod-luci` or `libubus-lua` is missing, the
@@ -120,6 +124,31 @@ router with dnsmasq answering for the local domain this is harmless, but if
 your resolver forwards unanswered local names upstream, this can leak local
 hostnames/IPs to it — see
 [openwrt/luci#4089](https://github.com/openwrt/luci/issues/4089).
+
+## Per-client conntrack and WiFi roaming
+
+The `clients` profile runs `openwrt-monitor-client-conntrack.sh` once per
+minute. It uses `getHostHints` only to map known local IPv4 addresses back to
+the existing lowercase `mac` identity, then counts each `conntrack -L` row
+once for every matching client. It exports one bounded gauge per known client:
+
+- `openwrt_client_conntrack_entries{mac}`
+
+There are no remote-IP, port, IPv6-address, domain, or vendor labels. For 60
+clients this adds 60 series plus its availability gauge. The association
+counter adds a separate availability gauge. A known busy client
+must be checked on the router with `conntrack -L | grep <ip> | wc -l` before
+the number is treated as trustworthy. Flow offload invalidates byte accounting;
+whether it changes *entry occupancy* is a separate router-specific live gate,
+so this repo does not infer it from the traffic result.
+
+Hostapd's `AP-STA-CONNECTED` and `AP-STA-DISCONNECTED` messages already reach
+Loki through syslog. The Clients dashboard keeps that raw, per-client detail
+only in Loki. The Prometheus companion is deliberately limited to
+`openwrt_wifi_assoc_events_total{ap,ssid,event}` and a collector-availability
+gauge: roughly `APs x SSIDs x 2` (about 12 series for two APs and three SSIDs),
+with no MAC label. A no-event single-AP deployment renders an empty Loki
+timeline and zero event count without error.
 
 Bounded by `CLIENT_INVENTORY_MAX` (default 256): clients beyond the cap are
 not exported and `openwrt_client_inventory_truncated` is set to `1`. The

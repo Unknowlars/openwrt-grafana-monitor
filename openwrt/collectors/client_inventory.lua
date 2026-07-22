@@ -119,7 +119,7 @@ end
 -- (0x2) is ATF_COM -- a resolved entry, not stale/incomplete/failed. This is
 -- the "neighbour table" liveness proxy for wired clients; WiFi clients get a
 -- better signal from the assoclist below.
-local function reachable_ips()
+local function arp_by_ip()
   local reachable = {}
   local file = io.open("/proc/net/arp", "r")
   if not file then return reachable end
@@ -128,15 +128,35 @@ local function reachable_ips()
     if first then
       first = false
     else
-      local ip, flags = line:match("^(%S+)%s+%S+%s+(%S+)")
+      local ip, flags, device = line:match("^(%S+)%s+%S+%s+(%S+)%s+%S+%s+%S+%s+(%S+)")
       local flag_value = flags and tonumber(flags, 16)
       if ip and flag_value and math.floor(flag_value / 2) % 2 == 1 then
-        reachable[ip] = true
+        reachable[ip] = device or true
       end
     end
   end
   file:close()
   return reachable
+end
+
+-- WiFi carries its logical network directly in network.wireless status. For
+-- wired clients, resolve the ARP device against UCI network.interface device
+-- / ifname fields. If either source is unavailable, use explicit "unknown"
+-- rather than assigning a plausible-but-wrong trusted label.
+local function network_by_device()
+  local networks = {}
+  if not ok_uci then return networks end
+  pcall(function()
+    local cursor = uci.cursor()
+    cursor:foreach("network", "interface", function(section)
+      local name = section[".name"]
+      local devices = section.device or section.ifname or ""
+      for device in tostring(devices):gmatch("[^%s]+") do
+        networks[device] = name
+      end
+    end)
+  end)
+  return networks
 end
 
 local function static_leases()
@@ -336,7 +356,8 @@ local function collect(info, up, lease_expiry_metric, ipv6_metric, first_seen_me
   local ap = router_hostname()
   local expiry = lease_expiry_by_mac()
   local statics = static_leases()
-  local reachable = reachable_ips()
+  local arp = arp_by_ip()
+  local networks = network_by_device()
   local offload = flow_offload_state()
 
   local ok_seen, seen_store = pcall(update_seen_store, emit_macs, max_clients, os.time())
@@ -353,7 +374,8 @@ local function collect(info, up, lease_expiry_metric, ipv6_metric, first_seen_me
     local wifi_iface = ifname ~= "" and ifaces[ifname] or nil
     local ssid = (wifi_iface and wifi_iface.ssid) or ""
     local band = (wifi_iface and wifi_iface.band) or ""
-    local network = (wifi_iface and wifi_iface.network and wifi_iface.network ~= "") and wifi_iface.network or "lan"
+    local network = (wifi_iface and wifi_iface.network and wifi_iface.network ~= "") and wifi_iface.network
+      or networks[arp[ip]] or "unknown"
 
     local conn
     if not assoc_ok then
@@ -383,7 +405,7 @@ local function collect(info, up, lease_expiry_metric, ipv6_metric, first_seen_me
     local is_up = 0
     if conn == "wifi" then
       is_up = 1
-    elseif ip ~= "" and reachable[ip] then
+    elseif ip ~= "" and arp[ip] then
       is_up = 1
     end
     up({mac = mac}, is_up)

@@ -1962,6 +1962,23 @@ per-AP/SSID counter; no per-MAC roam series (§10.5).
 a phone is walked between APs (single-AP installs: verify the panel degrades
 cleanly instead of erroring).
 
+**Implementation evidence (2026-07-22, live deployment pending):** the M7
+helper is fail-closed and fixture-tested against a conntrack snapshot with a
+shared LAN row, proving it counts each row once per matching client and emits
+an explicit zero for a known idle client. It maps only `getHostHints` IPv4 to
+the existing lowercase MAC identity, so `openwrt_client_conntrack_entries{mac}`
+adds one series per client (60 at the §10 planning size) and no remote-IP,
+port, IPv6, vendor, or domain labels. `client_inventory.lua` now resolves
+wired `network` from ARP-device to UCI network mapping and emits `unknown`
+rather than guessing `lan`; WiFi continues to use its live ubus network.
+IPv6 remains `openwrt_client_ipv6_addresses{mac}` only. The Clients generator
+adds Loki `AP-STA-CONNECTED`/`AP-STA-DISCONNECTED` timeline/count panels plus
+only `openwrt_wifi_assoc_events_total{ap,ssid,event}` in Prometheus. The
+counter's label budget is AP × SSID × 2 (~12 at two APs/three SSIDs), and it
+does not carry MAC. Live M7 acceptance remains blocked until the helper is
+deployed and compared against a busy client's exact `conntrack -L | grep <ip>
+| wc -l` result under the reference router's enabled software/hardware offload.
+
 ### M8 — Alerting and retention
 
 **Files:** `grafana/provisioning/alerting/openwrt-alerts.yaml` (new),

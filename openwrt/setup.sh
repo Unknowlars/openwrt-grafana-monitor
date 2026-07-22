@@ -344,6 +344,7 @@ if profile_enabled clients; then
   install_file "$COLLECTOR_SRC_DIR/client_inventory.lua" /usr/lib/lua/prometheus-collectors/client_inventory.lua 0644
   install_file "$SCRIPT_DIR/nlbwmon/protocols" /usr/share/nlbwmon/protocols 0644
   install_file "$HELPER_SRC_DIR/openwrt-monitor-client-traffic.sh" /usr/bin/openwrt-monitor-client-traffic.sh 0755
+  install_file "$HELPER_SRC_DIR/openwrt-monitor-client-conntrack.sh" /usr/bin/openwrt-monitor-client-conntrack.sh 0755
   # topology.lua reshapes the same identity/association data client_inventory
   # gathers into the node-graph metric contract (plan §2.2-§2.4); it has the
   # same package dependencies (getHostHints, iwinfo assoclist), so it rides
@@ -430,6 +431,7 @@ ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-sqm.sh'
 ensure_cron_line '*/2 * * * * /usr/bin/openwrt-monitor-wifi-radio.sh'
 if profile_enabled clients; then
   ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-client-traffic.sh'
+  ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-client-conntrack.sh'
 fi
 
 log "==> Running helper scripts once so custom metrics appear immediately..."
@@ -449,6 +451,7 @@ log "==> Running helper scripts once so custom metrics appear immediately..."
 /usr/bin/openwrt-monitor-wifi-radio.sh
 if profile_enabled clients; then
   /usr/bin/openwrt-monitor-client-traffic.sh
+  /usr/bin/openwrt-monitor-client-conntrack.sh
 fi
 
 if profile_enabled traffic; then

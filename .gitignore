@@ -6,6 +6,9 @@ old/
 claude/
 __pycache__/
 tests
+!tests/
+tests/*
+!tests/test_client_conntrack.sh
 skills
 grafana_docs
 screenshot
