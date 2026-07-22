@@ -6,6 +6,7 @@
 # client IP they contain. Raw hostapd messages remain in syslog/Loki; this
 # helper exports only the bounded aggregate {ap,ssid,event} counter.
 set -e
+set +u
 
 OUTDIR="${OPENWRT_MONITOR_TEXTFILE_DIR:-/var/prometheus}"
 OUTFILE="$OUTDIR/openwrt_client_conntrack.prom"
@@ -75,6 +76,7 @@ command -v "$CONNTRACK_BIN" >/dev/null 2>&1 || fail_closed
 # jshn handles MAC-keyed objects safely; parsing getHostHints with sed would
 # risk assigning a conntrack row to the wrong client after a format change.
 . "$JSHN_PATH"
+json_init
 HOSTS_JSON=$($UBUS_BIN call luci-rpc getHostHints 2>/dev/null) || fail_closed
 json_load "$HOSTS_JSON" || fail_closed
 json_get_keys host_macs

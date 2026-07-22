@@ -31,6 +31,7 @@ EOF
 chmod +x "$WORK/bin/conntrack"
 
 cat > "$WORK/libubox/jshn.sh" <<'EOF'
+json_init() { :; }
 json_load() { JSHN_JSON=$1; JSHN_PATH='.'; JSHN_STACK=''; }
 json_cleanup() { :; }
 json_select() {

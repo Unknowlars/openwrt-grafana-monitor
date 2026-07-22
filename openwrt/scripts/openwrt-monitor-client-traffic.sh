@@ -1,8 +1,11 @@
 #!/bin/sh
 
-# libubox's jshn.sh references unset internal variables while it initialises,
-# so nounset would turn a valid nlbwmon response into a false unavailable state.
+# libubox's jshn.sh references unset internal variables while it initialises.
+# setup.sh itself uses `set -u`; make the helper resilient even if its shell
+# option state is inherited, otherwise jshn's JSON_PREFIX expansion aborts the
+# whole setup rather than producing the intended fail-closed availability 0.
 set -e
+set +u
 
 # nlbwmon's counters are cumulative for its current accounting period (one
 # month by default). The rollover is a normal Prometheus counter reset, so
@@ -81,6 +84,7 @@ fi
 # observed schema before reading positional records so a package format change
 # becomes an explicit unavailable state, never mislabelled traffic.
 . "$JSHN_PATH"
+json_init
 if ! json_load "$(cat "$RAWFILE")"; then
   fail_closed
 fi
