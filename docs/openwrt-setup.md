@@ -37,12 +37,23 @@ The setup script does all of the following:
 - Adds cron jobs for device status, WAN/public IP, packet loss, WAN quality, filesystem and inode usage, service health, DHCP pool, link health, softnet counters, IPv6 health, firewall counters, SQM, and WiFi radio state
 - Configures remote syslog to the monitoring host over UDP port `514` by default
 
+The default profile is `core`. Optional `traffic`, `wifi_mesh`, `dpi`, and
+`full` profiles are documented in [Advanced Router Profiles](advanced-profiles.md).
+Use a profile when running the setup command, for example:
+
+```sh
+OPENWRT_MONITOR_PROFILE=full sh /tmp/openwrt/setup.sh 192.168.0.100
+```
+
 Bundled files installed by the script:
 
 - `/usr/lib/lua/prometheus-collectors/dnsmasq.lua`
 - `/usr/lib/lua/prometheus-collectors/device_status.lua`
 - `/usr/lib/lua/prometheus-collectors/packet_loss.lua`
 - `/usr/lib/lua/prometheus-collectors/wan_info.lua`
+- `/usr/lib/lua/prometheus-collectors/device_traffic.lua` when `traffic` or `full` is selected
+- `/usr/lib/lua/prometheus-collectors/wifi_dethrash.lua` when `wifi_mesh` or `full` is selected
+- `/usr/lib/lua/prometheus-collectors/dpi_netifyd.lua` when `dpi` or `full` is selected
 - `/usr/bin/openwrt-monitor-device-status.sh`
 - `/usr/bin/openwrt-monitor-filesystem.sh`
 - `/usr/bin/openwrt-monitor-packet-loss.sh`
@@ -103,6 +114,9 @@ These are useful depending on your router and feature set:
 - `prometheus-node-exporter-lua-mwan3`: multi-WAN status
 - `prometheus-node-exporter-lua-snmp6`: IPv6 stack counters
 - `prometheus-node-exporter-lua-nft-counters`: nftables counters on newer OpenWrt releases
+- `lua-cjson`: JSON parsing for the traffic and DPI profiles
+- `nftables-json`: JSON output support for router-local nftables set inspection
+- `netifyd`: optional DPI engine used by the `dpi` profile
 - `prometheus-node-exporter-lua-ethtool`: lower-level Ethernet/NIC stats
 - `tc` (from `ip-full` on some builds): detailed SQM/qdisc counters used by `openwrt-monitor-sqm.sh`
 
@@ -116,6 +130,8 @@ These are useful depending on your router and feature set:
 - `PING_TARGET`: packet-loss and WAN internet probe target; default `1.1.1.1`
 - `DNS_PROBE_HOST`: DNS resolution probe host; default `openwrt.org`
 - `DNS_PROBE_TIMEOUT`: DNS probe ping fallback timeout in seconds; default `5`
+- `OPENWRT_MONITOR_PROFILE`: `core`, `traffic`, `wifi_mesh`, `dpi`, or `full`; default `core`
+- `TRAFFIC_LAN_INTERFACE`: LAN bridge counted by the traffic profile; default `br-lan`
 
 ## Manual Setup
 
@@ -263,6 +279,7 @@ curl 'http://localhost:3100/loki/api/v1/query?query={job="openwrt-syslog"}'
 - The WAN quality metrics are synthetic probes run from the router itself. They are meant for trend and troubleshooting, not for precise SLA measurement.
 - The filesystem and service-health metrics are exported via the textfile collector from files in `/var/prometheus/*.prom`.
 - The newer helper scripts are also textfile metrics. They are safe to run even when optional tools are missing; affected scripts emit availability metrics such as `openwrt_tc_available` and `openwrt_wifi_radio_collector_available`.
+- Optional profile collectors emit `openwrt_device_traffic_collector_available`, `openwrt_wifi_mesh_collector_available`, and `openwrt_dpi_collector_available`. A value of `0` means unavailable or not installed; it is not a healthy zero.
 - `wifi` and `wifi_stations` should expose `wifi_*` metrics automatically once the packages are installed. If they do not, check `node_scrape_collector_success` first.
 - Temperature panels prefer `hwmon` and `thermal`. Some routers expose one, some both, some neither.
 
@@ -274,6 +291,9 @@ These repo-local files are part of the supported setup and should be treated as 
 - `openwrt/collectors/device_status.lua`
 - `openwrt/collectors/packet_loss.lua`
 - `openwrt/collectors/wan_info.lua`
+- `openwrt/collectors/device_traffic.lua`
+- `openwrt/collectors/wifi_dethrash.lua`
+- `openwrt/collectors/dpi_netifyd.lua`
 - `openwrt/scripts/openwrt-monitor-device-status.sh`
 - `openwrt/scripts/openwrt-monitor-filesystem.sh`
 - `openwrt/scripts/openwrt-monitor-packet-loss.sh`

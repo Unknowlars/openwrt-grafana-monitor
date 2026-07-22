@@ -4,3 +4,9 @@ old/
 .claude/
 .codex/
 claude/
+__pycache__/
+tests
+skills
+grafana_docs
+screenshot
+docs/screenshots

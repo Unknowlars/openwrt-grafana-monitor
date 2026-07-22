@@ -33,10 +33,89 @@ services:
       - "${SYSLOG_PORT:-514}:514/tcp"  # Syslog receiver TCP
     volumes:
       - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
-    command: run /etc/alloy/config.alloy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+
+        out=/tmp/openwrt-targets.json
+
+        write_target() {
+          name=$$1
+          address=$$2
+
+          case "$$name" in
+            ''|*[!A-Za-z0-9_.-]*)
+              echo "Invalid router target name '$$name'. Use only letters, digits, underscore, dot, and hyphen." >&2
+              exit 1
+              ;;
+          esac
+
+          case "$$address" in
+            ''|*[!A-Za-z0-9_.:-]*)
+              echo "Invalid router target address '$$address'. Use host:port or ip:port." >&2
+              exit 1
+              ;;
+            *:*)
+              ;;
+            *)
+              echo "Invalid router target address '$$address'. Expected host:port or ip:port." >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$$first" -eq 0 ]; then
+            printf ',' >> "$$out"
+          fi
+
+          printf '{"targets":["%s"],"labels":{"router":"%s","job":"openwrt"}}' "$$address" "$$name" >> "$$out"
+          first=0
+        }
+
+        printf '[' > "$$out"
+        first=1
+
+        if [ -n "$${ROUTER_TARGETS:-}" ]; then
+          case "$$ROUTER_TARGETS" in
+            ,*|*,|*,,*)
+              echo "Invalid ROUTER_TARGETS '$$ROUTER_TARGETS'. Expected name=ip:port,name=ip:port with no empty entries." >&2
+              exit 1
+              ;;
+          esac
+
+          remaining=$$ROUTER_TARGETS
+          while [ -n "$$remaining" ]; do
+            case "$$remaining" in
+              *,*)
+                entry=$${remaining%%,*}
+                remaining=$${remaining#*,}
+                ;;
+              *)
+                entry=$$remaining
+                remaining=
+                ;;
+            esac
+
+            case "$$entry" in
+              *=*)
+                write_target "$${entry%%=*}" "$${entry#*=}"
+                ;;
+              *)
+                echo "Invalid ROUTER_TARGETS entry '$$entry'. Expected name=ip:port." >&2
+                exit 1
+                ;;
+            esac
+          done
+        else
+          write_target "$$ROUTER_NAME" "$$ROUTER_IP:$$ROUTER_METRICS_PORT"
+        fi
+
+        printf ']\n' >> "$$out"
+        exec /usr/bin/alloy run /etc/alloy/config.alloy
     environment:
       - ROUTER_IP=${ROUTER_IP:-192.168.0.1}
       - ROUTER_NAME=${ROUTER_NAME:-openwrt}
+      - ROUTER_TARGETS=${ROUTER_TARGETS:-}
       - ROUTER_METRICS_PORT=${ROUTER_METRICS_PORT:-9100}
       - SCRAPE_INTERVAL=${SCRAPE_INTERVAL:-30s}
     depends_on:

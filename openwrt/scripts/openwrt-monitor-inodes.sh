@@ -2,11 +2,18 @@
 
 set -e
 
-OUTDIR="/var/prometheus"
+# Overridable so the collector logic can be exercised in tests.
+OUTDIR="${OPENWRT_MONITOR_TEXTFILE_DIR:-/var/prometheus}"
 OUTFILE="$OUTDIR/openwrt_inodes.prom"
-TMPFILE="$OUTFILE.$$"
+# The textfile collector reads every file in $OUTDIR, so a temp file left
+# there by a crashed run is scraped as a second copy of every metric below.
+# Stage outside $OUTDIR (same filesystem on OpenWrt: /var -> /tmp) and mv
+# atomically into place.
+TMPFILE="/tmp/.openwrt-monitor-openwrt_inodes.$$"
 
 mkdir -p "$OUTDIR"
+rm -f "$OUTFILE".[0-9]*
+trap 'rm -f "$TMPFILE"' EXIT
 
 {
   printf '# HELP openwrt_filesystem_inode_collector_available Whether inode collection is available on this router (1 yes, 0 no).\n'

@@ -1179,17 +1179,17 @@ def build_devices():
              "properties": [{"id": "color", "value": {"fixedColor": "#808080", "mode": "fixed"}}]},
         ]))
 
-    panels.append(bargauge(6, "Top Devices by NAT Traffic (bytes)",
+    panels.append(bargauge(6, "Top Devices by Traffic Rate",
         targets=[tgt(
-            'topk(10, sum by(src)(node_nat_traffic{job="openwrt", router="$router"}))',
-            "{{src}}", "A",
+            'topk(10, sum by(device)(rate(openwrt_device_traffic_bytes_total{job="openwrt", router="$router"}[$__rate_interval])))',
+            "{{device}}", "A",
         )],
-        x=12, y=y, w=12, h=8, unit="bytes",
-        desc="Top 10 LAN clients by total NAT traffic bytes (current snapshot, not rate)",
+        x=12, y=y, w=12, h=8, unit="Bps",
+        desc="Top 10 LAN clients by current combined upload+download rate, from the traffic profile's nftables counters. Empty rather than wrong when the traffic profile is not installed. Replaces the former node_nat_traffic ranking, which had no cardinality bound (docs/client-topology-and-netflow-plan.md §0.3).",
         thresholds=[
             {"color": "green",  "value": 0},
-            {"color": "blue",   "value": 10000},
-            {"color": "purple", "value": 100000},
+            {"color": "blue",   "value": 100000},
+            {"color": "purple", "value": 1000000},
         ]))
     y += 8
 

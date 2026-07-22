@@ -1,0 +1,13 @@
+6 22 ssh
+6 53 dns
+17 53 dns
+6 80 http
+17 123 ntp
+6 443 https
+17 443 quic
+6 445 smb
+6 853 dns
+17 853 dns
+6 993 imaps
+17 5004 rtp
+17 5005 rtp

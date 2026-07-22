@@ -21,6 +21,19 @@
 #   PING_TARGET                Packet-loss and WAN internet probe target; default: 1.1.1.1
 #   DNS_PROBE_HOST             DNS resolution probe host; default: openwrt.org
 #   DNS_PROBE_TIMEOUT          DNS probe ping fallback timeout; default: 5
+#   OPENWRT_MONITOR_PROFILE    core|traffic|wifi_mesh|dpi|clients|full, or a
+#                              comma-separated list of the non-full names
+#                              (e.g. "traffic,wifi_mesh"); default: core.
+#                              "full" enables everything and cannot be
+#                              combined with other names.
+#   TRAFFIC_LAN_INTERFACE      LAN bridge for per-device nftables counters; default: br-lan
+#   CLIENT_INVENTORY_MAX       Cap on distinct clients the `clients` profile's
+#                              inventory collector will export per scrape (and
+#                              on how many first-seen records it retains
+#                              across scrapes, LRU-evicted); default: 256
+#   CRON_LOG_LEVEL             busybox crond log level; default: 9 (suppresses the
+#                              per-job-start lines this setup would otherwise send
+#                              to syslog at ERROR severity). Use 8 to restore them.
 #
 # =============================================================================
 
@@ -33,6 +46,9 @@ SYSLOG_PROTO="${SYSLOG_PROTO:-udp}"
 PING_TARGET="${PING_TARGET:-1.1.1.1}"
 DNS_PROBE_HOST="${DNS_PROBE_HOST:-openwrt.org}"
 DNS_PROBE_TIMEOUT="${DNS_PROBE_TIMEOUT:-5}"
+OPENWRT_MONITOR_PROFILE="${OPENWRT_MONITOR_PROFILE:-core}"
+TRAFFIC_LAN_INTERFACE="${TRAFFIC_LAN_INTERFACE:-br-lan}"
+CLIENT_INVENTORY_MAX="${CLIENT_INVENTORY_MAX:-256}"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 COLLECTOR_SRC_DIR="$SCRIPT_DIR/collectors"
 HELPER_SRC_DIR="$SCRIPT_DIR/scripts"
@@ -72,6 +88,20 @@ pkg_installed() {
   case "$PKG_MANAGER" in
     apk) apk info "$1" >/dev/null 2>&1 ;;
     opkg) opkg list-installed 2>/dev/null | grep -q "^$1 " ;;
+  esac
+}
+
+profile_enabled() {
+  # OPENWRT_MONITOR_PROFILE is validated as a comma-separated list of known
+  # profile names (or the bare word "full") before this is ever called; see
+  # the validating `case` below. Wrapping in commas turns membership into a
+  # plain substring check that `case` globbing can do without forking to
+  # grep/awk, which OpenWrt's ash does not need for a handful of short words.
+  profile="$1"
+  case ",$OPENWRT_MONITOR_PROFILE," in
+    *,full,*) return 0 ;;
+    *",$profile,"*) return 0 ;;
+    *) return 1 ;;
   esac
 }
 
@@ -154,11 +184,44 @@ case "$SYSLOG_PROTO" in
   *) die "SYSLOG_PROTO must be udp or tcp" ;;
 esac
 
+# OPENWRT_MONITOR_PROFILE accepts a single name or a comma-separated list of
+# names (e.g. "traffic,wifi_mesh"). "full" is an alias for all profiles and
+# is validated the same way a single name would be — profile_enabled() above
+# already treats it specially, so "full,traffic" would be redundant but not
+# wrong; it is rejected here anyway to keep the input one unambiguous shape.
+case "$OPENWRT_MONITOR_PROFILE" in
+  *[!A-Za-z0-9_,]*|''|*,|,*|*,,*)
+    die "OPENWRT_MONITOR_PROFILE must be a comma-separated list of: core, traffic, wifi_mesh, dpi, clients (or the single word full)" ;;
+esac
+OLD_IFS=$IFS
+IFS=,
+for _profile_token in $OPENWRT_MONITOR_PROFILE; do
+  case "$_profile_token" in
+    core|traffic|wifi_mesh|dpi|clients) ;;
+    full)
+      if [ "$OPENWRT_MONITOR_PROFILE" != "full" ]; then
+        IFS=$OLD_IFS
+        die "OPENWRT_MONITOR_PROFILE: full cannot be combined with other profile names"
+      fi
+      ;;
+    *)
+      IFS=$OLD_IFS
+      die "OPENWRT_MONITOR_PROFILE must be a comma-separated list of: core, traffic, wifi_mesh, dpi, clients (or the single word full) — got '$_profile_token'"
+      ;;
+  esac
+done
+IFS=$OLD_IFS
+
+case "$CLIENT_INVENTORY_MAX" in
+  ''|*[!0-9]*|0) die "CLIENT_INVENTORY_MAX must be a positive integer" ;;
+esac
+
 log "==> OpenWrt Grafana Monitor setup"
 log "    Monitoring host: $MONITORING_HOST"
 log "    Package manager: $PKG_MANAGER"
 log "    Exporter interface: $EXPORTER_LISTEN_INTERFACE"
 log "    Syslog: $MONITORING_HOST:$SYSLOG_PORT/$SYSLOG_PROTO"
+log "    Monitoring profile: $OPENWRT_MONITOR_PROFILE"
 log ""
 
 # ── Install packages ──────────────────────────────────────────────────────────
@@ -168,6 +231,59 @@ pkg_update
 
 log "==> Installing required Prometheus exporters..."
 pkg_install_required $REQUIRED_PACKAGES
+
+if profile_enabled traffic || profile_enabled dpi; then
+  log "==> Installing JSON collector dependencies..."
+  if ! pkg_install_optional lua-cjson; then
+    log "    WARNING: lua-cjson is unavailable; JSON-based optional metrics will remain unavailable"
+  fi
+fi
+
+if profile_enabled traffic; then
+  log "==> Installing nftables traffic dependencies..."
+  if ! pkg_install_optional nftables-json; then
+    log "    WARNING: nftables-json is unavailable; per-device traffic metrics will remain unavailable"
+  fi
+fi
+
+if profile_enabled dpi; then
+  log "==> Installing DPI collector dependencies..."
+  if ! pkg_install_optional netifyd; then
+    log "    WARNING: netifyd is unavailable; the DPI collector will report unavailable until Netifyd is installed"
+  fi
+fi
+
+if profile_enabled wifi_mesh; then
+  log "==> Installing WiFi mesh collector dependencies..."
+  if ! pkg_install_optional libuci-lua; then
+    log "    WARNING: libuci-lua is unavailable; usteer configuration metrics will be unavailable"
+  fi
+  if ! pkg_install_optional luci-lib-nixio; then
+    log "    WARNING: luci-lib-nixio is unavailable; WiFi mesh collector may be unavailable"
+  fi
+fi
+
+if profile_enabled clients; then
+  log "==> Installing client inventory and traffic collector dependencies..."
+  # rpcd-mod-luci provides the luci-rpc ubus object (getHostHints). Its
+  # absence is not fatal: the collector falls back to /tmp/dhcp.leases, at
+  # the cost of AP/SSID/band attribution -- see docs/advanced-profiles.md.
+  if ! pkg_install_optional rpcd-mod-luci; then
+    log "    WARNING: rpcd-mod-luci is unavailable; client inventory will fall back to the DHCP leasefile with no AP/SSID/band attribution"
+  fi
+  if ! pkg_install_optional libubus-lua; then
+    log "    WARNING: libubus-lua is unavailable; client inventory will fall back to the DHCP leasefile"
+  fi
+  if ! pkg_install_optional libiwinfo-lua; then
+    log "    WARNING: libiwinfo-lua is unavailable; client inventory will have no AP/SSID/band attribution"
+  fi
+  if ! pkg_install_optional libuci-lua; then
+    log "    WARNING: libuci-lua is unavailable; client inventory will have no network/static-lease/offload attribution"
+  fi
+  if ! pkg_install_optional nlbwmon; then
+    log "    WARNING: nlbwmon is unavailable; per-client traffic accounting will report unavailable"
+  fi
+fi
 
 for package in $OPTIONAL_PACKAGES; do
   log "==> Installing optional package: $package"
@@ -196,12 +312,47 @@ PING_TARGET="$PING_TARGET"
 WAN_PROBE_TARGET="$PING_TARGET"
 DNS_PROBE_HOST="$DNS_PROBE_HOST"
 DNS_PROBE_TIMEOUT="$DNS_PROBE_TIMEOUT"
+OPENWRT_MONITOR_PROFILE="$OPENWRT_MONITOR_PROFILE"
+TRAFFIC_LAN_INTERFACE="$TRAFFIC_LAN_INTERFACE"
+CLIENT_INVENTORY_MAX="$CLIENT_INVENTORY_MAX"
 EOF
 
 install_file "$COLLECTOR_SRC_DIR/dnsmasq.lua" /usr/lib/lua/prometheus-collectors/dnsmasq.lua 0644
 install_file "$COLLECTOR_SRC_DIR/device_status.lua" /usr/lib/lua/prometheus-collectors/device_status.lua 0644
 install_file "$COLLECTOR_SRC_DIR/packet_loss.lua" /usr/lib/lua/prometheus-collectors/packet_loss.lua 0644
 install_file "$COLLECTOR_SRC_DIR/wan_info.lua" /usr/lib/lua/prometheus-collectors/wan_info.lua 0644
+
+if profile_enabled traffic; then
+  ensure_dir /etc/nftables.d
+  install_file "$COLLECTOR_SRC_DIR/device_traffic.lua" /usr/lib/lua/prometheus-collectors/device_traffic.lua 0644
+  case "$TRAFFIC_LAN_INTERFACE" in
+    *[!A-Za-z0-9_.-]*|'') die "TRAFFIC_LAN_INTERFACE must contain only letters, numbers, dots, underscores, or hyphens" ;;
+  esac
+  sed "s/__LAN_INTERFACE__/$TRAFFIC_LAN_INTERFACE/g" \
+    "$SCRIPT_DIR/nftables/openwrt-device-traffic.nft" > /etc/nftables.d/openwrt-device-traffic.nft
+fi
+
+if profile_enabled wifi_mesh; then
+  install_file "$COLLECTOR_SRC_DIR/wifi_dethrash.lua" /usr/lib/lua/prometheus-collectors/wifi_dethrash.lua 0644
+fi
+
+if profile_enabled dpi; then
+  install_file "$COLLECTOR_SRC_DIR/dpi_netifyd.lua" /usr/lib/lua/prometheus-collectors/dpi_netifyd.lua 0644
+fi
+
+if profile_enabled clients; then
+  install_file "$COLLECTOR_SRC_DIR/client_inventory.lua" /usr/lib/lua/prometheus-collectors/client_inventory.lua 0644
+  install_file "$SCRIPT_DIR/nlbwmon/protocols" /usr/share/nlbwmon/protocols 0644
+  install_file "$HELPER_SRC_DIR/openwrt-monitor-client-traffic.sh" /usr/bin/openwrt-monitor-client-traffic.sh 0755
+  # topology.lua reshapes the same identity/association data client_inventory
+  # gathers into the node-graph metric contract (plan §2.2-§2.4); it has the
+  # same package dependencies (getHostHints, iwinfo assoclist), so it rides
+  # along in the same profile rather than getting its own.
+  install_file "$COLLECTOR_SRC_DIR/topology.lua" /usr/lib/lua/prometheus-collectors/topology.lua 0644
+  log "==> Restarting nlbwmon to load the trimmed service buckets..."
+  /etc/init.d/nlbwmon enable
+  /etc/init.d/nlbwmon restart
+fi
 
 install_file "$HELPER_SRC_DIR/openwrt-monitor-device-status.sh" /usr/bin/openwrt-monitor-device-status.sh 0755
 install_file "$HELPER_SRC_DIR/openwrt-monitor-packet-loss.sh" /usr/bin/openwrt-monitor-packet-loss.sh 0755
@@ -217,6 +368,41 @@ install_file "$HELPER_SRC_DIR/openwrt-monitor-inodes.sh" /usr/bin/openwrt-monito
 install_file "$HELPER_SRC_DIR/openwrt-monitor-firewall-counters.sh" /usr/bin/openwrt-monitor-firewall-counters.sh 0755
 install_file "$HELPER_SRC_DIR/openwrt-monitor-sqm.sh" /usr/bin/openwrt-monitor-sqm.sh 0755
 install_file "$HELPER_SRC_DIR/openwrt-monitor-wifi-radio.sh" /usr/bin/openwrt-monitor-wifi-radio.sh 0755
+
+# ── Remove superseded collectors ──────────────────────────────────────────────
+#
+# Versions before the helper-script split installed two monolithic collectors,
+# openwrt-grafana-monitor-metrics and openwrt-grafana-monitor-sqm, on a
+# once-a-minute schedule. Every metric they emit (overlay_bytes_*,
+# dhcpv6_lease_count, gateway_packet_loss, dns_probe_*, wan_public_ip_changed,
+# openwrt_wifi_station_connected_seconds) is now emitted by the split helpers
+# above as a compatibility alias, so leaving the old scripts scheduled exposes
+# each of those series twice. Prometheus keeps the first sample, silently drops
+# the second and reports no scrape error, which makes the duplication invisible
+# from the dashboard. The old setup script removed its own cron entries on
+# rerun; that logic was lost in the split, so do it explicitly here.
+
+log "==> Removing superseded collectors from earlier versions..."
+for legacy_collector in \
+  /usr/bin/openwrt-grafana-monitor-metrics \
+  /usr/bin/openwrt-grafana-monitor-sqm
+do
+  if [ -e "$legacy_collector" ]; then
+    rm -f "$legacy_collector"
+    log "    removed $legacy_collector"
+  fi
+done
+
+if grep -qE 'openwrt-grafana-monitor-(metrics|sqm)' "$CRONTAB_FILE" 2>/dev/null; then
+  grep -vE 'openwrt-grafana-monitor-(metrics|sqm)' "$CRONTAB_FILE" > "$CRONTAB_FILE.clean"
+  mv "$CRONTAB_FILE.clean" "$CRONTAB_FILE"
+  log "    removed superseded cron entries"
+fi
+
+# /var/prometheus holds only derived data and every current helper is run once
+# below, so clearing it is safe and drops output files left behind by collectors
+# that no longer exist.
+rm -f /var/prometheus/*.prom
 
 # ── Configure exporter listener ────────────────────────────────────────────────
 
@@ -242,6 +428,9 @@ ensure_cron_line '*/10 * * * * /usr/bin/openwrt-monitor-inodes.sh'
 ensure_cron_line '*/2 * * * * /usr/bin/openwrt-monitor-firewall-counters.sh'
 ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-sqm.sh'
 ensure_cron_line '*/2 * * * * /usr/bin/openwrt-monitor-wifi-radio.sh'
+if profile_enabled clients; then
+  ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-client-traffic.sh'
+fi
 
 log "==> Running helper scripts once so custom metrics appear immediately..."
 /usr/bin/openwrt-monitor-device-status.sh
@@ -258,12 +447,35 @@ log "==> Running helper scripts once so custom metrics appear immediately..."
 /usr/bin/openwrt-monitor-firewall-counters.sh
 /usr/bin/openwrt-monitor-sqm.sh
 /usr/bin/openwrt-monitor-wifi-radio.sh
+if profile_enabled clients; then
+  /usr/bin/openwrt-monitor-client-traffic.sh
+fi
+
+if profile_enabled traffic; then
+  log "==> Loading nftables device traffic rules..."
+  /etc/init.d/firewall restart
+fi
 
 # ── Start and enable the exporter ─────────────────────────────────────────────
 
 log "==> Enabling and starting prometheus-node-exporter-lua..."
 /etc/init.d/prometheus-node-exporter-lua enable
 /etc/init.d/prometheus-node-exporter-lua restart
+
+# This setup schedules 14 helper jobs, several of them every minute. busybox
+# crond logs one line per job start via log8(), and those informational lines go
+# out through bb_vinfo_msg at syslog priority LOG_ERR (see crond.c: "Warnings/
+# errors use plain bb_[p]error_msg's ... ok with LOG_ERR default"). Left at the
+# default level that is ~30 ERROR-severity lines per minute shipped to Loki,
+# which buries genuine router errors in the logs dashboard.
+#
+# crond only emits the per-job line when 8 >= log_level, so level 9 suppresses
+# it. Real crond warnings and errors bypass this threshold entirely and are
+# still logged.
+CRON_LOG_LEVEL="${CRON_LOG_LEVEL:-9}"
+log "==> Setting cron log level to $CRON_LOG_LEVEL to keep job starts out of syslog..."
+uci set system.@system[0].cronloglevel="$CRON_LOG_LEVEL"
+uci commit system
 
 log "==> Enabling and restarting cron..."
 /etc/init.d/cron enable
@@ -304,6 +516,7 @@ log "    Metrics:  $METRICS_URL"
 log "    Syslog:   $MONITORING_HOST:$SYSLOG_PORT/$SYSLOG_PROTO"
 log "    Helpers:  device status, packet loss, WAN/public IP, WAN quality, filesystem, service health"
 log "              DHCP pool, link health, softnet, IPv6 WAN health, inodes, firewall counters, SQM, WiFi radio"
+log "    Optional profile collectors: $OPENWRT_MONITOR_PROFILE"
 log ""
 log "    Now start the Docker stack on $MONITORING_HOST:"
 log "    docker compose up -d"
