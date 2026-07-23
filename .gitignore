@@ -1,5 +1,8 @@
 # Local agent/tooling state and private branch-collateral.
 old/
+.env
+.env.*
+!.env.example
 .agents/
 .claude/
 .codex/
@@ -9,6 +12,7 @@ tests
 !tests/
 tests/*
 !tests/test_client_conntrack.sh
+!tests/test_mcp_policy.py
 skills
 grafana_docs
 screenshot

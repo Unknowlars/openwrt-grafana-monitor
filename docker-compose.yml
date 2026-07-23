@@ -123,6 +123,34 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  openwrt-ssh-mcp:
+    profiles: ["mcp"]
+    build:
+      context: .
+      dockerfile: mcp_server/Dockerfile
+    container_name: openwrt-ssh-mcp
+    ports:
+      - "127.0.0.1:${OPENWRT_MCP_PORT:-8033}:8033"
+    volumes:
+      - ./openwrt:/app/openwrt:ro
+    environment:
+      - OPENWRT_MCP_BIND=0.0.0.0
+      - OPENWRT_MCP_PORT=8033
+      - OPENWRT_MCP_TOKEN=${OPENWRT_MCP_TOKEN:-}
+      - OPENWRT_MCP_ROUTERS=${OPENWRT_MCP_ROUTERS:-openwrt-main=192.168.0.1,openwrt-new=192.168.0.2}
+      - OPENWRT_MCP_ALLOWED_HOSTS=${OPENWRT_MCP_ALLOWED_HOSTS:-127.0.0.1,localhost}
+      - OPENWRT_MCP_ALLOWED_ORIGINS=${OPENWRT_MCP_ALLOWED_ORIGINS:-}
+      - OPENWRT_MCP_SSH_TIMEOUT=${OPENWRT_MCP_SSH_TIMEOUT:-15}
+      - OPENWRT_MCP_OUTPUT_LIMIT=${OPENWRT_MCP_OUTPUT_LIMIT:-12000}
+      - OPENWRT_SSH_USERNAME=${OPENWRT_SSH_USERNAME:-}
+      - OPENWRT_SSH_PASSWORD=${OPENWRT_SSH_PASSWORD:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8033/healthz', timeout=2).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
 volumes:
   lgtm-data:
     driver: local
