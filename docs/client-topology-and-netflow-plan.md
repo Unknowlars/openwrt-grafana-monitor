@@ -641,6 +641,18 @@ That is strictly more machinery, and it is the *fallback*, not the plan.
 
 ### 2.3 Topology model
 
+> **Superseded 2026-07-25 — single-router shape.** This section describes the
+> original one-exporter model. It broke on a two-router deployment: both boxes
+> emitted `internet` and the same `ssid:<ssid>@<band>` ids, so Grafana silently
+> kept whichever row arrived last, and a dumb AP fabricated its own WAN uplink.
+> The current contract is `internet -> modem: -> router:<lan-ip> -> port: / ap:
+> -> bss:<bssid> -> client:<mac>`, with an `authority` label on every series and
+> cross-router reconciliation in the dashboard PromQL. See the module docstring
+> in `build_openwrt_topology_dashboard.py`, the header of
+> `openwrt/collectors/topology.lua`, and the Architecture Boundaries section of
+> `AGENTS.md`. The rest of this section is kept for the reasoning behind the
+> two-frame contract and the dangling-endpoint rule, which still hold.
+
 ```
 internet ──wan──> router:<name> ──ap──> ap:<name> ──radio──> ssid:<ssid>@<band> ──assoc──> client:<mac>
                                                     └──lan──> client:<mac>   (wired)
@@ -1642,6 +1654,10 @@ beyond what is written here.
   `ssid:<ssid>@<band>`, `router:<name>`, `internet`. Node graph field names on
   Prometheus labels are lowercase (`title`, `subtitle`, `mainstat`, `arc__ok`,
   `detail__ip`) per §2.1.
+  *Superseded 2026-07-25:* `ssid:<ssid>@<band>` became `bss:<bssid>` and
+  `router:<name>` became `router:<lan-ip>`, because a key that two exporters
+  cannot compute identically collides between them. `modem:<ip>` and
+  `port:<host>:<dev>` were added. See §2.3's superseding note.
 - **Profiles**: `clients`, `netflow`. Lowercase, no hyphens.
 - **Textfile output**: `/var/prometheus/openwrt_<subject>.prom`, matching the
   metric prefix of its contents.

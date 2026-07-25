@@ -52,8 +52,12 @@ OUTS = [
 PROM_DS = "${DS_PROMETHEUS}"
 LOKI_FILTER = 'job="openwrt-syslog", router=~"$router"'
 PROM_FILTER = 'job="openwrt", router=~"$router"'
-CLIENT_FILTER = f'{PROM_FILTER}, connection=~"$connection", network=~"$network"'
-WIFI_CLIENT_FILTER = f'{PROM_FILTER}, connection="wifi", network=~"$network"'
+# $mac defaults to All, so every panel behaves exactly as before unless a
+# specific address is selected. It exists so the topology dashboard's node
+# graph can deep-link a client node straight into this dashboard scoped to
+# that one device -- see NODE_LINKS in build_openwrt_topology_dashboard.py.
+CLIENT_FILTER = f'{PROM_FILTER}, connection=~"$connection", network=~"$network", mac=~"$mac"'
+WIFI_CLIENT_FILTER = f'{PROM_FILTER}, connection="wifi", network=~"$network", mac=~"$mac"'
 
 
 STATUS_MAPPINGS = [
@@ -105,6 +109,7 @@ def variables() -> list[dict[str, Any]]:
         query_var("router", "Router", 'label_values(node_load1{job="openwrt"}, router)', "openwrt", include_all=True, multi=True),
         query_var("connection", "Connection", f'label_values(openwrt_client_info{{{PROM_FILTER}}}, connection)', "All", include_all=True, multi=True),
         query_var("network", "Network", f'label_values(openwrt_client_info{{{PROM_FILTER}}}, network)', "All", include_all=True, multi=True),
+        query_var("mac", "Client MAC", f'label_values(openwrt_client_info{{{PROM_FILTER}}}, mac)', "All", include_all=True, multi=True),
     ]
 
 

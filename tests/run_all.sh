@@ -48,7 +48,7 @@ sh tests/test_setup_nlbwmon_optional.sh
 
 echo "== lua syntax =="
 if command -v luac5.1 >/dev/null 2>&1; then
-  for f in openwrt/collectors/*.lua; do luac5.1 -p "$f"; done
+  for f in openwrt/collectors/*.lua openwrt/lua/*.lua; do luac5.1 -p "$f"; done
 else
   echo "  SKIPPED: no luac5.1 on PATH (OpenWrt ships Lua 5.1)"
 fi
@@ -68,6 +68,12 @@ if command -v lua5.1 >/dev/null 2>&1; then
 else
   echo "  SKIPPED: no lua5.1 on PATH"
 fi
+
+echo "== dashboard node-graph queries against a real PromQL engine =="
+# Covers the cross-router reconciliation, which lives in the dashboard's PromQL
+# and so is out of reach of the Lua collector tests. Skips itself when docker is
+# unavailable.
+sh tests/test_topology_promql.sh
 
 if [ -n "${ROUTER_METRICS_URL:-}" ]; then
   echo "== live router exposition =="

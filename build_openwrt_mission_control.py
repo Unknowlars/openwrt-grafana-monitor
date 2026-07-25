@@ -36,12 +36,13 @@ Known data limitations, encoded honestly rather than papered over
 -----------------------------------------------------------------
 * Metric retention is ~2 days. No week-over-week `offset 1w`, no 30-day error
   budget, no monthly per-device data cap. The availability SLI window is 24h.
-* `wifi_station_*` and `dhcp_lease` use UPPERCASE MAC addresses;
-  `openwrt_client_info`, `openwrt_device_info`, `openwrt_topology_node` and
-  `router_device_up` use lowercase. PromQL has no lowercase function, so
-  joins across those two families are impossible. The one join that does work
-  (`wifi_station_* on(mac) group_left(hostname) dhcp_lease`, both uppercase)
-  is used for the signal bar gauge.
+* MAC addresses arrive uniformly lowercase. Upstream collectors
+  (`wifi_station_*`, `hostapd_station_*`, `dhcp_lease`, `uci_dhcp_host`) emit
+  them UPPERCASE and this repository's own collectors emit them lowercase;
+  PromQL has no lowercase function, so `alloy/config.alloy` normalises the
+  `mac`, `station` and `bssid` labels at ingest instead. Joins across the two
+  families are therefore possible now -- but only for data ingested after that
+  rule landed, so historical series keep their original case.
 * There is no firewall drop/reject counter -- the chains are FORWARD, INPUT,
   OUTPUT, PRE/POSTROUTING and mwan3_*. Firewall drops come from syslog only.
 * The node graph carries `mainstat` on both frames but no `secondarystat`,
@@ -833,23 +834,60 @@ TRAFFIC_BY_MAC = (
 )
 
 
-def topology_expr(metric: str, id_prefix: str) -> str:
+# Cross-router reconciliation. Kept identical in intent to
+# build_openwrt_topology_dashboard.py -- the two node graphs read the same two
+# metrics and had already drifted once, so any change here belongs there too.
+# The reasoning for each step is documented in that builder's module docstring;
+# briefly: prefer first-hand `authority="1"` series over the placeholders an AP
+# emits so its edges resolve, drop routers that appear as each other's DHCP
+# clients along with every edge pointing at them (dropping the node alone
+# leaves a dangling target, which crashes the panel), and drop the gateway's
+# guessed `lan:` edge whenever some AP reports a real association for that MAC.
+def prefer_authority(metric: str) -> str:
+    first = f'{metric}{{{F}, authority="1"}}'
+    fallback = f'{metric}{{{F}, authority="0"}}'
+    return f"({first} or ({fallback} unless on(id) {first}))"
+
+
+def infra_as(label: str) -> str:
+    return f'label_replace(openwrt_topology_infra_mac{{{F}}}, "{label}", "client:$1", "mac", "(.+)")'
+
+
+def with_traffic(base: str, traffic: str) -> str:
     """Attach live throughput to a topology frame as its single numeric column.
 
-    `metric * 0` zeroes the presence value, `+ on(id) group_left()` overlays
+    `base * 0` zeroes the presence value, `+ on(id) group_left()` overlays
     throughput for the ids that have any, and the trailing `or` puts back every
     node/edge that had no traffic -- at a truthful 0 B/s rather than vanishing.
     """
-    traffic = f'sum by (id) (label_replace({TRAFFIC_BY_MAC}, "id", "{id_prefix}:$1", "mac", "(.+)"))'
-    base = f'{metric}{{{F}}} * 0'
-    return f"(({base}) + on(id) group_left() {traffic}) or ({base})"
+    zeroed = f"(({base}) * 0)"
+    return f"(({zeroed} + on(id) group_left() ({traffic})) or {zeroed})"
 
 
-NODES_EXPR = topology_expr("openwrt_topology_node", "client")
-EDGES_EXPR = topology_expr("openwrt_topology_edge", "lan")
+def traffic_as(prefix: str) -> str:
+    return f'sum by (id) (label_replace({TRAFFIC_BY_MAC}, "id", "{prefix}:$1", "mac", "(.+)"))'
 
-# WiFi station signal with a friendly name. wifi_station_* and dhcp_lease both
-# use UPPERCASE MACs, which is the only cross-family join that works here.
+
+def _nodes_expr() -> str:
+    reconciled = f"({prefer_authority('openwrt_topology_node')} unless on(id) {infra_as('id')})"
+    return with_traffic(reconciled, traffic_as("client"))
+
+
+def _edges_expr() -> str:
+    assoc_as_lan = (
+        f'label_replace(openwrt_topology_edge{{{F}, id=~"assoc:.+"}}, "id", "lan:$1", "id", "assoc:(.+)")'
+    )
+    reconciled = f"({prefer_authority('openwrt_topology_edge')} unless on(id) {assoc_as_lan})"
+    reconciled = f"({reconciled} unless on(target) {infra_as('target')})"
+    return with_traffic(reconciled, f"({traffic_as('lan')} or {traffic_as('assoc')})")
+
+
+NODES_EXPR = _nodes_expr()
+EDGES_EXPR = _edges_expr()
+
+# WiFi station signal with a friendly name. Both sides are lowercase now that
+# alloy/config.alloy normalises MAC-valued labels at ingest; before that they
+# joined only because both happened to be uppercase.
 WIFI_SIGNAL_NAMED = (
     f'max by (mac, ifname, hostname) (wifi_station_signal_dbm{{{F}}} '
     f'* on(mac) group_left(hostname) max by (mac, hostname) (dhcp_lease{{{F}}}))'
@@ -2444,8 +2482,10 @@ def tab_topology(b: DashboardBuilder) -> dict[str, Any]:
             "anything with no traffic reads a truthful 0 B/s rather than disappearing. "
             "The ring around each node is its health arc: green online/ok, grey offline, yellow warning - offline is grey rather than red because a "
             "device that has gone home is not a fault. "
+            "Association edges are coloured by signal strength - green above -60 dBm, orange to -72, red below - which the collector computes in the same scrape that "
+            "reads the association, so the colour and the link can never disagree. "
             "Only `mainstat` is populated: a Prometheus table query returns exactly one numeric column per frame and Grafana's transformation chain applies to every "
-            "frame in the panel, so `secondarystat`, `thickness` and `highlighted` cannot be added to one frame without corrupting the other. "
+            "frame in the panel, so `secondarystat` and `thickness` cannot be added to one frame without corrupting the other. "
             "Emitting them from the exporter as their own series is the way to unlock them.",
             options={
                 "zoomMode": "cooperative",
@@ -2467,7 +2507,7 @@ def tab_topology(b: DashboardBuilder) -> dict[str, Any]:
                 "edges": {"mainStatUnit": "Bps"},
             },
             field_defaults={"thresholds": deep(THRESHOLDS["neutral"])},
-            transformations=[clean(rename={"Value": "mainstat"}, extra_exclude=["router"])],
+            transformations=[clean(rename={"Value": "mainstat"}, extra_exclude=["router", "authority"])],
             query_opts=query_options(200),
         ),
         0,

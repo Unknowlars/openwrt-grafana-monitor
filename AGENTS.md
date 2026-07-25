@@ -13,8 +13,14 @@ guarded SSH MCP sidecar.
 - `alloy/config.alloy`: router metric scraping, file-SD target discovery,
   bounded relabeling, and syslog forwarding.
 - `openwrt/setup.sh`: OpenWrt installer. `openwrt/collectors/` contains Lua
-  collectors, `openwrt/scripts/` contains cron/textfile helpers, and
-  `openwrt/nftables/` contains optional nftables rules.
+  collectors, `openwrt/scripts/` contains cron/textfile helpers,
+  `openwrt/lua/` contains shared `require`-able modules installed to
+  `/usr/lib/lua/` (never to the collectors directory, where every file is
+  loaded as a collector), and `openwrt/nftables/` contains optional nftables
+  rules.
+- `build_oui_table.py`: regenerates `openwrt/lua/oui_data.lua` from the IEEE
+  MA-L registry. The generated table is committed; do not hand-edit it and do
+  not hand-write vendor mappings.
 - `build_dashboards.py`: classic dashboard source; writes four provisioning JSON
   files under `grafana/provisioning/dashboards/`.
 - `build_openwrt_*_dashboard.py`: v2 dashboard sources; write matching manual
@@ -78,6 +84,17 @@ provisioning outputs.
   bounded `router` label. Preserve the legacy single-router fallback.
 - Alloy drops unbounded `node_nat_traffic` before storage. Do not restore it or
   collapse its labels in a way that silently loses series.
+- Alloy lowercases the `mac`, `station` and `bssid` labels at ingest so the
+  upstream uppercase-MAC collectors join this repository's lowercase ones.
+  These labels must be normalised together: lowercasing one side of a
+  `station`/`mac` join silently empties it.
+- The topology node-graph contract is multi-router. Node ids must be nameable
+  identically by every exporter (`router:<lan-ip>`, `bss:<bssid>`), only a
+  gateway may emit `internet`/`modem:`/`router:`/`port:`, and every node and
+  edge must carry `authority`. Placeholder (`authority="0"`) nodes exist so
+  edge endpoints resolve; a dangling edge endpoint crashes the node graph
+  panel rather than degrading. Reconciliation across routers lives in the
+  dashboard PromQL, and `tests/test_topology_promql.sh` is what covers it.
 - Optional profiles are `core`, `traffic`, `wifi_mesh`, `dpi`, `clients`, and
   `full`. Missing dependencies must fail closed or render explicit unavailable
   states, never plausible zeroes.

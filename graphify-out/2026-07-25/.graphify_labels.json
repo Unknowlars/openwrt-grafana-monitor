@@ -82,5 +82,16 @@
   "80": "test_setup_legacy_crontab.sh",
   "81": "test_wan_quality.sh",
   "82": "Manual Setup",
-  "83": "test_wan_info.sh"
+  "83": "test_wan_info.sh",
+  "84": "test_mcp_policy.py",
+  "85": "server.py",
+  "86": "core.py",
+  "87": "resolve_host_key_policy",
+  "88": "._connect",
+  "89": "test_inodes.sh",
+  "90": "build_oui_table.py",
+  "91": "SecurityMiddleware",
+  "92": "oui.lua",
+  "93": "topology_exposition.lua",
+  "94": "oui_data.lua"
 }

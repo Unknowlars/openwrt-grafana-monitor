@@ -10,16 +10,44 @@ using instant table queries with refId="nodes"/"edges" -- no Infinity plugin,
 no GF_INSTALL_PLUGINS, confirmed viable against the bundled Grafana by the M4
 spike.
 
+MULTI-ROUTER RECONCILIATION
+
+Several exporters feed one graph, so the queries below do three things the
+collector cannot do on its own, because no single router can see the whole
+network:
+
+  1. Prefer first-hand facts. Every node and edge carries `authority`: "1"
+     when the emitting box observed it directly, "0" when it is a placeholder
+     that exists only so an edge endpoint resolves. `prefer_authority()` keeps
+     the authority-1 series and falls back to authority-0 for ids nothing
+     claims first-hand, which is what lets a client keep the hostname only the
+     gateway knows while the AP it is associated to still draws the link.
+  2. Drop routers that appear as each other's clients. A dumb AP is a DHCP
+     client of the gateway, so it used to render as a laptop hanging off it.
+     `openwrt_topology_infra_mac` lists each box's own interface MACs; the
+     matching client node *and every edge pointing at it* are suppressed.
+     Dropping the node alone would leave a dangling target, which crashes the
+     panel rather than rendering incompletely (plan §2.1).
+  3. Resolve the wired-vs-wifi conflict. The gateway cannot see another AP's
+     association list, so it classifies that AP's wireless clients as wired
+     and emits a `lan:` edge for them. Whenever some AP claims the same MAC
+     with an `assoc:` edge, the gateway's `lan:` edge is dropped.
+
 Node-value choice (the "M4 nuance"): the transformation pipeline applies a
 single `organize` rename uniformly to every frame it touches by field name,
 not by refId, so there is no way to rename `Value` -> `mainstat` on the edges
 frame only while leaving the nodes frame's `Value` field alone within one
 panel's transformation list. This builder therefore renames `Value` on both
-frames, which means node `mainstat` is the node's own metric value (online/
-offline for clients, station count for SSIDs, a constant presence indicator
-for router/ap/internet -- see topology.lua), not an edge-derived sum. Every
-one of those values is real, not fabricated, so this satisfies the plan's
-"never ship a plausible wrong value" rule either way.
+frames and makes both frames carry the same quantity -- current throughput in
+bytes/sec -- so one `organize` and one unit are correct for both.
+
+`secondarystat`, `thickness` and `highlighted` are still not populated, for
+the same reason: one Prometheus table query yields exactly one numeric column,
+and a `joinByField` to add a second would merge the nodes and edges frames
+into one and corrupt both. Wi-Fi link quality is therefore carried as the
+association edge's `color`, which the collector computes from the signal it
+already reads -- and which is arguably where it belongs, since signal is a
+property of the link and not of the device.
 """
 
 from __future__ import annotations
@@ -32,7 +60,10 @@ from typing import Any
 
 from build_openwrt_operations_dashboard import (
     AVAILABILITY_MAPPINGS,
+    GRAY,
+    GREEN,
     THRESHOLDS,
+    YELLOW,
     DashboardBuilder,
     datasource_var,
     iter_strings,
@@ -56,15 +87,22 @@ OUTS = [
 PROM_DS = "${DS_PROMETHEUS}"
 PROM_FILTER = 'job="openwrt", router=~"$router"'
 
-NODES_EXPR = f"openwrt_topology_node{{{PROM_FILTER}}}"
-EDGES_EXPR = f"openwrt_topology_edge{{{PROM_FILTER}}}"
+# Dashboards are addressed by their metadata.name once provisioned.
+CLIENTS_DASHBOARD = "openwrt-clients"
+MISSION_CONTROL_DASHBOARD = "openwrt-mission-control"
+
+NODE_METRIC = "openwrt_topology_node"
+EDGE_METRIC = "openwrt_topology_edge"
+INFRA_METRIC = "openwrt_topology_infra_mac"
 
 # Common to both node-graph frames: strip Prometheus/scrape plumbing columns
 # that mean nothing to the node graph panel and would otherwise show up as
 # stray fields. `Value` is renamed, not dropped -- see module docstring.
+# `authority` is reconciliation bookkeeping and must not reach the panel.
 NOISE_COLUMNS = [
     "Time",
     "__name__",
+    "authority",
     "job",
     "instance",
     "router",
@@ -76,24 +114,137 @@ NOISE_COLUMNS = [
     "service",
 ]
 
+
 def field_override(name: str, properties: list[dict[str, Any]]) -> dict[str, Any]:
     return {"matcher": {"id": "byName", "options": name}, "properties": properties}
+
+
+def selector(metric: str, extra: str = "") -> str:
+    return f"{metric}{{{PROM_FILTER}{', ' + extra if extra else ''}}}"
+
+
+def prefer_authority(metric: str) -> str:
+    """Keep first-hand series, fall back to placeholders for unclaimed ids.
+
+    `A or (B unless on(id) A)` is the whole cross-router dedup: series that
+    some box observed directly win, and a placeholder survives only when no
+    box claims that id first-hand -- which is exactly the case where the
+    authoritative exporter is unreachable and the placeholder is all there is.
+    """
+    first = selector(metric, 'authority="1"')
+    fallback = selector(metric, 'authority="0"')
+    return f"({first} or ({fallback} unless on(id) {first}))"
+
+
+def infra_as(label: str) -> str:
+    """The infra MAC list, reshaped so it can be matched against `label`."""
+    return f'label_replace({selector(INFRA_METRIC)}, "{label}", "client:$1", "mac", "(.+)")'
+
+
+# Per-client throughput, keyed by MAC. openwrt_device_traffic_bytes_total is
+# keyed by `device` (the nftables set element), so identity comes from
+# openwrt_device_info. Only routers running the traffic profile have it; on the
+# others this simply yields nothing and the `or` below restores a truthful 0.
+TRAFFIC_BY_MAC = (
+    f"sum by (mac) (rate({selector('openwrt_device_traffic_bytes_total')}[$__rate_interval]) "
+    f"* on(device) group_left(mac) {selector('openwrt_device_info')})"
+)
+
+
+def traffic_as(prefix: str) -> str:
+    return f'sum by (id) (label_replace({TRAFFIC_BY_MAC}, "id", "{prefix}:$1", "mac", "(.+)"))'
+
+
+def overlay_traffic(base: str, traffic: str) -> str:
+    """Replace a frame's presence value with live throughput.
+
+    `base * 0` zeroes the presence value, `+ on(id) group_left()` overlays
+    throughput for the ids that have any, and the trailing `or` puts back every
+    node/edge that had no traffic -- at a truthful 0 B/s rather than vanishing.
+    """
+    zeroed = f"(({base}) * 0)"
+    return f"(({zeroed} + on(id) group_left() ({traffic})) or {zeroed})"
+
+
+def nodes_expr() -> str:
+    reconciled = f"({prefer_authority(NODE_METRIC)} unless on(id) {infra_as('id')})"
+    return overlay_traffic(reconciled, traffic_as("client"))
+
+
+def edges_expr() -> str:
+    reconciled = prefer_authority(EDGE_METRIC)
+    # A `lan:` edge is the gateway's best guess for a MAC it cannot see on its
+    # own radios. If any AP reports an association for that MAC, the guess is
+    # wrong and the real link is the assoc edge.
+    assoc_as_lan = (
+        f'label_replace({selector(EDGE_METRIC, 'id=~"assoc:.+"')}, "id", "lan:$1", "id", "assoc:(.+)")'
+    )
+    reconciled = f"({reconciled} unless on(id) {assoc_as_lan})"
+    # Suppressing an infra client node without also suppressing the edges that
+    # point at it would leave a dangling target and crash the panel.
+    reconciled = f"({reconciled} unless on(target) {infra_as('target')})"
+    return overlay_traffic(reconciled, f"({traffic_as('lan')} or {traffic_as('assoc')})")
+
+
+NODES_EXPR = nodes_expr()
+EDGES_EXPR = edges_expr()
+
+# Raw, un-reconciled series for the Data Quality tab: the point of those panels
+# is to show what the exporters actually emitted, including anything the
+# reconciliation above is hiding.
+NODES_RAW = selector(NODE_METRIC)
+EDGES_RAW = selector(EDGE_METRIC)
 
 
 def availability_expr(metric_name: str, collector: str = "") -> str:
     if collector:
         return (
-            f'(max({metric_name}{{{PROM_FILTER}}}) '
+            f"(max({selector(metric_name)}) "
             f'* max(node_scrape_collector_success{{{PROM_FILTER}, collector="{collector}"}})) or vector(0)'
         )
-    return f"max({metric_name}{{{PROM_FILTER}}}) or vector(0)"
+    return f"max({selector(metric_name)}) or vector(0)"
 
 
-def nodegraph(
-    pid: int,
-    title: str,
-    desc: str,
-) -> tuple[str, dict[str, Any]]:
+def count_nodes(extra: str) -> str:
+    """count() over first-hand node series matching an extra label selector."""
+    return "count(" + selector(NODE_METRIC, extra + ', authority="1"') + ") or vector(0)"
+
+
+# Data links turn the graph into a jumping-off point instead of a picture.
+# They hang off the `id` field, which every node has, and appear in the node's
+# context menu.
+NODE_LINKS = [
+    {
+        "title": "Client detail for this device",
+        "url": (
+            f"/d/{CLIENTS_DASHBOARD}/{CLIENTS_DASHBOARD}"
+            "?var-router=$router&var-mac=${__data.fields.detail__mac}&${__url_time_range}"
+        ),
+        "targetBlank": False,
+    },
+    {
+        "title": "Mission Control for this router",
+        "url": (
+            f"/d/{MISSION_CONTROL_DASHBOARD}/{MISSION_CONTROL_DASHBOARD}"
+            "?var-router=$router&${__url_time_range}"
+        ),
+        "targetBlank": False,
+    },
+]
+
+# Declaring `arcs` overrides automatic arc__* detection, so every arc field the
+# exporter emits is listed here and given a deliberate semantic colour instead
+# of a palette colour. Offline is grey rather than red: a phone that left the
+# house is not a fault. Fields absent on a given node simply do not draw.
+NODE_ARCS = [
+    {"field": "arc__online", "color": GREEN},
+    {"field": "arc__offline", "color": GRAY},
+    {"field": "arc__ok", "color": GREEN},
+    {"field": "arc__warn", "color": YELLOW},
+]
+
+
+def nodegraph(pid: int, title: str, desc: str) -> tuple[str, dict[str, Any]]:
     return panel(
         pid,
         title,
@@ -102,10 +253,20 @@ def nodegraph(
             prom_query(EDGES_EXPR, ref="edges", fmt="table", instant=True),
             prom_query(NODES_EXPR, ref="nodes", fmt="table", instant=True),
         ],
-        "none",
+        "Bps",
         desc,
-        options={},
+        options={
+            "zoomMode": "cooperative",
+            # `layered` is what makes the hierarchy readable at all; the
+            # default force layout renders this graph as crossing spaghetti.
+            # It is documented as slow above ~500 nodes, which is far beyond
+            # this deployment's ~40.
+            "layoutAlgorithm": "layered",
+            "nodes": {"mainStatUnit": "Bps", "arcs": NODE_ARCS},
+            "edges": {"mainStatUnit": "Bps"},
+        },
         field_defaults={"thresholds": THRESHOLDS["neutral"]},
+        overrides=[field_override("id", [{"id": "links", "value": NODE_LINKS}])],
         transformations=[organize(exclude=list(NOISE_COLUMNS), rename={"Value": "mainstat"})],
     )
 
@@ -122,36 +283,51 @@ def build_dashboard() -> dict[str, Any]:
     tabs: list[dict[str, Any]] = []
 
     overview: list[dict[str, Any]] = []
-    b.add(overview, text(1, "", "## Network topology\ninternet -> router -> AP -> SSID -> client, built from the same identity data as the clients dashboard. Node and edge frames come from the same scrape (topology.lua), so a client that disappears never leaves a dangling edge. Edge and node values are real presence/association counts, not traffic volume -- per-link throughput lands in a later milestone (M6/M7)."), 0, 0, 24, 3)
+    b.add(overview, text(1, "", "## Network topology\ninternet -> modem -> gateway -> switch port / AP -> BSSID -> client, built from the same identity data as the clients dashboard. Node and edge frames come from the same scrape (topology.lua), so a client that disappears never leaves a dangling edge. Every exporter contributes only what it can see first-hand: a downstream AP never invents an uplink, and only the gateway names clients, because only the gateway runs DHCP."), 0, 0, 24, 3)
     b.add(overview, stat(2, "Topology Collector", availability_expr("openwrt_topology_collector_available", "topology"), "none", "Collector availability gated by both the topology flag and the Lua exporter's per-collector scrape success.", mappings=AVAILABILITY_MAPPINGS, thresholds_key="unavailable", color_mode="value"), 0, 3, 6, 4)
-    b.add(overview, stat(3, "Nodes", f'count({NODES_EXPR}) or vector(0)', "none", "Total topology nodes: internet, router, AP, SSIDs, and known clients.", graph=True, color_mode="value"), 6, 3, 6, 4)
-    b.add(overview, stat(4, "Edges", f'count({EDGES_EXPR}) or vector(0)', "none", "Total topology edges (wan/ap/radio/assoc/lan links).", graph=True, color_mode="value"), 12, 3, 6, 4)
-    b.add(overview, stat(5, "Online Clients", f'count(openwrt_topology_node{{{PROM_FILTER}, arc__online="1"}}) or vector(0)', "none", "Client nodes currently reporting arc__online=1.", graph=True, color_mode="value"), 18, 3, 6, 4)
+    b.add(overview, stat(3, "Nodes", f"count({NODES_EXPR}) or vector(0)", "none", "Nodes actually rendered, after cross-router reconciliation: placeholder duplicates and routers appearing as each other's clients are already removed.", graph=True, color_mode="value"), 6, 3, 6, 4)
+    b.add(overview, stat(4, "Edges", f"count({EDGES_EXPR}) or vector(0)", "none", "Edges actually rendered (wan/nat/ap/uplink/link/radio/assoc/lan), after the wired-vs-wifi conflict is resolved.", graph=True, color_mode="value"), 12, 3, 6, 4)
+    b.add(overview, stat(5, "Online Clients", f'count({selector(NODE_METRIC, 'id=~"client:.+", arc__online="1", authority="1"')}) or vector(0)', "none", "Client nodes currently reporting arc__online=1, counted from first-hand series only so a placeholder never double-counts.", graph=True, color_mode="value"), 18, 3, 6, 4)
+    b.add(overview, stat(6, "Access Points", count_nodes('id=~"ap:.+"'), "none", "Boxes broadcasting at least one BSS, including the gateway when it also serves wifi.", graph=True, color_mode="value"), 0, 7, 6, 4)
+    b.add(overview, stat(7, "Broadcast BSSIDs", count_nodes('id=~"bss:.+"'), "none", "Distinct basic service sets. Two APs broadcasting one SSID are two BSSIDs on two channels, which is why they are separate nodes.", graph=True, color_mode="value"), 6, 7, 6, 4)
+    weak_links = "count(" + selector(EDGE_METRIC, 'id=~"assoc:.+", color="red"') + ") or vector(0)"
+    b.add(overview, stat(8, "Weak Wi-Fi Links", weak_links, "none", "Associations below -72 dBm. The collector colours each association edge from the signal it reads in the same scrape, so this counts exactly what the graph draws red.", graph=True, color_mode="value", thresholds_key="ok_bad"), 12, 7, 6, 4)
+    b.add(overview, stat(9, "Offline Clients", f'count({selector(NODE_METRIC, 'id=~"client:.+", arc__offline="1", authority="1"')}) or vector(0)', "none", "Known clients not currently reachable. Grey rather than red on the graph: a device that has gone home is not a fault.", graph=True, color_mode="value"), 18, 7, 6, 4)
     tabs.append(b.tab("Overview", overview))
 
     topology: list[dict[str, Any]] = []
-    b.add(topology, nodegraph(100, "Network Topology", "internet -> router -> AP -> SSID -> client. Node mainstat is the node's own metric value (see this builder's module docstring for why edge-derived node stats were not chosen). Isolated client nodes mean connection state is unknown (assoclist unavailable), not that the client is wired -- the collector never guesses."), 0, 0, 24, 16)
+    b.add(topology, nodegraph(100, "Network Topology", "The live network graph. Node and edge values are current throughput in bytes/sec, joined from the per-device traffic counters onto the topology frames; anything with no traffic reads a truthful 0 B/s rather than disappearing, and routers without the traffic profile contribute a real 0 rather than a gap. The ring around each node is its health arc: green online/ok, grey offline, yellow warning. Association edges are coloured by signal - green above -60 dBm, orange to -72, red below - and a wired client sits under the switch port its MAC was learned on. Click any node for its client or router dashboard."), 0, 0, 24, 20)
+    b.add(topology, text(101, "", "**Reading the graph.** `internet` -> `modem:` (only when the WAN nexthop is a private address, i.e. double NAT) -> `router:<lan-ip>` -> `port:` switch ports and `ap:` access points -> `bss:<bssid>` -> `client:<mac>`. Nodes are keyed so that every router names the same thing identically: the gateway by its LAN IP, each radio by its BSSID. An isolated client node means its connection state is genuinely unknown (no association list available) - the collector never guesses a wired link."), 0, 20, 24, 4)
     tabs.append(b.tab("Topology", topology))
 
     quality: list[dict[str, Any]] = []
-    b.add(quality, text(200, "", "## Data quality\nRaw node and edge series for verifying every edge endpoint resolves to a node and no data was silently dropped."), 0, 0, 24, 3)
-    b.add(quality, table(201, "Topology Nodes", [
-        prom_query(NODES_EXPR, "", "A", fmt="table", instant=True),
-    ], "One row per current openwrt_topology_node series.", transformations=[
+    b.add(quality, text(200, "", "## Data quality\nRaw, un-reconciled node and edge series -- what the exporters actually emitted, including anything the Topology tab is hiding. The three checks below are the invariants that decide whether the panel renders at all: a dangling edge endpoint crashes Grafana's node graph rather than degrading, and two boxes claiming the same id first-hand means one of them silently overwrites the other."), 0, 0, 24, 4)
+    b.add(quality, stat(201, "Colliding Node IDs", f"count(count by (id) ({selector(NODE_METRIC, 'authority=\"1\"')}) > 1) or vector(0)", "none", "Node ids claimed first-hand by more than one router. Must be zero: Grafana keys nodes by id and silently keeps whichever row arrives last. Two gateways on one LAN is the realistic way to trip this.", thresholds_key="ok_bad", color_mode="value"), 0, 4, 8, 4)
+    b.add(quality, stat(202, "Dangling Edge Sources", f'count({EDGES_EXPR} unless on(source) label_replace({NODES_EXPR}, "source", "$1", "id", "(.+)")) or vector(0)', "none", "Rendered edges whose source resolves to no rendered node. Must be zero.", thresholds_key="ok_bad", color_mode="value"), 8, 4, 8, 4)
+    b.add(quality, stat(203, "Dangling Edge Targets", f'count({EDGES_EXPR} unless on(target) label_replace({NODES_EXPR}, "target", "$1", "id", "(.+)")) or vector(0)', "none", "Rendered edges whose target resolves to no rendered node. Must be zero.", thresholds_key="ok_bad", color_mode="value"), 16, 4, 8, 4)
+    b.add(quality, table(204, "Topology Nodes", [
+        prom_query(NODES_RAW, "", "A", fmt="table", instant=True),
+    ], "One row per emitted openwrt_topology_node series, before reconciliation. `authority` shows which box observed the node first-hand; duplicate ids across routers are expected here and resolved on the Topology tab.", transformations=[
         organize(exclude=["Time", "__name__", "cluster", "endpoint", "namespace", "prometheus", "prometheus_replica", "service"]),
         sort_by("id", desc=False),
-    ], sort_col="id", sort_desc=False), 0, 3, 24, 9)
-    b.add(quality, table(202, "Topology Edges", [
-        prom_query(EDGES_EXPR, "", "A", fmt="table", instant=True),
-    ], "One row per current openwrt_topology_edge series. Every source/target must match an id in the nodes table above.", transformations=[
+    ], sort_col="id", sort_desc=False), 0, 8, 24, 9)
+    b.add(quality, table(205, "Topology Edges", [
+        prom_query(EDGES_RAW, "", "A", fmt="table", instant=True),
+    ], "One row per emitted openwrt_topology_edge series, before reconciliation. Every source/target must match an id in the nodes table above.", transformations=[
         organize(exclude=["Time", "__name__", "cluster", "endpoint", "namespace", "prometheus", "prometheus_replica", "service"]),
         sort_by("id", desc=False),
-    ], sort_col="id", sort_desc=False), 0, 12, 24, 9)
+    ], sort_col="id", sort_desc=False), 0, 17, 24, 9)
+    b.add(quality, table(206, "Infrastructure MACs", [
+        prom_query(selector(INFRA_METRIC), "", "A", fmt="table", instant=True),
+    ], "Each exporter's own interface MACs. These are why an access point no longer renders as a laptop hanging off the gateway: the matching client node and every edge pointing at it are suppressed on the Topology tab.", transformations=[
+        organize(exclude=["Time", "__name__", "cluster", "endpoint", "namespace", "prometheus", "prometheus_replica", "service"]),
+        sort_by("mac", desc=False),
+    ], sort_col="mac", sort_desc=False), 0, 26, 24, 8)
     tabs.append(b.tab("Data Quality", quality))
 
     spec: dict[str, Any] = {
         "title": "OpenWrt - Topology",
-        "description": "Network topology node graph for OpenWrt: internet, router, AP, SSID, and client identity, driven by the Prometheus datasource with no plugin install.",
+        "description": "Network topology node graph for OpenWrt: internet, modem, gateway, switch ports, access points, BSSIDs, and client identity, driven by the Prometheus datasource with no plugin install.",
         "tags": ["openwrt", "topology", "router"],
         "cursorSync": "Crosshair",
         "editable": True,
@@ -263,6 +439,24 @@ def validate_dashboard(dash: dict[str, Any]) -> None:
                 qspec = q["spec"]["query"]["spec"]
                 assert qspec.get("format") == "table", "node graph queries must be format=table"
                 assert qspec.get("instant") is True, "node graph queries must be instant"
+            options = panel_spec["vizConfig"]["spec"]["options"]
+            # Declaring `arcs` overrides automatic arc__* detection, so the
+            # declaration must stay in step with what topology.lua emits --
+            # a field missing here silently loses its ring segment.
+            declared_arcs = {arc["field"] for arc in options["nodes"]["arcs"]}
+            assert declared_arcs == {"arc__online", "arc__offline", "arc__ok", "arc__warn"}, (
+                f"arc vocabulary drifted from the collector: {sorted(declared_arcs)}"
+            )
+            assert options["layoutAlgorithm"] == "layered", "the force layout is unreadable at this size"
+            assert options["nodes"]["mainStatUnit"] == "Bps"
+            assert options["edges"]["mainStatUnit"] == "Bps"
+            # Both would need a joinByField, which in v2beta1 applies to every
+            # frame in the panel and would merge nodes into edges. See the
+            # module docstring.
+            transformations = panel_spec["data"]["spec"]["transformations"]
+            kinds = {t["kind"] for t in transformations}
+            assert "joinByField" not in kinds, "joinByField would merge the nodes and edges frames"
+            assert "secondarystat" not in json.dumps(element)
     assert node_graph_seen, "no nodeGraph panel found"
     assert len(panel_ids) == len(set(panel_ids)), "duplicate panel ids"
 
@@ -283,7 +477,21 @@ def validate_dashboard(dash: dict[str, Any]) -> None:
             rects.append(rect)
 
     defined_vars = {variable["spec"]["name"] for variable in spec["variables"]}
-    globals_allowed = {"__rate_interval", "__range", "__from", "__to", "__all", "__value", "__interval", "__auto"}
+    globals_allowed = {
+        "__rate_interval",
+        "__range",
+        "__from",
+        "__to",
+        "__all",
+        "__value",
+        "__interval",
+        "__auto",
+        # Data-link globals: ${__data.fields.<name>} and the time-range
+        # passthrough. The variable pattern below stops at the first dot, so
+        # allowing __data covers every field reference.
+        "__data",
+        "__url_time_range",
+    }
     referenced_vars: set[str] = set()
     var_pattern = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
     for string_value in iter_strings(spec):
@@ -308,6 +516,13 @@ def validate_dashboard(dash: dict[str, Any]) -> None:
         for query in queries:
             query_exprs.append(query["spec"]["query"]["spec"].get("expr", ""))
     assert not any("node_nat_traffic" in expr for expr in query_exprs)
+    # The reconciliation is the point of this dashboard; losing it silently
+    # would put the old wrong graph back without changing anything visible in
+    # the generator's output shape.
+    node_graph_exprs = [expr for expr in query_exprs if "openwrt_topology_node" in expr and "unless on(id)" in expr]
+    assert node_graph_exprs, "node query lost its infra-MAC suppression"
+    assert any('authority="1"' in expr for expr in query_exprs), "authority preference lost"
+    assert any("unless on(target)" in expr for expr in query_exprs), "edge infra suppression lost"
 
 
 def main() -> None:

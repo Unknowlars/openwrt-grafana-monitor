@@ -54,6 +54,12 @@ Bundled files installed by the script:
 - `/usr/lib/lua/prometheus-collectors/device_traffic.lua` when `traffic` or `full` is selected
 - `/usr/lib/lua/prometheus-collectors/wifi_dethrash.lua` when `wifi_mesh` or `full` is selected
 - `/usr/lib/lua/prometheus-collectors/dpi_netifyd.lua` when `dpi` or `full` is selected
+- `/usr/lib/lua/prometheus-collectors/client_inventory.lua` and
+  `/usr/lib/lua/prometheus-collectors/topology.lua` when `clients` or `full` is selected
+- `/usr/lib/lua/openwrt_oui.lua` and `/usr/lib/lua/openwrt_oui_data.lua` when
+  `clients` or `full` is selected. These are `require`-able modules, not
+  collectors, and must **not** be placed in `prometheus-collectors/`: the
+  exporter loads every file there as a collector and calls `scrape()` on it.
 - `/usr/bin/openwrt-monitor-device-status.sh`
 - `/usr/bin/openwrt-monitor-filesystem.sh`
 - `/usr/bin/openwrt-monitor-packet-loss.sh`
@@ -159,6 +165,12 @@ From your local machine:
 scp -O openwrt/collectors/*.lua root@192.168.0.1:/usr/lib/lua/prometheus-collectors/
 scp -O openwrt/scripts/*.sh root@192.168.0.1:/usr/bin/
 ssh root@192.168.0.1 "chmod +x /usr/bin/openwrt-monitor-*.sh"
+
+# Shared modules go one directory up, under their installed names. Anything
+# left in prometheus-collectors/ is loaded as a collector and would fail with
+# "attempt to call field 'scrape' (a nil value)".
+scp -O openwrt/lua/oui.lua root@192.168.0.1:/usr/lib/lua/openwrt_oui.lua
+scp -O openwrt/lua/oui_data.lua root@192.168.0.1:/usr/lib/lua/openwrt_oui_data.lua
 ```
 
 ### 4. Add the helper cron jobs
@@ -294,6 +306,10 @@ These repo-local files are part of the supported setup and should be treated as 
 - `openwrt/collectors/device_traffic.lua`
 - `openwrt/collectors/wifi_dethrash.lua`
 - `openwrt/collectors/dpi_netifyd.lua`
+- `openwrt/collectors/client_inventory.lua`
+- `openwrt/collectors/topology.lua`
+- `openwrt/lua/oui.lua` and `openwrt/lua/oui_data.lua` (installed to
+  `/usr/lib/lua/` as `openwrt_oui.lua` / `openwrt_oui_data.lua`)
 - `openwrt/scripts/openwrt-monitor-device-status.sh`
 - `openwrt/scripts/openwrt-monitor-filesystem.sh`
 - `openwrt/scripts/openwrt-monitor-packet-loss.sh`

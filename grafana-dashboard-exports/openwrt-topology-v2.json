@@ -6,7 +6,7 @@
   },
   "spec": {
     "title": "OpenWrt - Topology",
-    "description": "Network topology node graph for OpenWrt: internet, router, AP, SSID, and client identity, driven by the Prometheus datasource with no plugin install.",
+    "description": "Network topology node graph for OpenWrt: internet, modem, gateway, switch ports, access points, BSSIDs, and client identity, driven by the Prometheus datasource with no plugin install.",
     "tags": [
       "openwrt",
       "topology",
@@ -129,7 +129,7 @@
             "spec": {
               "options": {
                 "mode": "markdown",
-                "content": "## Network topology\ninternet -> router -> AP -> SSID -> client, built from the same identity data as the clients dashboard. Node and edge frames come from the same scrape (topology.lua), so a client that disappears never leaves a dangling edge. Edge and node values are real presence/association counts, not traffic volume -- per-link throughput lands in a later milestone (M6/M7).",
+                "content": "## Network topology\ninternet -> modem -> gateway -> switch port / AP -> BSSID -> client, built from the same identity data as the clients dashboard. Node and edge frames come from the same scrape (topology.lua), so a client that disappears never leaves a dangling edge. Every exporter contributes only what it can see first-hand: a downstream AP never invents an uplink, and only the gateway names clients, because only the gateway runs DHCP.",
                 "code": {
                   "language": "plaintext",
                   "showLineNumbers": false,
@@ -264,7 +264,7 @@
         "spec": {
           "id": 3,
           "title": "Nodes",
-          "description": "Total topology nodes: internet, router, AP, SSIDs, and known clients.",
+          "description": "Nodes actually rendered, after cross-router reconciliation: placeholder duplicates and routers appearing as each other's clients are already removed.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -283,7 +283,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "count(openwrt_topology_node{job=\"openwrt\", router=~\"$router\"}) or vector(0)",
+                        "expr": "count(((((((openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"id\", \"client:$1\", \"mac\", \"(.+)\"))) * 0) + on(id) group_left() (sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"client:$1\", \"mac\", \"(.+)\")))) or ((((openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"id\", \"client:$1\", \"mac\", \"(.+)\"))) * 0))) or vector(0)",
                         "legendFormat": ""
                       }
                     }
@@ -343,7 +343,7 @@
         "spec": {
           "id": 4,
           "title": "Edges",
-          "description": "Total topology edges (wan/ap/radio/assoc/lan links).",
+          "description": "Edges actually rendered (wan/nat/ap/uplink/link/radio/assoc/lan), after the wired-vs-wifi conflict is resolved.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -362,7 +362,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "count(openwrt_topology_edge{job=\"openwrt\", router=~\"$router\"}) or vector(0)",
+                        "expr": "count((((((((openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", id=~\"assoc:.+\"}, \"id\", \"lan:$1\", \"id\", \"assoc:(.+)\")) unless on(target) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"target\", \"client:$1\", \"mac\", \"(.+)\"))) * 0) + on(id) group_left() ((sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"lan:$1\", \"mac\", \"(.+)\")) or sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"assoc:$1\", \"mac\", \"(.+)\"))))) or (((((openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", id=~\"assoc:.+\"}, \"id\", \"lan:$1\", \"id\", \"assoc:(.+)\")) unless on(target) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"target\", \"client:$1\", \"mac\", \"(.+)\"))) * 0))) or vector(0)",
                         "legendFormat": ""
                       }
                     }
@@ -422,7 +422,7 @@
         "spec": {
           "id": 5,
           "title": "Online Clients",
-          "description": "Client nodes currently reporting arc__online=1.",
+          "description": "Client nodes currently reporting arc__online=1, counted from first-hand series only so a placeholder never double-counts.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -441,7 +441,327 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "count(openwrt_topology_node{job=\"openwrt\", router=~\"$router\", arc__online=\"1\"}) or vector(0)",
+                        "expr": "count(openwrt_topology_node{job=\"openwrt\", router=~\"$router\", id=~\"client:.+\", arc__online=\"1\", authority=\"1\"}) or vector(0)",
+                        "legendFormat": ""
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "center",
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "textMode": "auto",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "none",
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "blue",
+                        "value": 0
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "noValue": "Unavailable"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-6": {
+        "kind": "Panel",
+        "spec": {
+          "id": 6,
+          "title": "Access Points",
+          "description": "Boxes broadcasting at least one BSS, including the gateway when it also serves wifi.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "expr": "count(openwrt_topology_node{job=\"openwrt\", router=~\"$router\", id=~\"ap:.+\", authority=\"1\"}) or vector(0)",
+                        "legendFormat": ""
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "center",
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "textMode": "auto",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "none",
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "blue",
+                        "value": 0
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "noValue": "Unavailable"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-7": {
+        "kind": "Panel",
+        "spec": {
+          "id": 7,
+          "title": "Broadcast BSSIDs",
+          "description": "Distinct basic service sets. Two APs broadcasting one SSID are two BSSIDs on two channels, which is why they are separate nodes.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "expr": "count(openwrt_topology_node{job=\"openwrt\", router=~\"$router\", id=~\"bss:.+\", authority=\"1\"}) or vector(0)",
+                        "legendFormat": ""
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "center",
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "textMode": "auto",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "none",
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "blue",
+                        "value": 0
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "noValue": "Unavailable"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-8": {
+        "kind": "Panel",
+        "spec": {
+          "id": 8,
+          "title": "Weak Wi-Fi Links",
+          "description": "Associations below -72 dBm. The collector colours each association edge from the signal it reads in the same scrape, so this counts exactly what the graph draws red.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "expr": "count(openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", id=~\"assoc:.+\", color=\"red\"}) or vector(0)",
+                        "legendFormat": ""
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "center",
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "textMode": "auto",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "none",
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": 0
+                      },
+                      {
+                        "color": "red",
+                        "value": 1
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "noValue": "Unavailable"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-9": {
+        "kind": "Panel",
+        "spec": {
+          "id": 9,
+          "title": "Offline Clients",
+          "description": "Known clients not currently reachable. Grey rather than red on the graph: a device that has gone home is not a fault.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "expr": "count(openwrt_topology_node{job=\"openwrt\", router=~\"$router\", id=~\"client:.+\", arc__offline=\"1\", authority=\"1\"}) or vector(0)",
                         "legendFormat": ""
                       }
                     }
@@ -501,7 +821,7 @@
         "spec": {
           "id": 100,
           "title": "Network Topology",
-          "description": "internet -> router -> AP -> SSID -> client. Node mainstat is the node's own metric value (see this builder's module docstring for why edge-derived node stats were not chosen). Isolated client nodes mean connection state is unknown (assoclist unavailable), not that the client is wired -- the collector never guesses.",
+          "description": "The live network graph. Node and edge values are current throughput in bytes/sec, joined from the per-device traffic counters onto the topology frames; anything with no traffic reads a truthful 0 B/s rather than disappearing, and routers without the traffic profile contribute a real 0 rather than a gap. The ring around each node is its health arc: green online/ok, grey offline, yellow warning. Association edges are coloured by signal - green above -60 dBm, orange to -72, red below - and a wired client sits under the switch port its MAC was learned on. Click any node for its client or router dashboard.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -520,7 +840,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "openwrt_topology_edge{job=\"openwrt\", router=~\"$router\"}",
+                        "expr": "(((((((openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", id=~\"assoc:.+\"}, \"id\", \"lan:$1\", \"id\", \"assoc:(.+)\")) unless on(target) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"target\", \"client:$1\", \"mac\", \"(.+)\"))) * 0) + on(id) group_left() ((sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"lan:$1\", \"mac\", \"(.+)\")) or sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"assoc:$1\", \"mac\", \"(.+)\"))))) or (((((openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", id=~\"assoc:.+\"}, \"id\", \"lan:$1\", \"id\", \"assoc:(.+)\")) unless on(target) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"target\", \"client:$1\", \"mac\", \"(.+)\"))) * 0))",
                         "legendFormat": "",
                         "format": "table",
                         "instant": true
@@ -541,7 +861,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "openwrt_topology_node{job=\"openwrt\", router=~\"$router\"}",
+                        "expr": "((((((openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"id\", \"client:$1\", \"mac\", \"(.+)\"))) * 0) + on(id) group_left() (sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"client:$1\", \"mac\", \"(.+)\")))) or ((((openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"id\", \"client:$1\", \"mac\", \"(.+)\"))) * 0))",
                         "legendFormat": "",
                         "format": "table",
                         "instant": true
@@ -559,6 +879,7 @@
                       "excludeByName": {
                         "Time": true,
                         "__name__": true,
+                        "authority": true,
                         "job": true,
                         "instance": true,
                         "router": true,
@@ -585,10 +906,37 @@
             "group": "nodeGraph",
             "version": "",
             "spec": {
-              "options": {},
+              "options": {
+                "zoomMode": "cooperative",
+                "layoutAlgorithm": "layered",
+                "nodes": {
+                  "mainStatUnit": "Bps",
+                  "arcs": [
+                    {
+                      "field": "arc__online",
+                      "color": "#1A9E3A"
+                    },
+                    {
+                      "field": "arc__offline",
+                      "color": "#808080"
+                    },
+                    {
+                      "field": "arc__ok",
+                      "color": "#1A9E3A"
+                    },
+                    {
+                      "field": "arc__warn",
+                      "color": "#E0B400"
+                    }
+                  ]
+                },
+                "edges": {
+                  "mainStatUnit": "Bps"
+                }
+              },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "none",
+                  "unit": "Bps",
                   "mappings": [],
                   "thresholds": {
                     "mode": "absolute",
@@ -603,6 +951,67 @@
                     "mode": "palette-classic-by-name"
                   }
                 },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "id"
+                    },
+                    "properties": [
+                      {
+                        "id": "links",
+                        "value": [
+                          {
+                            "title": "Client detail for this device",
+                            "url": "/d/openwrt-clients/openwrt-clients?var-router=$router&var-mac=${__data.fields.detail__mac}&${__url_time_range}",
+                            "targetBlank": false
+                          },
+                          {
+                            "title": "Mission Control for this router",
+                            "url": "/d/openwrt-mission-control/openwrt-mission-control?var-router=$router&${__url_time_range}",
+                            "targetBlank": false
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "panel-101": {
+        "kind": "Panel",
+        "spec": {
+          "id": 101,
+          "title": "",
+          "description": "",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "text",
+            "version": "",
+            "spec": {
+              "options": {
+                "mode": "markdown",
+                "content": "**Reading the graph.** `internet` -> `modem:` (only when the WAN nexthop is a private address, i.e. double NAT) -> `router:<lan-ip>` -> `port:` switch ports and `ap:` access points -> `bss:<bssid>` -> `client:<mac>`. Nodes are keyed so that every router names the same thing identically: the gateway by its LAN IP, each radio by its BSSID. An isolated client node means its connection state is genuinely unknown (no association list available) - the collector never guesses a wired link.",
+                "code": {
+                  "language": "plaintext",
+                  "showLineNumbers": false,
+                  "showMiniMap": false
+                }
+              },
+              "fieldConfig": {
+                "defaults": {},
                 "overrides": []
               }
             }
@@ -631,7 +1040,7 @@
             "spec": {
               "options": {
                 "mode": "markdown",
-                "content": "## Data quality\nRaw node and edge series for verifying every edge endpoint resolves to a node and no data was silently dropped.",
+                "content": "## Data quality\nRaw, un-reconciled node and edge series -- what the exporters actually emitted, including anything the Topology tab is hiding. The three checks below are the invariants that decide whether the panel renders at all: a dangling edge endpoint crashes Grafana's node graph rather than degrading, and two boxes claiming the same id first-hand means one of them silently overwrites the other.",
                 "code": {
                   "language": "plaintext",
                   "showLineNumbers": false,
@@ -650,8 +1059,257 @@
         "kind": "Panel",
         "spec": {
           "id": 201,
+          "title": "Colliding Node IDs",
+          "description": "Node ids claimed first-hand by more than one router. Must be zero: Grafana keys nodes by id and silently keeps whichever row arrives last. Two gateways on one LAN is the realistic way to trip this.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "expr": "count(count by (id) (openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"}) > 1) or vector(0)",
+                        "legendFormat": ""
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "center",
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "textMode": "auto",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "none",
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": 0
+                      },
+                      {
+                        "color": "red",
+                        "value": 1
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "noValue": "Unavailable"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-202": {
+        "kind": "Panel",
+        "spec": {
+          "id": 202,
+          "title": "Dangling Edge Sources",
+          "description": "Rendered edges whose source resolves to no rendered node. Must be zero.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "expr": "count((((((((openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", id=~\"assoc:.+\"}, \"id\", \"lan:$1\", \"id\", \"assoc:(.+)\")) unless on(target) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"target\", \"client:$1\", \"mac\", \"(.+)\"))) * 0) + on(id) group_left() ((sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"lan:$1\", \"mac\", \"(.+)\")) or sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"assoc:$1\", \"mac\", \"(.+)\"))))) or (((((openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", id=~\"assoc:.+\"}, \"id\", \"lan:$1\", \"id\", \"assoc:(.+)\")) unless on(target) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"target\", \"client:$1\", \"mac\", \"(.+)\"))) * 0)) unless on(source) label_replace(((((((openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"id\", \"client:$1\", \"mac\", \"(.+)\"))) * 0) + on(id) group_left() (sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"client:$1\", \"mac\", \"(.+)\")))) or ((((openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"id\", \"client:$1\", \"mac\", \"(.+)\"))) * 0)), \"source\", \"$1\", \"id\", \"(.+)\")) or vector(0)",
+                        "legendFormat": ""
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "center",
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "textMode": "auto",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "none",
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": 0
+                      },
+                      {
+                        "color": "red",
+                        "value": 1
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "noValue": "Unavailable"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-203": {
+        "kind": "Panel",
+        "spec": {
+          "id": 203,
+          "title": "Dangling Edge Targets",
+          "description": "Rendered edges whose target resolves to no rendered node. Must be zero.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "expr": "count((((((((openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", id=~\"assoc:.+\"}, \"id\", \"lan:$1\", \"id\", \"assoc:(.+)\")) unless on(target) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"target\", \"client:$1\", \"mac\", \"(.+)\"))) * 0) + on(id) group_left() ((sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"lan:$1\", \"mac\", \"(.+)\")) or sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"assoc:$1\", \"mac\", \"(.+)\"))))) or (((((openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", id=~\"assoc:.+\"}, \"id\", \"lan:$1\", \"id\", \"assoc:(.+)\")) unless on(target) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"target\", \"client:$1\", \"mac\", \"(.+)\"))) * 0)) unless on(target) label_replace(((((((openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"id\", \"client:$1\", \"mac\", \"(.+)\"))) * 0) + on(id) group_left() (sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"client:$1\", \"mac\", \"(.+)\")))) or ((((openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"id\", \"client:$1\", \"mac\", \"(.+)\"))) * 0)), \"target\", \"$1\", \"id\", \"(.+)\")) or vector(0)",
+                        "legendFormat": ""
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "center",
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "textMode": "auto",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "none",
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": 0
+                      },
+                      {
+                        "color": "red",
+                        "value": 1
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "noValue": "Unavailable"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-204": {
+        "kind": "Panel",
+        "spec": {
+          "id": 204,
           "title": "Topology Nodes",
-          "description": "One row per current openwrt_topology_node series.",
+          "description": "One row per emitted openwrt_topology_node series, before reconciliation. `authority` shows which box observed the node first-hand; duplicate ids across routers are expected here and resolved on the Topology tab.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -771,12 +1429,12 @@
           }
         }
       },
-      "panel-202": {
+      "panel-205": {
         "kind": "Panel",
         "spec": {
-          "id": 202,
+          "id": 205,
           "title": "Topology Edges",
-          "description": "One row per current openwrt_topology_edge series. Every source/target must match an id in the nodes table above.",
+          "description": "One row per emitted openwrt_topology_edge series, before reconciliation. Every source/target must match an id in the nodes table above.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -862,6 +1520,131 @@
                   {
                     "desc": false,
                     "displayName": "id"
+                  }
+                ]
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "none",
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "blue",
+                        "value": 0
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic-by-name"
+                  },
+                  "custom": {
+                    "align": "auto",
+                    "cellOptions": {
+                      "type": "auto"
+                    },
+                    "filterable": true,
+                    "inspect": false
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-206": {
+        "kind": "Panel",
+        "spec": {
+          "id": 206,
+          "title": "Infrastructure MACs",
+          "description": "Each exporter's own interface MACs. These are why an access point no longer renders as a laptop hanging off the gateway: the matching client node and every edge pointing at it are suppressed on the Topology tab.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "expr": "openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}",
+                        "legendFormat": "",
+                        "format": "table",
+                        "instant": true
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [
+                {
+                  "kind": "organize",
+                  "spec": {
+                    "id": "organize",
+                    "options": {
+                      "excludeByName": {
+                        "Time": true,
+                        "__name__": true,
+                        "cluster": true,
+                        "endpoint": true,
+                        "namespace": true,
+                        "prometheus": true,
+                        "prometheus_replica": true,
+                        "service": true
+                      },
+                      "renameByName": {},
+                      "indexByName": {}
+                    }
+                  }
+                },
+                {
+                  "kind": "sortBy",
+                  "spec": {
+                    "id": "sortBy",
+                    "options": {
+                      "fields": [
+                        {
+                          "displayName": "mac",
+                          "desc": false
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "table",
+            "version": "",
+            "spec": {
+              "options": {
+                "cellHeight": "sm",
+                "showHeader": true,
+                "footer": {
+                  "show": false,
+                  "reducer": [
+                    "sum"
+                  ],
+                  "fields": ""
+                },
+                "sortBy": [
+                  {
+                    "desc": false,
+                    "displayName": "mac"
                   }
                 ]
               },
@@ -983,6 +1766,58 @@
                                     "name": "panel-5"
                                   }
                                 }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 7,
+                                  "width": 6,
+                                  "height": 4,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-6"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 6,
+                                  "y": 7,
+                                  "width": 6,
+                                  "height": 4,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-7"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 12,
+                                  "y": 7,
+                                  "width": 6,
+                                  "height": 4,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-8"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 18,
+                                  "y": 7,
+                                  "width": 6,
+                                  "height": 4,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-9"
+                                  }
+                                }
                               }
                             ]
                           }
@@ -1018,10 +1853,23 @@
                                   "x": 0,
                                   "y": 0,
                                   "width": 24,
-                                  "height": 16,
+                                  "height": 20,
                                   "element": {
                                     "kind": "ElementReference",
                                     "name": "panel-100"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 20,
+                                  "width": 24,
+                                  "height": 4,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-101"
                                   }
                                 }
                               }
@@ -1059,7 +1907,7 @@
                                   "x": 0,
                                   "y": 0,
                                   "width": 24,
-                                  "height": 3,
+                                  "height": 4,
                                   "element": {
                                     "kind": "ElementReference",
                                     "name": "panel-200"
@@ -1070,9 +1918,9 @@
                                 "kind": "GridLayoutItem",
                                 "spec": {
                                   "x": 0,
-                                  "y": 3,
-                                  "width": 24,
-                                  "height": 9,
+                                  "y": 4,
+                                  "width": 8,
+                                  "height": 4,
                                   "element": {
                                     "kind": "ElementReference",
                                     "name": "panel-201"
@@ -1082,13 +1930,65 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
+                                  "x": 8,
+                                  "y": 4,
+                                  "width": 8,
+                                  "height": 4,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-202"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 16,
+                                  "y": 4,
+                                  "width": 8,
+                                  "height": 4,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-203"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
                                   "x": 0,
-                                  "y": 12,
+                                  "y": 8,
                                   "width": 24,
                                   "height": 9,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-202"
+                                    "name": "panel-204"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 17,
+                                  "width": 24,
+                                  "height": 9,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-205"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 26,
+                                  "width": 24,
+                                  "height": 8,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-206"
                                   }
                                 }
                               }

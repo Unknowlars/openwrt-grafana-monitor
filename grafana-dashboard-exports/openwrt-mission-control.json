@@ -9918,7 +9918,7 @@
         "spec": {
           "id": 707,
           "title": "Network Topology",
-          "description": "The live network graph. Node and edge values are current throughput in bytes/sec, joined from the per-device traffic counters onto the topology frames; anything with no traffic reads a truthful 0 B/s rather than disappearing. The ring around each node is its health arc: green online/ok, grey offline, yellow warning - offline is grey rather than red because a device that has gone home is not a fault. Only `mainstat` is populated: a Prometheus table query returns exactly one numeric column per frame and Grafana's transformation chain applies to every frame in the panel, so `secondarystat`, `thickness` and `highlighted` cannot be added to one frame without corrupting the other. Emitting them from the exporter as their own series is the way to unlock them.",
+          "description": "The live network graph. Node and edge values are current throughput in bytes/sec, joined from the per-device traffic counters onto the topology frames; anything with no traffic reads a truthful 0 B/s rather than disappearing. The ring around each node is its health arc: green online/ok, grey offline, yellow warning - offline is grey rather than red because a device that has gone home is not a fault. Association edges are coloured by signal strength - green above -60 dBm, orange to -72, red below - which the collector computes in the same scrape that reads the association, so the colour and the link can never disagree. Only `mainstat` is populated: a Prometheus table query returns exactly one numeric column per frame and Grafana's transformation chain applies to every frame in the panel, so `secondarystat` and `thickness` cannot be added to one frame without corrupting the other. Emitting them from the exporter as their own series is the way to unlock them.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -9937,7 +9937,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "((openwrt_topology_edge{job=\"openwrt\", router=~\"$router\"} * 0) + on(id) group_left() sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"lan:$1\", \"mac\", \"(.+)\"))) or (openwrt_topology_edge{job=\"openwrt\", router=~\"$router\"} * 0)",
+                        "expr": "(((((((openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", id=~\"assoc:.+\"}, \"id\", \"lan:$1\", \"id\", \"assoc:(.+)\")) unless on(target) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"target\", \"client:$1\", \"mac\", \"(.+)\"))) * 0) + on(id) group_left() ((sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"lan:$1\", \"mac\", \"(.+)\")) or sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"assoc:$1\", \"mac\", \"(.+)\"))))) or (((((openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_edge{job=\"openwrt\", router=~\"$router\", id=~\"assoc:.+\"}, \"id\", \"lan:$1\", \"id\", \"assoc:(.+)\")) unless on(target) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"target\", \"client:$1\", \"mac\", \"(.+)\"))) * 0))",
                         "legendFormat": "",
                         "format": "table",
                         "instant": true
@@ -9958,7 +9958,7 @@
                         "name": "${DS_PROMETHEUS}"
                       },
                       "spec": {
-                        "expr": "((openwrt_topology_node{job=\"openwrt\", router=~\"$router\"} * 0) + on(id) group_left() sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"client:$1\", \"mac\", \"(.+)\"))) or (openwrt_topology_node{job=\"openwrt\", router=~\"$router\"} * 0)",
+                        "expr": "((((((openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"id\", \"client:$1\", \"mac\", \"(.+)\"))) * 0) + on(id) group_left() (sum by (id) (label_replace(sum by (mac) (rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=~\"$router\"}[$__rate_interval]) * on(device) group_left(mac) openwrt_device_info{job=\"openwrt\", router=~\"$router\"}), \"id\", \"client:$1\", \"mac\", \"(.+)\")))) or ((((openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"} or (openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"0\"} unless on(id) openwrt_topology_node{job=\"openwrt\", router=~\"$router\", authority=\"1\"})) unless on(id) label_replace(openwrt_topology_infra_mac{job=\"openwrt\", router=~\"$router\"}, \"id\", \"client:$1\", \"mac\", \"(.+)\"))) * 0))",
                         "legendFormat": "",
                         "format": "table",
                         "instant": true
@@ -9984,7 +9984,8 @@
                         "prometheus": true,
                         "prometheus_replica": true,
                         "service": true,
-                        "router": true
+                        "router": true,
+                        "authority": true
                       },
                       "renameByName": {
                         "Value": "mainstat"

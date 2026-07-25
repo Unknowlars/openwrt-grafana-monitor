@@ -1,16 +1,16 @@
 # Graph Report - openwrt-grafana-monitor  (2026-07-25)
 
 ## Corpus Check
-- 95 files · ~340,121 words
+- 101 files · ~369,729 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 910 nodes · 1560 edges · 84 communities (58 shown, 26 thin omitted)
-- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 12 edges (avg confidence: 0.5)
+- 986 nodes · 1706 edges · 95 communities (68 shown, 27 thin omitted)
+- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 13 edges (avg confidence: 0.52)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `b47a8f33`
+- Built from commit: `f5066af5`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -27,6 +27,7 @@
 - Client Conntrack Monitoring
 - Client Traffic Monitoring
 - WAN Quality Monitoring
+- Topology Tests
 - Metrics Exposition
 - WiFi Dethrash Detection
 - DNS & DHCP Monitoring
@@ -90,6 +91,15 @@
 - test_wan_quality.sh
 - Manual Setup
 - test_wan_info.sh
+- test_mcp_policy.py
+- server.py
+- core.py
+- resolve_host_key_policy
+- ._connect
+- test_inodes.sh
+- build_oui_table.py
+- SecurityMiddleware
+- oui.lua
 
 ## God Nodes (most connected - your core abstractions)
 1. `PolicyError` - 29 edges
@@ -98,39 +108,39 @@
 4. `build_dashboard()` - 22 edges
 5. `DashboardBuilder` - 22 edges
 6. `tf()` - 19 edges
-7. `1.3 `openwrt/scripts/`` - 19 edges
-8. `tab_lan()` - 18 edges
-9. `deep()` - 18 edges
-10. `CommandSpec` - 18 edges
+7. `collect()` - 19 edges
+8. `1.3 `openwrt/scripts/`` - 19 edges
+9. `tab_lan()` - 18 edges
+10. `deep()` - 18 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `CommandPolicyTests` --uses--> `PolicyError`  [INFERRED]
+  tests/test_mcp_policy.py → mcp_server/core.py
+- `HostKeyPolicyTests` --uses--> `PolicyError`  [INFERRED]
+  tests/test_mcp_policy.py → mcp_server/core.py
 - `build_dashboard()` --calls--> `DashboardBuilder`  [EXTRACTED]
   build_openwrt_advanced_dashboard.py → build_openwrt_operations_dashboard.py
 - `build_dashboard()` --calls--> `DashboardBuilder`  [EXTRACTED]
   build_openwrt_clients_dashboard.py → build_openwrt_operations_dashboard.py
 - `stat()` --calls--> `prom_query()`  [EXTRACTED]
   build_openwrt_mission_control.py → build_openwrt_operations_dashboard.py
-- `loki_stat()` --calls--> `loki_query()`  [EXTRACTED]
-  build_openwrt_mission_control.py → build_openwrt_operations_dashboard.py
-- `gauge()` --calls--> `prom_query()`  [EXTRACTED]
-  build_openwrt_mission_control.py → build_openwrt_operations_dashboard.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (84 total, 26 thin omitted)
+## Communities (95 total, 27 thin omitted)
 
 ### Community 0 - "MCP Server Core"
-Cohesion: 0.05
-Nodes (76): BaseHTTPMiddleware, build_configure_syslog_command(), build_diagnostic_command(), build_metrics_sample_command(), build_monitoring_status_command(), build_restart_monitoring_command(), build_setup_command(), build_system_facts_command() (+68 more)
+Cohesion: 0.14
+Nodes (24): build_system_facts_command(), CommandSpec, require_confirm(), openwrt_configure_syslog(), openwrt_diagnostic(), openwrt_metrics_sample(), openwrt_monitoring_status(), openwrt_restart_monitoring() (+16 more)
 
 ### Community 1 - "Advanced Dashboard"
-Cohesion: 0.09
-Nodes (72): availability(), build_dashboard(), iter_strings(), layout_refs(), main(), Any, Profile health tile.      A collector's own availability flag is not sufficient, validate_dashboard() (+64 more)
+Cohesion: 0.08
+Nodes (84): availability(), build_dashboard(), iter_strings(), layout_refs(), main(), Any, Profile health tile.      A collector's own availability flag is not sufficient, validate_dashboard() (+76 more)
 
 ### Community 2 - "Mission Control Dashboard"
-Cohesion: 0.19
-Nodes (45): bargauge(), build_dashboard(), clean(), color_override(), data_group(), gauge(), grid_items_by_tab(), histogram() (+37 more)
+Cohesion: 0.16
+Nodes (50): bargauge(), build_dashboard(), clean(), color_override(), data_group(), _edges_expr(), gauge(), grid_items_by_tab() (+42 more)
 
 ### Community 3 - "Lua Collectors"
 Cohesion: 0.23
@@ -141,8 +151,8 @@ Cohesion: 0.32
 Nodes (16): bargauge(), build_devices(), build_logs(), build_network(), build_overview(), loki_logs(), loki_stat(), loki_tgt() (+8 more)
 
 ### Community 5 - "Topology Collection"
-Cohesion: 0.35
-Nodes (11): add_edge(), add_node(), assoc_by_mac(), collect(), leasefile_hosts(), normalize_mac(), reachable_ips(), router_hostname() (+3 more)
+Cohesion: 0.19
+Nodes (24): add_edge(), add_node(), annotate_channels(), arp_table(), assoc_by_mac(), bridge_fdb(), collect(), default_route() (+16 more)
 
 ### Community 6 - "Setup & Installation"
 Cohesion: 0.31
@@ -157,8 +167,8 @@ Cohesion: 0.36
 Nodes (4): collect(), config_value(), lease_map(), read_set()
 
 ### Community 9 - "Client Conntrack Monitoring"
-Cohesion: 0.50
-Nodes (7): emit_assoc_events(), emit_conntrack(), fail_closed(), headers(), openwrt-monitor-client-conntrack.sh script, valid_ipv4(), valid_mac()
+Cohesion: 0.32
+Nodes (11): collect_client_hosts(), collect_client_hosts_fallback(), collect_client_hosts_hints(), collect_conntrack_rows(), emit_assoc_events(), emit_conntrack(), fail_closed(), headers() (+3 more)
 
 ### Community 11 - "Client Traffic Monitoring"
 Cohesion: 0.52
@@ -175,6 +185,10 @@ Nodes (4): find_duplicates(), main(), parse(), Return (name, normalised-labels, 
 ### Community 16 - "WiFi Dethrash Detection"
 Cohesion: 0.60
 Nodes (3): hostname(), sanitize(), scrape()
+
+### Community 27 - "Inode Monitoring"
+Cohesion: 0.70
+Nodes (4): emit_inodes(), emit_mount_df(), emit_mount_stat(), openwrt-monitor-inodes.sh script
 
 ### Community 41 - "CODE-REVIEW-REMEDIATION-PLAN.md"
 Cohesion: 0.06
@@ -257,8 +271,8 @@ Cohesion: 0.17
 Nodes (12): 1. Clone the repo, 2. Configure, 3. Start, 4. Open Grafana, Adding more routers, Alloy UI, Data persistence, Monitoring Host Setup (+4 more)
 
 ### Community 62 - "Current status"
-Cohesion: 0.22
-Nodes (8): Blockers, Completed, Confirmed findings, Current goal, Current status, Live deployment findings (2026-07-25, authorized read-only session), Next action, Relevant files
+Cohesion: 0.25
+Nodes (7): Current status, Deployed 2026-07-25, In flight: multi-router topology rework (2026-07-25), Pending, Remaining risks, Remediation plan, Validation
 
 ### Community 63 - "3. Phase 3 — Traffic attribution"
 Cohesion: 0.25
@@ -316,25 +330,57 @@ Nodes (3): plugin, $schema, .opencode/plugins/graphify.js
 Cohesion: 0.29
 Nodes (7): 1. Install exporter packages, 2. Configure the exporter to listen on LAN, 3. Copy the bundled collectors and scripts, 4. Add the helper cron jobs, 5. Configure remote syslog, 6. Restart services, Manual Setup
 
+### Community 84 - "test_mcp_policy.py"
+Cohesion: 0.16
+Nodes (6): build_diagnostic_command(), build_metrics_sample_command(), build_monitoring_status_command(), build_restart_monitoring_command(), build_test_log_command(), CommandPolicyTests
+
+### Community 85 - "server.py"
+Cohesion: 0.13
+Nodes (16): HostKeyPolicy, SSH host-key verification policy for the MCP sidecar.      ``policy`` is the par, Resolve the setup command timeout from an env-style string., redact(), resolve_setup_timeout_seconds(), _build_openwrt_tar(), _csv_set(), _int_env() (+8 more)
+
+### Community 86 - "core.py"
+Cohesion: 0.23
+Nodes (16): build_configure_syslog_command(), build_setup_command(), normalize_profile(), _parse_host_port(), parse_router_inventory(), PolicyError, Policy and command construction for the OpenWrt SSH MCP server.  This module int, Parse `name=host[:port],name=host[:port]` into an allowlist. (+8 more)
+
+### Community 87 - "resolve_host_key_policy"
+Cohesion: 0.21
+Nodes (7): _env_flag(), host_key_failure_message(), Resolve host-key policy from config values (not env lookup).      Default is str, Actionable error when SSH host-key verification fails., resolve_host_key_policy(), HostKeyPolicyTests, R11: default RejectPolicy; AutoAddPolicy only via explicit insecure flag.
+
+### Community 88 - "._connect"
+Cohesion: 0.29
+Nodes (7): check(), ids(), import(), query(), scalar(), test_topology_promql.sh script, stat_of()
+
+### Community 90 - "build_oui_table.py"
+Cohesion: 0.33
+Nodes (9): base36(), build(), classify(), load_rows(), lua_string(), main(), Path, render() (+1 more)
+
+### Community 91 - "SecurityMiddleware"
+Cohesion: 0.29
+Nodes (6): BaseHTTPMiddleware, healthz(), SecurityMiddleware, PlainTextResponse, Request, Response
+
+### Community 92 - "oui.lua"
+Cohesion: 0.52
+Nodes (6): hex_only(), is_local(), local_range(), M.lookup(), search(), vendor_at()
+
 ## Knowledge Gaps
-- **396 isolated node(s):** `$schema`, `.opencode/plugins/graphify.js`, `openwrt-monitor-device-status.sh script`, `openwrt-monitor-dhcp-pool.sh script`, `openwrt-monitor-filesystem.sh script` (+391 more)
+- **394 isolated node(s):** `$schema`, `.opencode/plugins/graphify.js`, `openwrt-monitor-device-status.sh script`, `openwrt-monitor-dhcp-pool.sh script`, `openwrt-monitor-filesystem.sh script` (+389 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **26 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **27 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Part 1 — Router side (`openwrt/`)` connect `CODE-REVIEW-FINDINGS.md` to `1.3 `openwrt/scripts/``, `1.1 `openwrt/setup.sh``, `1.2 `openwrt/collectors/``?**
-  _High betweenness centrality (0.013) - this node is a cross-community bridge._
+  _High betweenness centrality (0.011) - this node is a cross-community bridge._
 - **Why does `Part 4 — Docs` connect `4.1 `docs/openwrt-setup.md`` to `CODE-REVIEW-FINDINGS.md`?**
-  _High betweenness centrality (0.010) - this node is a cross-community bridge._
+  _High betweenness centrality (0.009) - this node is a cross-community bridge._
 - **Why does `Part 2 — Monitoring host (`alloy/`, `docker-compose.yml`, `.env.example`)` connect `2.2 `docker-compose.yml`` to `CODE-REVIEW-FINDINGS.md`?**
-  _High betweenness centrality (0.008) - this node is a cross-community bridge._
+  _High betweenness centrality (0.007) - this node is a cross-community bridge._
 - **Are the 6 inferred relationships involving `PolicyError` (e.g. with `SecurityMiddleware` and `Settings`) actually correct?**
   _`PolicyError` has 6 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `$schema`, `.opencode/plugins/graphify.js`, `openwrt-monitor-device-status.sh script` to the rest of the system?**
-  _396 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _394 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `MCP Server Core` be split into smaller, more focused modules?**
-  _Cohesion score 0.050183150183150185 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.13756613756613756 - nodes in this community are weakly interconnected._
 - **Should `Advanced Dashboard` be split into smaller, more focused modules?**
-  _Cohesion score 0.09490509490509491 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07815230961298376 - nodes in this community are weakly interconnected._

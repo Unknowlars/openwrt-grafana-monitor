@@ -9,70 +9,76 @@ plan task is `M1` (global conntrack table saturation metric).
 Do not commit, stage, reset, clean, or discard worktree changes unless the user
 explicitly asks for that exact git operation.
 
-## Live follow-up fixes (2026-07-25)
+## In flight: multi-router topology rework (2026-07-25)
 
-The user authorized bounded MCP/router fixes after the R13 pass. The following
-live issues found through read-only MCP/router checks were fixed in source and
-deployed to both configured routers with `openwrt_run_repo_setup confirm=true`:
+The topology node graph was built for a single router and produced a visibly
+wrong graph on this two-router deployment. Reworked in source, **not yet
+deployed to the routers**.
 
-- MCP metrics helpers now resolve `network.lan.ipaddr`, strip any CIDR suffix,
-  and fetch `http://$LAN_IP:9100/metrics` instead of assuming router-local
-  `127.0.0.1`.
-- MCP `wifi` diagnostics redact common wireless secret fields before returning
-  `wifi status`.
-- MCP adds bounded `conntrack_sources` and `inode_sources` diagnostics. They
-  report availability/counts only, not raw host hints, conntrack rows, client
-  addresses, MACs, or filesystem listings.
-- `openwrt-monitor-client-conntrack.sh` now separates WiFi association-event
-  availability from conntrack availability, falls back from the `conntrack` CLI
-  to `/proc/net/nf_conntrack` or `/proc/net/ip_conntrack`, and falls back from
-  `getHostHints` identity to DHCP leases/ARP when needed.
-- `openwrt-monitor-inodes.sh` now falls back from `df -iP` to `stat -f`.
-  `setup.sh` opportunistically installs `coreutils-stat` when neither inode
-  source is usable.
+What changed:
 
-Live outcome after deployment:
+- `openwrt/collectors/topology.lua` detects gateway vs downstream AP. Only a
+  gateway emits `internet`, `modem:`, `router:` and `port:` nodes. Node ids are
+  now `router:<lan-ip>` and `bss:<bssid>` so every exporter names the same
+  thing identically. Every node/edge carries `authority`; new
+  `openwrt_topology_infra_mac` publishes each box's own interface MACs.
+- New `openwrt/lua/oui.lua` + generated `oui_data.lua` (from
+  `build_oui_table.py`) name clients by hardware vendor and pick an icon.
+- `alloy/config.alloy` lowercases `mac`, `station` and `bssid` at ingest.
+- Topology dashboard reconciles across routers in PromQL, uses the layered
+  layout, semantic arcs, live B/s on both frames, signal-coloured association
+  edges, and click-through data links. Mission Control panel 707 matches.
+- `build_openwrt_clients_dashboard.py` gained a `mac` variable (defaults to
+  All) so the node-graph data link can scope it to one device.
 
-- `openwrt-main` and `openwrt-new`: exporter running, cron running, syslog
-  configured to `192.168.0.247:514/udp`.
-- Both routers now report `openwrt_client_conntrack_collector_available 1`,
-  `openwrt_wifi_assoc_events_collector_available 1`, and
-  `openwrt_filesystem_inode_collector_available 1`.
-- `conntrack-tools` is not present in the OpenWrt 25.12.5 apk feed; setup logs
-  that package-name error on stderr, then succeeds through the `conntrack`
-  fallback package.
-- `coreutils-stat` installed successfully on both routers and made the inode
-  fallback usable.
+### Deployed 2026-07-25
+
+Both routers were updated with `openwrt_run_repo_setup confirm=true` (profile
+`full`), the exporter restarted on each, and Alloy restarted. `ip-bridge`
+installed on both, so the switch-port tier is live. Verified against live data:
+role detection correct (`openwrt-main` gateway, `openwrt-new` downstream AP with
+no fabricated uplink), 0 colliding node ids, 0 dangling edge sources/targets.
+
+**Two Prometheis scrape these routers.** `vm.k8s.home.arpa` is scraped by
+`kube-prometheus-stack` in the k8s cluster, *not* by this repo's Alloy, so the
+MAC-lowercasing relabel rule does not apply there — VictoriaMetrics keeps
+uppercase `mac`/`station`, the local otel-lgtm stack has them lowercase. Each
+store is internally consistent, so every existing MAC join still works in both;
+but do not write a query that assumes one casing without checking which store it
+will run against.
+
+### Pending
+
+- Grafana UI has not been re-screenshotted since the rework;
+  `OpenWrt-Topology-screenshots/` still shows the old broken graph.
 
 ## Validation
 
 Static/offline checks passed on 2026-07-25:
 
-- `python3 -m unittest tests.test_mcp_policy -v`
-- `sh tests/test_client_conntrack.sh`
-- `sh tests/test_inodes.sh`
-- `sh tests/test_setup_nlbwmon_optional.sh`
-- `python3 -m unittest discover -s tests -p 'test_*.py'`
-- `sh -n openwrt/setup.sh openwrt/scripts/*.sh`
+- `sh tests/run_all.sh` (includes the new `tests/test_topology_promql.sh`)
+- `python3 -m unittest discover -s tests -p 'test_*.py'` (27 tests)
+- `sh -n openwrt/setup.sh openwrt/scripts/*.sh tests/*.sh`
+- `luac5.1 -p openwrt/collectors/*.lua openwrt/lua/*.lua`
 - `docker compose config`
-- `docker compose --profile mcp config` (output expands private `.env` values;
-  do not quote it)
-- `sh tests/run_all.sh`
-- `git diff --name-only -- grafana-dashboard-exports grafana/provisioning/dashboards`
-- `git diff --check`
+- `alloy fmt` and `alloy validate` against `grafana/alloy:latest`
 
-Live checks passed:
-
-- Direct `/metrics` fetch from both routers succeeded.
-- `python3 tests/check_exposition.py /tmp/openwrt-main.metrics`:
-  `2888 samples, no duplicate series`.
-- `python3 tests/check_exposition.py /tmp/openwrt-new.metrics`:
-  `1950 samples, no duplicate series`.
+`tests/test_topology_promql.sh` runs the dashboard's shipped node-graph queries
+against a throwaway VictoriaMetrics container over exposition the real collector
+produces for a simulated gateway plus dumb AP. It asserts the reconciliation
+end to end: single uplink spine, AP not rendered as a client, wifi client drawn
+on its association rather than the gateway's wired guess, vendor titles, live
+throughput on both frames, and zero dangling endpoints. Mutating the generator
+to drop the infra-MAC suppression makes it fail, so it is live coverage.
 
 ## Remaining risks
 
-- Grafana UI screenshots were not captured in this follow-up; evidence is from
-  source, generated-output checks, MCP read-only status, direct metrics fetches,
-  and exposition validation.
+- The reconciliation is verified against simulated exposition, not against the
+  live routers, because they still run the previous collector. Re-verify after
+  deployment with the collision/dangling panels on the Data Quality tab.
+- The switch-port tier needs the `bridge` command (`ip-bridge`, added as an
+  optional package). Without it the collector falls back to attaching wired
+  clients directly to the router rather than guessing a port. Not yet confirmed
+  present on either router.
 - `.env` is private and contains real local values. Do not quote secrets from
   Compose profile output or MCP/router diagnostics.

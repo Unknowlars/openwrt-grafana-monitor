@@ -57,6 +57,45 @@ prometheus.relabel "openwrt_bound_cardinality" {
     regex         = "node_nat_traffic"
     action        = "drop"
   }
+
+  // Upstream collectors (wifi_stations, hostapd_stations, dnsmasq,
+  // uci_dhcp_host) emit MAC addresses uppercase; every collector in this
+  // repository emits them lowercase. The two cannot be joined in PromQL --
+  // there is no tolower() in Prometheus, and the MetricsQL one is specific to
+  // VictoriaMetrics while the shipped stack is Prometheus. Normalising here
+  // is what lets the topology dashboard put wifi_station_signal_dbm on an
+  // association edge keyed by client:<mac>, and lets dhcp_lease join
+  // openwrt_client_info at all.
+  //
+  // Applied unconditionally rather than scoped by __name__: MAC addresses are
+  // case-insensitive by definition, so this is idempotent on the series that
+  // are already lowercase, and a metric with no such label concatenates to the
+  // empty string, which relabeling drops rather than setting. Scoping it would
+  // need a temp-label dance, because the lowercase action ignores `regex` and
+  // rejects `replacement` outright.
+  rule {
+    source_labels = ["mac"]
+    target_label  = "mac"
+    action        = "lowercase"
+  }
+
+  rule {
+    source_labels = ["bssid"]
+    target_label  = "bssid"
+    action        = "lowercase"
+  }
+
+  // `station` must be normalised together with `mac`, not left alone. The
+  // operations dashboard's WiFi Client Detail panel label_replaces
+  // openwrt_wifi_station_connected_seconds{station=...} into a `mac` field and
+  // joins it against wifi_station_signal_dbm; lowercasing one side only would
+  // silently empty that join. Verified live 2026-07-25: both labels arrive
+  // uppercase.
+  rule {
+    source_labels = ["station"]
+    target_label  = "station"
+    action        = "lowercase"
+  }
 }
 
 // ── Prometheus: forward to otel-lgtm ────────────────────────────────────────

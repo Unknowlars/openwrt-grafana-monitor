@@ -57,6 +57,10 @@ CLIENT_INVENTORY_MAX="${CLIENT_INVENTORY_MAX:-256}"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 COLLECTOR_SRC_DIR="$SCRIPT_DIR/collectors"
 HELPER_SRC_DIR="$SCRIPT_DIR/scripts"
+# Shared Lua modules, installed to /usr/lib/lua/ rather than the collectors
+# directory: the exporter turns every file it finds there into a collector and
+# calls scrape() on it.
+LUA_SRC_DIR="$SCRIPT_DIR/lua"
 CRONTAB_FILE="/etc/crontabs/root"
 
 log() {
@@ -164,6 +168,7 @@ prometheus-node-exporter-lua-hwmon
 prometheus-node-exporter-lua-thermal
 prometheus-node-exporter-lua-nft-counters
 prometheus-node-exporter-lua-snmp6
+ip-bridge
 "
 
 if [ -z "$MONITORING_HOST" ]; then
@@ -172,7 +177,7 @@ if [ -z "$MONITORING_HOST" ]; then
   exit 1
 fi
 
-if [ ! -d "$COLLECTOR_SRC_DIR" ] || [ ! -d "$HELPER_SRC_DIR" ]; then
+if [ ! -d "$COLLECTOR_SRC_DIR" ] || [ ! -d "$HELPER_SRC_DIR" ] || [ ! -d "$LUA_SRC_DIR" ]; then
   die "setup.sh expects the whole openwrt/ directory. Copy it with: scp -O -r openwrt root@<router>:/tmp/"
 fi
 
@@ -368,6 +373,13 @@ if profile_enabled clients; then
   # same package dependencies (getHostHints, iwinfo assoclist), so it rides
   # along in the same profile rather than getting its own.
   install_file "$COLLECTOR_SRC_DIR/topology.lua" /usr/lib/lua/prometheus-collectors/topology.lua 0644
+  # topology.lua require()s these to name a client by its hardware vendor
+  # instead of by its MAC. They go in /usr/lib/lua/, not the collectors
+  # directory, because anything in there is loaded as a collector and these
+  # have no scrape(). Absent, oui.lookup() degrades to "no vendor" and the
+  # graph still renders -- see openwrt/lua/oui.lua.
+  install_file "$LUA_SRC_DIR/oui.lua" /usr/lib/lua/openwrt_oui.lua 0644
+  install_file "$LUA_SRC_DIR/oui_data.lua" /usr/lib/lua/openwrt_oui_data.lua 0644
   if [ -x /etc/init.d/nlbwmon ]; then
     ensure_dir /usr/share/nlbwmon
     install_file "$SCRIPT_DIR/nlbwmon/protocols" /usr/share/nlbwmon/protocols 0644

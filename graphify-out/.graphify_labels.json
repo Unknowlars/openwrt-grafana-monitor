@@ -88,5 +88,10 @@
   "86": "core.py",
   "87": "resolve_host_key_policy",
   "88": "._connect",
-  "89": "test_inodes.sh"
+  "89": "test_inodes.sh",
+  "90": "build_oui_table.py",
+  "91": "SecurityMiddleware",
+  "92": "oui.lua",
+  "93": "topology_exposition.lua",
+  "94": "oui_data.lua"
 }

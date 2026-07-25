@@ -12,7 +12,7 @@ install depend on nftables JSON, usteer, or Netifyd.
 | `traffic` | Read-only nftables per-device byte and packet counters | `openwrt_device_traffic_collector_available` |
 | `wifi_mesh` | Radio settings, 802.11r/k/v flags, and usteer local metrics | `openwrt_wifi_mesh_collector_available` |
 | `dpi` | Bounded Netifyd application/protocol snapshot metrics | `openwrt_dpi_collector_available` |
-| `clients` | Unified per-client identity, bounded conntrack occupancy, nlbwmon MAC-keyed service traffic, and Loki-first WiFi roaming | `openwrt_client_inventory_collector_available`, `openwrt_client_traffic_collector_available`, `openwrt_client_conntrack_collector_available` |
+| `clients` | Unified per-client identity, bounded conntrack occupancy, nlbwmon MAC-keyed service traffic, Loki-first WiFi roaming, and the topology node graph | `openwrt_client_inventory_collector_available`, `openwrt_client_traffic_collector_available`, `openwrt_client_conntrack_collector_available`, `openwrt_topology_collector_available` |
 | `full` | All optional profiles | All optional-profile metrics above |
 
 Enable a profile during router setup. `OPENWRT_MONITOR_PROFILE` also accepts a

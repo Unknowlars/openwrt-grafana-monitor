@@ -2,6 +2,63 @@
 
 ## 2026-07-25
 
+- Changed: Reworked the topology node graph for multi-router deployments.
+  `topology.lua` now detects gateway vs downstream AP, so only a gateway emits
+  `internet`/`modem:`/`router:`/`port:` nodes; node ids became
+  `router:<lan-ip>` and `bss:<bssid>` so separate exporters name shared things
+  identically; every node and edge carries `authority`; and a new
+  `openwrt_topology_infra_mac` metric publishes each box's own interface MACs.
+  The dashboard reconciles across routers in PromQL: prefer first-hand series,
+  drop routers that appear as each other's DHCP clients along with the edges
+  pointing at them, and drop the gateway's guessed `lan:` edge when an AP
+  reports a real association. Added the switch-port tier from `bridge fdb`, the
+  upstream-modem hop for double NAT, vendor names and icons from a generated
+  IEEE OUI table, signal-coloured association edges, the layered layout,
+  semantic arcs, live B/s on both frames, and node data links. Mission Control
+  panel 707 was updated to match. **Breaking:** node id shapes changed, so both
+  routers must be updated together.
+- Changed: `alloy/config.alloy` lowercases the `mac`, `station` and `bssid`
+  labels at ingest, so upstream uppercase-MAC collectors join this
+  repository's lowercase ones. `station` had to be normalised alongside `mac`
+  or the operations dashboard's WiFi Client Detail join would have emptied.
+- Added: `openwrt/lua/` for shared `require`-able modules (`oui.lua`,
+  generated `oui_data.lua`), installed to `/usr/lib/lua/` rather than the
+  collectors directory, where every file is loaded as a collector. Added
+  `build_oui_table.py` to regenerate the vendor table from the IEEE MA-L
+  registry; vendor mappings are never hand-written.
+- Added: `tests/test_topology_promql.sh` and `tests/topology_exposition.lua`,
+  which run the dashboard's shipped node-graph queries against a throwaway
+  VictoriaMetrics container over exposition the real collector produces for a
+  simulated gateway plus dumb AP. This is the only coverage of the
+  cross-router reconciliation, which lives in PromQL rather than Lua.
+- Validation: `tests/run_all.sh`, full unittest discovery, shell and Lua
+  syntax, `docker compose config`, and `alloy fmt`/`alloy validate` all passed.
+  Reconciliation verified end to end against a real PromQL engine, and
+  confirmed to fail when the infra-MAC suppression is mutated out.
+- Deployed: both routers updated together with `openwrt_run_repo_setup
+  confirm=true` (profile `full`), exporters restarted, Alloy restarted.
+  `ip-bridge` installed on both, so the switch-port tier is live. Live
+  verification: role detection correct, 0 colliding node ids, 0 dangling edge
+  endpoints, clients named by vendor, and the client on the second AP's radio
+  now drawn on its association instead of as wired off the gateway.
+- Fixed after first deployment: the upstream router answers ARP on the WAN
+  interface, so `getHostHints` listed it like a LAN client and it rendered
+  twice -- once as `modem:` and once as a client. The collector now excludes
+  the WAN nexthop's MAC from the client list. Caught by live inspection, and
+  now covered by a mutation-checked assertion in `tests/test_topology.lua`.
+- Docs: corrected `docs/openwrt-setup.md`, whose manual-install path copied
+  only `openwrt/collectors/*.lua` and so would have left the OUI modules
+  missing (silent loss of vendor names) -- and whose installed-files lists had
+  been missing `client_inventory.lua`/`topology.lua` since the clients profile
+  landed. Also refreshed the topology row in
+  `skills/grafana-dashboards/SKILL.md` (9 -> 18 elements) and the `clients`
+  profile row in `docs/advanced-profiles.md`.
+- Remaining risk: `vm.k8s.home.arpa` is scraped by `kube-prometheus-stack`,
+  not by this repo's Alloy, so the MAC-lowercasing rule applies only to the
+  local otel-lgtm stack. Each store is internally consistent and no existing
+  join breaks, but casing differs between them. Grafana UI not
+  re-screenshotted.
+
 - Changed: Follow-up live fixes for MCP/router issues found after `R13`.
   Added safe `conntrack_sources` and `inode_sources` MCP diagnostics, made
   per-client conntrack fall back from `getHostHints` to DHCP leases/ARP, made
