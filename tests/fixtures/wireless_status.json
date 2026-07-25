@@ -9,7 +9,8 @@
     "config": {"band": "5g"},
     "interfaces": [
       {"ifname": "wlan1", "config": {"ssid": "Home-5G", "network": ["lan"]}},
-      {"ifname": "wlan2", "config": {"ssid": "Guest-5G", "network": ["guest"]}}
+      {"ifname": "wlan2", "config": {"ssid": "Guest-5G", "network": ["guest"]}},
+      {"ifname": "wlan3", "config": {"ssid": "Lab Net\"5G", "network": ["guest"]}}
     ]
   }
 }

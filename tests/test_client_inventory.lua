@@ -329,7 +329,36 @@ for _, sample in ipairs(capped["openwrt_client_info"]) do capped_macs[#capped_ma
 table.sort(capped_macs)
 check(capped_macs[1] == "2a:11:22:33:44:55", "capped set is the lowest macs in sorted order")
 
--- 5. first_seen persists across scrapes and evicts LRU when the store
+-- 5. SSID label values are sanitized, and identically to the shell path. ------
+-- R6: this collector used to emit the raw ubus SSID while
+-- openwrt-monitor-client-conntrack.sh emitted a sanitized one, so one physical
+-- SSID appeared under two different label values and any join between
+-- openwrt_client_info and the assoc-event metrics returned nothing. A raw `"`
+-- also corrupts the exposition line outright.
+--
+-- `wlan3` in the shared tests/fixtures/wireless_status.json fixture is named
+-- `Lab Net"5G` for exactly this: a space and a double quote. The expected
+-- sanitized value below must stay identical to the one asserted in
+-- tests/test_client_conntrack.sh -- that pairing is what keeps the two paths
+-- converged.
+local EXPECTED_SANITIZED_SSID = 'Lab_Net_5G'
+
+reset_mocks()
+MOCK.assoclist = {wlan3 = {["a4:83:e7:aa:bb:cc"] = {signal = -70}}}
+local sanitized = run()
+local on_wlan3 = by_mac(sanitized["openwrt_client_info"], "a4:83:e7:aa:bb:cc")
+check(on_wlan3 ~= nil, "client associated to wlan3 is emitted")
+check(on_wlan3 and on_wlan3.raw.ssid == EXPECTED_SANITIZED_SSID,
+  "ssid is sanitized to " .. EXPECTED_SANITIZED_SSID .. ", got " ..
+  tostring(on_wlan3 and on_wlan3.raw.ssid))
+for _, sample in ipairs(sanitized["openwrt_client_info"]) do
+  check(not tostring(sample.raw.ssid):find('"', 1, true),
+    "no raw double quote reaches an ssid label value: " .. sample.labels)
+  check(not tostring(sample.raw.ssid):find(' ', 1, true),
+    "no raw space reaches an ssid label value: " .. sample.labels)
+end
+
+-- 6. first_seen persists across scrapes and evicts LRU when the store
 --    (not just one scrape's host count) exceeds the cap. ---------------------
 -- Starts from a clean seen-store: os.time() has 1-second resolution, and
 -- sections 1-4 above ran fast enough that their entries could tie on `last`

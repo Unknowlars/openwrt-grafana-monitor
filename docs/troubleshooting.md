@@ -116,6 +116,39 @@ SYSLOG_PORT=1514 sh /tmp/openwrt/setup.sh 192.168.0.100
 curl 'http://localhost:3100/loki/api/v1/query?query={job="openwrt-syslog"}' | python3 -m json.tool
 ```
 
+### 5. Syslog stream labels
+
+`alloy/config.alloy` promotes a deliberately small, fixed set of syslog fields
+to Loki **stream** labels:
+
+| Label | Source field | Notes |
+| --- | --- | --- |
+| `job` | static | Always `openwrt-syslog` |
+| `router` | `__syslog_message_hostname` | Falls back to `ROUTER_NAME` when the frame has no hostname |
+| `message_severity` | `__syslog_message_severity` | Used by the log panels and error/warning stats |
+| `message_facility` | `__syslog_message_facility` | |
+| `message_app_name` | `__syslog_message_app_name` | Used by the "by app" panels |
+
+To see what Loki actually has:
+
+```sh
+curl -s 'http://localhost:3100/loki/api/v1/labels' | python3 -m json.tool
+```
+
+Everything else the syslog receiver produces is intentionally **not** a stream
+label. In particular `__syslog_message_proc_id` — the process PID for OpenWrt
+`logd` rfc3164 frames — used to be promoted, which minted a brand-new Loki
+stream on every `dnsmasq`, `hostapd`, `netifd`, or `odhcpd` restart. dnsmasq
+restarts on any DHCP or UCI change (and the router setup script restarts it), so
+ordinary operation produced unbounded stream churn. If you need to filter by PID,
+do it on the **log line** (`|= "pid 1234"`) rather than as a label.
+
+> **Upgrade note.** Changing the promoted label set changes stream identity, so
+> existing streams end and new ones begin at the moment Alloy reloads. This is
+> expected and harmless: historical logs stay queryable under their old labels,
+> so a query spanning the changeover may show a discontinuity in per-stream
+> panels while the total log volume is unaffected.
+
 ---
 
 ## Grafana shows "No data"

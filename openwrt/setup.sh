@@ -409,10 +409,18 @@ do
 done
 
 if grep -qE 'openwrt-grafana-monitor-(metrics|sqm)' "$CRONTAB_FILE" 2>/dev/null; then
-  grep -vE 'openwrt-grafana-monitor-(metrics|sqm)' "$CRONTAB_FILE" > "$CRONTAB_FILE.clean"
+  # grep -v exits 1 when it selects no lines. On a router whose crontab holds
+  # *only* the two legacy entries that is the expected result, not an error, so
+  # without `|| true` this aborts the whole install under `set -e`. An empty
+  # .clean file is correct here: the cron-install block below repopulates it.
+  # Staged alongside the crontab on purpose -- /tmp is a separate filesystem on
+  # OpenWrt, so an mv across would not be atomic.
+  grep -vE 'openwrt-grafana-monitor-(metrics|sqm)' "$CRONTAB_FILE" \
+    > "$CRONTAB_FILE.clean" || true
   mv "$CRONTAB_FILE.clean" "$CRONTAB_FILE"
   log "    removed superseded cron entries"
 fi
+rm -f "$CRONTAB_FILE.clean"
 
 # /var/prometheus holds only derived data and every current helper is run once
 # below, so clearing it is safe and drops output files left behind by collectors

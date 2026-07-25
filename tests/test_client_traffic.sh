@@ -57,6 +57,30 @@ grep -q 'openwrt_client_bytes_total{mac="11:22:33:44:55:66",direction="out",serv
 grep -q 'openwrt_client_bytes_total{mac="77:88:99:aa:bb:cc",direction="in",service="other"} 500' "$OUT" || { echo "FAIL: unmapped protocol name did not bucket as other"; exit 1; }
 grep -q 'openwrt_client_traffic_collector_available 1' "$OUT" || { echo "FAIL: unmapped protocol name incorrectly failed the whole scrape closed"; exit 1; }
 
+# A legitimately empty result set (fresh install, accounting-period rollover,
+# just after `nlbw -c commit`) must still write output. Before R3 the awk had no
+# input file, the script aborted under `set -e` before the mv, and the previous
+# period's .prom stayed in place still reporting available 1 -- stale data
+# indistinguishable from healthy data. The honest result is available 1 with no
+# per-client series: an empty period is not a collector failure.
+printf '%s\n' '{"columns":["family","proto","port","mac","ip","conns","rx_bytes","rx_pkts","tx_bytes","tx_pkts","layer7"],"data":[]}' > "$WORK/empty.json"
+cat > "$WORK/bin/nlbw" <<EOF
+#!/bin/sh
+cat "$WORK/empty.json"
+EOF
+chmod +x "$WORK/bin/nlbw"
+# Seed the previous accounting period's output so we can prove it is replaced.
+printf 'openwrt_client_bytes_total{mac="de:ad:be:ef:00:01",direction="in",service="https"} 12345\n' > "$OUT"
+PATH="$WORK/bin:$PATH" OPENWRT_MONITOR_TEXTFILE_DIR="$WORK/out" \
+  OPENWRT_MONITOR_JSHN_PATH="$WORK/libubox/jshn.sh" \
+  sh "$ROOT/openwrt/scripts/openwrt-monitor-client-traffic.sh" \
+  || { echo "FAIL: empty result set aborted instead of writing output"; exit 1; }
+[ -f "$OUT" ] || { echo "FAIL: empty result set wrote no output"; exit 1; }
+python3 "$ROOT/tests/check_exposition.py" "$OUT" || exit 1
+grep -q '^openwrt_client_traffic_collector_available 1$' "$OUT" || { echo "FAIL: empty period did not report available 1"; exit 1; }
+! grep -q '^openwrt_client_bytes_total{' "$OUT" || { echo "FAIL: empty period emitted per-client series"; exit 1; }
+! grep -q 'de:ad:be:ef:00:01' "$OUT" || { echo "FAIL: previous period's stale series survived an empty run"; exit 1; }
+
 # The collector must refuse a schema change rather than exposing positional
 # values under the wrong names, and must replace any old traffic with only 0.
 printf '%s\n' '{"columns":["wrong"],"data":[]}' > "$WORK/bad.json"

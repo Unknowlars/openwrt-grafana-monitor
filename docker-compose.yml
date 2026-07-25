@@ -28,11 +28,14 @@ services:
     image: grafana/alloy:latest
     container_name: alloy
     ports:
-      - "1234:12345"            # Alloy UI (http://localhost:1234)
+      # Alloy UI (http://localhost:1234), host-loopback only: the UI has no
+      # authentication. Matches how openwrt-ssh-mcp is bound below.
+      - "127.0.0.1:1234:12345"
       - "${SYSLOG_PORT:-514}:514/udp"  # Syslog receiver UDP
       - "${SYSLOG_PORT:-514}:514/tcp"  # Syslog receiver TCP
     volumes:
       - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -111,7 +114,16 @@ services:
         fi
 
         printf ']\n' >> "$$out"
-        exec /usr/bin/alloy run /etc/alloy/config.alloy
+        # Both flags must be passed explicitly. Overriding `command:` replaces
+        # the image's CMD wholesale, which is where --storage.path=/var/lib/alloy/data
+        # comes from; without it Alloy falls back to a cwd-relative data-alloy/
+        # and the remote_write WAL is lost on every restart. Alloy's default
+        # --server.http.listen-addr is 127.0.0.1:12345, i.e. container-loopback,
+        # so the UI port mapping above needs 0.0.0.0 here to be reachable.
+        exec /usr/bin/alloy run \
+          --server.http.listen-addr=0.0.0.0:12345 \
+          --storage.path=/var/lib/alloy/data \
+          /etc/alloy/config.alloy
     environment:
       - ROUTER_IP=${ROUTER_IP:-192.168.0.1}
       - ROUTER_NAME=${ROUTER_NAME:-openwrt}
@@ -153,4 +165,7 @@ services:
 
 volumes:
   lgtm-data:
+    driver: local
+  # Persists the prometheus.remote_write WAL across container recreation.
+  alloy-data:
     driver: local

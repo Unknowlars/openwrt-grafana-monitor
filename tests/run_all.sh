@@ -42,6 +42,9 @@ cmp grafana-dashboard-exports/openwrt-mission-control.json \
 echo "== shell syntax =="
 sh -n openwrt/setup.sh openwrt/scripts/*.sh
 
+echo "== installer upgrade paths =="
+sh tests/test_setup_legacy_crontab.sh
+
 echo "== lua syntax =="
 if command -v luac5.1 >/dev/null 2>&1; then
   for f in openwrt/collectors/*.lua; do luac5.1 -p "$f"; done
@@ -53,6 +56,7 @@ echo "== collector behaviour =="
 sh tests/test_sqm_collector.sh
 sh tests/test_client_traffic.sh
 sh tests/test_client_conntrack.sh
+sh tests/test_wan_quality.sh
 if command -v lua5.1 >/dev/null 2>&1; then
   lua5.1 tests/test_device_traffic.lua
   lua5.1 tests/test_dpi_netifyd.lua

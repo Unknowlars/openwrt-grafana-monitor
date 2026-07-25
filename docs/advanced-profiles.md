@@ -141,6 +141,7 @@ collector, cron job, and files all being correctly deployed. `setup.sh` now
 installs it alongside the other `clients` profile dependencies.
 
 - `openwrt_client_conntrack_entries{mac}`
+- `openwrt_client_conntrack_truncated`
 
 There are no remote-IP, port, IPv6-address, domain, or vendor labels. For 60
 clients this adds 60 series plus its availability gauge. The association
@@ -150,6 +151,14 @@ the number is treated as trustworthy. Flow offload invalidates byte accounting;
 whether it changes *entry occupancy* is a separate router-specific live gate,
 so this repo does not infer it from the traffic result.
 
+Bounded by `CLIENT_CONNTRACK_MAX` (default 256), matching the inventory
+collector's default cap. When `getHostHints` has more known clients than the
+cap, the helper keeps the clients with the highest current conntrack count,
+drops the idle tail first, and emits `openwrt_client_conntrack_truncated 1`.
+Set `CLIENT_CONNTRACK_MAX=<number>` in `/etc/openwrt-grafana-monitor.conf` only
+when the router and Prometheus storage budget can tolerate the extra per-client
+series.
+
 Hostapd's `AP-STA-CONNECTED` and `AP-STA-DISCONNECTED` messages already reach
 Loki through syslog. The Clients dashboard keeps that raw, per-client detail
 only in Loki. The Prometheus companion is deliberately limited to
@@ -157,6 +166,31 @@ only in Loki. The Prometheus companion is deliberately limited to
 gauge: roughly `APs x SSIDs x 2` (about 12 series for two APs and three SSIDs),
 with no MAC label. A no-event single-AP deployment renders an empty Loki
 timeline and zero event count without error.
+
+### SSID label values are sanitized
+
+Every collector that emits an `ssid` label value — `client_inventory.lua`,
+`topology.lua`, `wifi_dethrash.lua`, and
+`openwrt-monitor-client-conntrack.sh` — replaces any character outside
+`[A-Za-z0-9._-]` with `_`. An SSID of `Lab Net"5G` is emitted as
+`ssid="Lab_Net_5G"` on **every** path.
+
+Two reasons: an SSID is operator-supplied free text reaching a label *value*, so
+a `"` or `\` in it would corrupt the exposition line outright; and the shell and
+Lua paths must agree, because the Clients dashboard joins and filters across
+metrics from both (`openwrt_client_info` from Lua, `openwrt_wifi_assoc_events_total`
+from the shell helper). If the two disagree, one physical SSID appears under two
+different names and any `ssid=` filter or join silently matches only one family.
+
+> **Upgrade note.** Before this was fixed the Lua collectors emitted the raw
+> SSID while the shell helper sanitized. If an SSID contains a character outside
+> the class, its `ssid` label value **changes** on the Lua-sourced metrics
+> (`openwrt_client_info`, the topology node/edge ids, the `wifi_mesh` series)
+> at the next scrape. Historical series keep the old value, so a panel spanning
+> the change shows both. Dashboards need no edit — they group by whatever the
+> label holds — but a hand-written query pinning a literal SSID with a space or
+> quote in it must be updated. No provisioned alert rule in
+> `grafana/provisioning/alerting/` matches on a literal SSID.
 
 Bounded by `CLIENT_INVENTORY_MAX` (default 256): clients beyond the cap are
 not exported and `openwrt_client_inventory_truncated` is set to `1`. The

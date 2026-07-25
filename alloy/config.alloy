@@ -72,13 +72,52 @@ prometheus.remote_write "lgtm" {
 // loki.source.syslog adds internal labels like __syslog_message_hostname,
 // __syslog_message_severity, etc. Those __-prefixed labels are removed unless
 // they are renamed through relabel_rules before forwarding.
+//
+// These renames are deliberately an explicit allowlist, not a
+// `labelmap` over `__syslog_(.+)`. The wildcard promoted *every* syslog field
+// to a Loki stream label, including __syslog_message_proc_id — which for
+// OpenWrt logd rfc3164 frames (`tag[pid]: message`) is the process PID. Every
+// restart of dnsmasq, hostapd, netifd, or odhcpd therefore minted a brand-new
+// Loki stream, and dnsmasq restarts on any DHCP or UCI change (setup.sh
+// restarts it too, so running the installer alone rotated the label). That is
+// unbounded stream cardinality on the log path — the same class of problem the
+// metrics path guards against in prometheus.relabel above. Stream churn
+// degrades ingestion and query performance and inflates Loki's index far more
+// than high-cardinality log *content* does. __syslog_message_msg_id had the
+// same problem in principle and was equally useless for stream selection.
+//
+// The label *names* below keep the `message_` prefix the wildcard produced,
+// because that is what the dashboards already select on — `message_severity`
+// and `message_app_name` appear in build_dashboards.py,
+// build_openwrt_mission_control.py, build_openwrt_operations_dashboard.py and
+// the generated provisioning JSON. Renaming them to bare `severity`/`app_name`
+// would silently return no data in every one of those panels.
+//
+// Also intentionally no longer promoted: __syslog_message_hostname (redundant,
+// it already becomes `router` below) and __syslog_connection_* (set per TCP
+// connection, never queried).
 
 loki.relabel "openwrt_syslog" {
   forward_to = [loki.write.lgtm.receiver]
 
+  // regex "(.+)" on each rule so a frame missing the field does not get an
+  // empty-string label, matching the `router` rule's guard below.
   rule {
-    action = "labelmap"
-    regex  = "__syslog_(.+)"
+    source_labels = ["__syslog_message_severity"]
+    regex         = "(.+)"
+    target_label  = "message_severity"
+  }
+
+  rule {
+    source_labels = ["__syslog_message_facility"]
+    regex         = "(.+)"
+    target_label  = "message_facility"
+  }
+
+  rule {
+    source_labels = ["__syslog_message_app_name"]
+    regex         = "(.+)"
+    target_label  = "message_app_name"
   }
 
   // Prefer the sending device's own hostname over the single ROUTER_NAME

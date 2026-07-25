@@ -22,6 +22,15 @@ mkdir -p "$OUTDIR"
 rm -f "$OUTFILE".[0-9]*
 trap 'rm -f "$TMPFILE" "$RAWFILE" "$ROWSFILE"' EXIT
 
+# Created unconditionally: the record loop below is the only writer, so a
+# legitimately empty nlbwmon result set (fresh install, accounting-period
+# rollover, just after `nlbw -c commit`) would otherwise leave the awk at the
+# bottom with no input file, aborting under `set -e` before the mv and leaving
+# the *previous* period's .prom in place still reporting available 1. An empty
+# period is not a collector failure, so the honest output is
+# `..._collector_available 1` with no per-client series.
+: > "$ROWSFILE"
+
 write_headers() {
   printf '# HELP openwrt_client_traffic_collector_available Whether nlbwmon client traffic accounting was collected successfully.\n'
   printf '# TYPE openwrt_client_traffic_collector_available gauge\n'

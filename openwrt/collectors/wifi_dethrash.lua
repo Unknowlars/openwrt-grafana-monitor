@@ -15,6 +15,18 @@ local function hostname()
   return value:gsub("[^%w%._%-]", "_")
 end
 
+-- Same character class as client_inventory.lua / topology.lua sanitize() and as
+-- the `tr -c` class in openwrt-monitor-client-conntrack.sh. SSID is
+-- operator-supplied free text reaching a label *value*, so it must be
+-- sanitized on every path or one physical SSID gets two different label values
+-- and a `"` in the name corrupts the exposition line outright.
+local function sanitize(value, fallback)
+  if value == nil or value == "" then return fallback end
+  value = tostring(value):gsub("[^%w%._%-]", "_")
+  if value == "" then return fallback end
+  return value
+end
+
 local function resolve_ip(ip)
   if not ok_nixio then return ip end
   local ok, name = pcall(nixio.getnameinfo, ip)
@@ -53,6 +65,7 @@ local function scrape()
         if wifi then
           local ok_ssid, ssid = pcall(wifi.ssid, ifname)
           if not ok_ssid then ssid = "" end
+          ssid = sanitize(ssid, "")
           local labels = {device = device, ifname = ifname, ssid = ssid}
           table.insert(iface_by_device[device], {ifname = ifname, ssid = ssid})
           local ok_value, value = pcall(wifi.txpower, ifname)
@@ -80,7 +93,11 @@ local function scrape()
     local cursor = uci.cursor()
     cursor:foreach("wireless", "wifi-iface", function(section)
       local device = section.device or ""
-      local ssid = section.ssid or ""
+      -- Must be sanitized with the same class as the iwinfo-sourced ssid above:
+      -- the `iface.ssid == ssid` match below compares the two, so sanitizing
+      -- only one side would fail to resolve ifname for any SSID containing a
+      -- character outside the class (a space is enough).
+      local ssid = sanitize(section.ssid, "")
       local ifname = ""
       for _, iface in ipairs(iface_by_device[device] or {}) do
         if iface.ssid == ssid then ifname = iface.ifname break end
@@ -100,7 +117,10 @@ local function scrape()
     local associated = metric("wifi_usteer_associated_clients", "gauge")
     local ap = hostname()
     for node, details in pairs(usteer) do
-      local name = ap .. "/" .. (details.ssid or node)
+      -- Only the SSID component is sanitized; the "/" separator and the
+      -- already-sanitized hostname prefix are kept, so the `ap` label keeps its
+      -- existing "<router>/<ssid>" shape.
+      local name = ap .. "/" .. sanitize(details.ssid or node, "unknown")
       local labels = {ap = name}
       roam_source(labels, (details.roam_events or {}).source or 0)
       roam_target(labels, (details.roam_events or {}).target or 0)

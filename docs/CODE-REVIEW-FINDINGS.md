@@ -799,6 +799,25 @@ given `-q` and short default, but worth a `--timeout` flag.
 **[P3] `last_public_ip_file` written unescaped to `/tmp`; not a security issue but a TOCTOU on `cat`**
 `openwrt-monitor-wan-info.sh:34, 38`
 
+### `openwrt-monitor-wan-quality.sh`
+
+This script was **not covered by this document's 2026-07-23 pass**. It was
+reviewed on 2026-07-25 and its findings live in
+`docs/CODE-REVIEW-REMEDIATION-PLAN.md` as **R4** (temp file staged inside the
+textfile dir for a 15+ second window every 5 minutes, with no `trap` and no
+leftover sweep). R4 is fixed; regression coverage is
+`tests/test_wan_quality.sh`.
+
+R4 was originally filed as a duplicate-series `[P0]`. A live read-only session
+on 2026-07-25 **disproved that**: the textfile collector globs `*.prom` only, so
+the staged `.prom.<pid>` is never scraped and no series is double-exposed. The
+real defect is leftover-file accumulation in a tmpfs directory (P2). See the
+live-correction block in R4 for the measurement. **The same "scraped as a second
+copy" reasoning in this document's staging findings, and in the comments at
+`openwrt-monitor-filesystem.sh:8-12`, `openwrt-monitor-sqm.sh:8-11`,
+`openwrt-monitor-firewall-counters.sh:8-11`, is wrong for the same reason** and
+should be re-checked before being cited.
+
 ### `openwrt-monitor-wifi-radio.sh`
 
 **[P2] `openwrt_wifi_station_connected_seconds{station=...}` uppercases the MAC**

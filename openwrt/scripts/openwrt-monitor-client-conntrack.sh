@@ -8,29 +8,41 @@
 set -e
 set +u
 
+CONF="/etc/openwrt-grafana-monitor.conf"
+[ -r "$CONF" ] && . "$CONF"
+
 OUTDIR="${OPENWRT_MONITOR_TEXTFILE_DIR:-/var/prometheus}"
 OUTFILE="$OUTDIR/openwrt_client_conntrack.prom"
 TMPFILE="/tmp/.openwrt-monitor-openwrt_client_conntrack.$$"
 HOSTSFILE="/tmp/.openwrt-monitor-client-hosts.$$"
 CONNTRACKFILE="/tmp/.openwrt-monitor-conntrack.$$"
+CONNTRACK_ROWSFILE="/tmp/.openwrt-monitor-conntrack-rows.$$"
 EVENTSFILE="${OPENWRT_MONITOR_ASSOC_EVENTS_STATE:-/etc/openwrt-wifi-assoc-events}"
 EVENTSTMP="${EVENTSFILE}.tmp.$$"
 JSHN_PATH="${OPENWRT_MONITOR_JSHN_PATH:-/usr/share/libubox/jshn.sh}"
 UBUS_BIN="${OPENWRT_MONITOR_UBUS_BIN:-ubus}"
 CONNTRACK_BIN="${OPENWRT_MONITOR_CONNTRACK_BIN:-conntrack}"
 LOGREAD_BIN="${OPENWRT_MONITOR_LOGREAD_BIN:-logread}"
+CLIENT_CONNTRACK_MAX="${CLIENT_CONNTRACK_MAX:-256}"
 AP_NAME=$(cat /proc/sys/kernel/hostname 2>/dev/null | tr -c 'A-Za-z0-9._-' '_' | sed 's/_$//')
 AP_NAME="${AP_NAME:-unknown}"
 
+case "$CLIENT_CONNTRACK_MAX" in
+  ''|*[!0-9]*) CLIENT_CONNTRACK_MAX=256 ;;
+esac
+[ "$CLIENT_CONNTRACK_MAX" -gt 0 ] 2>/dev/null || CLIENT_CONNTRACK_MAX=256
+
 mkdir -p "$OUTDIR"
 rm -f "$OUTFILE".[0-9]*
-trap 'rm -f "$TMPFILE" "$HOSTSFILE" "$HOSTSFILE.ifaces" "$HOSTSFILE.events" "$CONNTRACKFILE" "$EVENTSTMP"' EXIT
+trap 'rm -f "$TMPFILE" "$HOSTSFILE" "$HOSTSFILE.ifaces" "$HOSTSFILE.events" "$CONNTRACKFILE" "$CONNTRACK_ROWSFILE" "$EVENTSTMP"' EXIT
 
 headers() {
   printf '# HELP openwrt_client_conntrack_collector_available Whether per-client conntrack entries were collected successfully.\n'
   printf '# TYPE openwrt_client_conntrack_collector_available gauge\n'
   printf '# HELP openwrt_client_conntrack_entries Current conntrack entries containing a known client IP.\n'
   printf '# TYPE openwrt_client_conntrack_entries gauge\n'
+  printf '# HELP openwrt_client_conntrack_truncated Whether per-client conntrack entries were truncated by CLIENT_CONNTRACK_MAX.\n'
+  printf '# TYPE openwrt_client_conntrack_truncated gauge\n'
   printf '# HELP openwrt_wifi_assoc_events_collector_available Whether bounded WiFi association events were collected successfully.\n'
   printf '# TYPE openwrt_wifi_assoc_events_collector_available gauge\n'
   printf '# HELP openwrt_wifi_assoc_events_total Cumulative WiFi association events by AP, SSID, and event type.\n'
@@ -116,9 +128,25 @@ emit_conntrack() {
     END {
       for (client in mac) printf "%s\t%d\n", client, count[client] + 0
     }
-  ' "$HOSTSFILE" "$CONNTRACKFILE" | sort -k1,1 | while IFS='	' read -r mac count; do
+  ' "$HOSTSFILE" "$CONNTRACKFILE" > "$CONNTRACK_ROWSFILE"
+
+  set -- $(wc -l < "$CONNTRACK_ROWSFILE")
+  total="${1:-0}"
+
+  # Keep the busiest known clients and drop the idle tail first. The final sort
+  # keeps exposition deterministic without making truncation depend on MAC order.
+  sort -k2,2nr -k1,1 "$CONNTRACK_ROWSFILE" |
+    awk -v max="$CLIENT_CONNTRACK_MAX" 'NR <= max' |
+    sort -k1,1 |
+    while IFS='	' read -r mac count; do
     printf 'openwrt_client_conntrack_entries{mac="%s"} %s\n' "$mac" "$count"
   done
+
+  if [ "$total" -gt "$CLIENT_CONNTRACK_MAX" ]; then
+    printf 'openwrt_client_conntrack_truncated 1\n'
+  else
+    printf 'openwrt_client_conntrack_truncated 0\n'
+  fi
 }
 
 # Persist only 12-ish aggregate counters and a bounded fingerprint cache for

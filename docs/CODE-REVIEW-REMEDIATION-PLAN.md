@@ -58,16 +58,16 @@ any order or in parallel.
 
 ### Batch A — outright breakage
 
-- [ ] **R1** `[P0]` Alloy loses its `prometheus.remote_write` WAL on every restart; UI port mapping cannot work — `docker-compose.yml:36-113`
-- [ ] **R2** `[P0]` `setup.sh` aborts mid-install on the legacy-crontab upgrade path it exists to serve — `openwrt/setup.sh:411-415` **[reproduced]**
-- [ ] **R3** `[P0]` Empty nlbwmon result set leaves a stale `.prom` reporting `available 1` — `openwrt/scripts/openwrt-monitor-client-traffic.sh:159` **[reproduced]**
-- [ ] **R4** `[P0]` `wan-quality` stages a partial exposition file inside the textfile dir for 15+ seconds — `openwrt/scripts/openwrt-monitor-wan-quality.sh:8`
+- [x] **R1** `[P0]` Alloy loses its `prometheus.remote_write` WAL on every restart; UI port mapping cannot work — `docker-compose.yml:36-113`
+- [x] **R2** `[P0]` `setup.sh` aborts mid-install on the legacy-crontab upgrade path it exists to serve — `openwrt/setup.sh:411-415` **[reproduced]**
+- [x] **R3** `[P0]` Empty nlbwmon result set leaves a stale `.prom` reporting `available 1` — `openwrt/scripts/openwrt-monitor-client-traffic.sh:159` **[reproduced]**
+- [x] **R4** `[P0]` `wan-quality` stages a partial exposition file inside the textfile dir for 15+ seconds — `openwrt/scripts/openwrt-monitor-wan-quality.sh:8`
 
 ### Batch B — cardinality and label correctness
 
-- [ ] **R5** `[P0]` Syslog PID promoted to a Loki stream label — unbounded stream cardinality — `alloy/config.alloy:78-81`
-- [ ] **R6** `[P1]` SSID label values diverge between the shell helper and the Lua collectors — `openwrt/scripts/openwrt-monitor-client-conntrack.sh:143`
-- [ ] **R7** `[P1]` `openwrt_client_conntrack_entries` has no cardinality cap — `openwrt/scripts/openwrt-monitor-client-conntrack.sh:117`
+- [x] **R5** `[P0]` Syslog PID promoted to a Loki stream label — unbounded stream cardinality — `alloy/config.alloy:78-81`
+- [x] **R6** `[P1]` SSID label values diverge between the shell helper and the Lua collectors — `openwrt/scripts/openwrt-monitor-client-conntrack.sh:143`
+- [x] **R7** `[P1]` `openwrt_client_conntrack_entries` has no cardinality cap — `openwrt/scripts/openwrt-monitor-client-conntrack.sh:117`
 
 ### Batch C — installer and staging robustness
 
@@ -330,6 +330,41 @@ refuses to do this and says why in a comment block — see
 `openwrt-monitor-filesystem.sh:8-12`, `openwrt-monitor-sqm.sh:8-11`,
 `openwrt-monitor-firewall-counters.sh:8-11`.
 
+> **Live correction (2026-07-25, authorized read-only router session).** The
+> duplicate-series claim below is **false on this deployment, and the `[P0]`
+> severity is wrong — this is housekeeping, not silently-wrong metrics.**
+>
+> Measured against `openwrt-main` (OpenWrt 25.12.5 r33051, ASUS RT-AX53U,
+> ramips/mt7621) running the **pre-fix** script: 144 polls of
+> `http://192.168.0.1:9100/metrics` at 1-second resolution over 340 s captured
+> one confirmed `wan-quality` run (detected by the gateway jitter value
+> changing, at 11:10:12) and found **zero duplicated series** at any point. An
+> earlier 96-poll/2 s pass agreed. `tests/check_exposition.py --url` against
+> both routers also reported no duplicates (2806 and 1926 samples).
+>
+> The negative result is airtight rather than merely absent: the exporter
+> demonstrably *does* read `.prom` textfiles, because `openwrt_wan_probe_*`
+> reaches the exposition only through that path — yet during the ~13 s window
+> when `openwrt_wan_quality.prom.<pid>` provably existed beside it, nothing was
+> duplicated. Therefore the textfile collector globs **`*.prom` only** and never
+> reads the staged `.prom.<pid>`. `docs/openwrt-setup.md:280` independently
+> describes the source as `/var/prometheus/*.prom`.
+>
+> **What is actually wrong** is the narrower P2 the section already notes at the
+> end: no `trap` and no sweep, so a crash, reboot, or `killall` mid-run strands
+> a partial file in a tmpfs directory permanently. The fix as prescribed is
+> still correct and was applied unchanged — staging outside the textfile dir
+> matches every sibling helper and does not depend on the exporter's glob
+> staying as it is.
+>
+> **This invalidates the same reasoning elsewhere.** The identical
+> "scraped as a second copy" claim appears in the pre-existing comments at
+> `openwrt-monitor-filesystem.sh:8-12`, `openwrt-monitor-sqm.sh:8-11`,
+> `openwrt-monitor-firewall-counters.sh:8-11`, and
+> `openwrt-monitor-client-traffic.sh:22`, and in `R9` below. Those were left
+> untouched (out of scope) but are wrong for the same reason. Re-check before
+> citing any of them as motivation.
+
 **Why this file is the worst offender.** The header block is written at `:148`
 and the `mv` is at `:159`, with up to three serial `ping -c 5` runs in between.
 That is a **15-second-plus window, every 5 minutes**, during which
@@ -423,22 +458,53 @@ useless as a stream label.
 
 **Fix.** Replace the wildcard `labelmap` with an explicit rename list. Keep
 only fields that are genuinely low-cardinality and useful for stream selection
-— `hostname`, `severity`, `facility`, `app_name`:
+— `severity`, `facility`, `app_name`:
+
+> **Correction (applied 2026-07-25).** The snippet originally printed here
+> renamed these to **bare** `severity` / `facility` / `app_name`. That is
+> **wrong and would have silently broken every log panel in the repo.** A
+> `labelmap` over `__syslog_(.+)` yields label names *with* the `message_`
+> prefix (`__syslog_message_severity` → `message_severity`), and that is what
+> the dashboards already select on — 12 call sites across
+> `build_dashboards.py`, `build_openwrt_mission_control.py`,
+> `build_openwrt_operations_dashboard.py`, and the generated provisioning JSON.
+> Renaming to the bare form returns no data in all of them, with no error. The
+> `message_` prefix is load bearing; keep it. Verified by grep before the edit,
+> and `tests/test_alloy_syslog_labels.py` now fails against the bare-name
+> variant.
 
 ```
 rule {
   source_labels = ["__syslog_message_severity"]
-  target_label  = "severity"
+  regex         = "(.+)"
+  target_label  = "message_severity"
 }
 rule {
   source_labels = ["__syslog_message_facility"]
-  target_label  = "facility"
+  regex         = "(.+)"
+  target_label  = "message_facility"
 }
 rule {
   source_labels = ["__syslog_message_app_name"]
-  target_label  = "app_name"
+  regex         = "(.+)"
+  target_label  = "message_app_name"
 }
 ```
+
+The `regex = "(.+)"` guard on each rule mirrors the `router` rule below, so a
+frame missing the field is left without the label rather than getting an
+empty-string one.
+
+**Actual consumer audit (run 2026-07-25, before editing).** Only
+`message_severity` and `message_app_name` are selected anywhere.
+`message_proc_id`, `message_msg_id`, `message_facility`, `message_hostname`,
+and `connection_*` have **no** consumers in the generators, provisioning
+dashboards, or `grafana/provisioning/alerting/`. (The `severity:` keys in
+`openwrt-alerts.yaml` are Grafana alert annotation labels, unrelated to the
+syslog stream label.) `message_facility` was kept anyway — it is bounded and
+already present, so dropping it would be an extra unrequested behavior change.
+`message_hostname` is dropped as redundant: it already becomes `router`.
+`__syslog_connection_*` (set per TCP connection) also stops being promoted.
 
 Keep the existing `__syslog_message_hostname` → `router` rule at `:84-88`
 exactly as-is, including its `regex = "(.+)"` non-empty guard and its comment —
@@ -469,8 +535,28 @@ If a dashboard or alert selects on a label you are about to drop, keep it as a
 **structured metadata** field or leave it in the log line rather than as a
 stream label.
 
+Note the grep above is too loose to act on directly: bare `severity` matches the
+unrelated `severity:` annotation keys in
+`grafana/provisioning/alerting/openwrt-alerts.yaml`, and bare `app_name` matches
+nothing that is actually a syslog selector. Search for the **prefixed** forms
+(`message_severity`, `message_app_name`, …) to get the real consumer list.
+
+**Status (2026-07-25): implemented.** The static consumer audit was run and is
+summarized above. The two live pre-checks in this section — the Alloy
+`loki_source_syslog` metrics dump and the Loki `/labels` query — were **not**
+run; both need a running stack, which was not authorized. Consequence: the
+label set was enumerated from `loki.source.syslog`'s documented rfc3164 fields
+and from consumer grep, **not** observed from a live Loki. If a label is in use
+that appears nowhere in the repo (an operator's ad-hoc saved query, an
+Explore bookmark), this change would break it silently. Worth running
+`curl -s 'http://localhost:3100/loki/api/v1/labels'` against the live stack
+before or shortly after deploying.
+
 **Docs to update:** `docs/monitoring-host-setup.md` and
-`docs/troubleshooting.md` if either documents the syslog label set.
+`docs/troubleshooting.md` if either documents the syslog label set. — Done:
+neither documented it, so a new "Syslog stream labels" subsection was added to
+`docs/troubleshooting.md` recording the promoted set and the stream-identity
+caveat below.
 
 **Risk:** dropping a stream label changes stream identity, so existing streams
 end and new ones begin. Historical logs stay queryable under their old labels.
@@ -515,6 +601,37 @@ truth rather than inventing a third:
    produce **byte-identical** output for the same input. Verify with a shared
    fixture containing a space, a `"`, a `\`, a `'`, and a non-ASCII byte.
 
+> **Corrections (applied 2026-07-25).**
+>
+> - **Step 3 was unnecessary — no shell change was made.** The two classes were
+>   *already* identical: Lua `[^%w%._%-]` and shell `tr -c 'A-Za-z0-9._-'` both
+>   permit exactly alphanumerics, `.`, `_`, `-`. Verified byte-for-byte over
+>   `My Home`, `Say"Hi`, `back\slash`, `it's`, `Café-5G`, `Ünïcode`,
+>   `ok.name-1_2`, and `!!!` — all eight agree, including one `_` per byte of a
+>   multi-byte UTF-8 character. The divergence was never the class; it was that
+>   the Lua collectors did not sanitize SSID **at all**. Editing the `tr` class
+>   would have *introduced* a divergence.
+> - **Step 2's sites were replaced by their single upstream source.** Patching
+>   `topology.lua:231` and `:246` alone would have been wrong: that file also
+>   builds ssid ids at `:241`, `:284`, and `:285`, so sanitizing only two of five
+>   would make the node ids and edge ids disagree with each other. Both
+>   collectors build their iface table in exactly one place
+>   (`client_inventory.lua` `wifi_ifaces()`, `topology.lua` its equivalent, both
+>   `ssid = config.ssid or ""`), so the fix is applied there and every downstream
+>   use inherits it.
+> - **Two sites the task did not name were also fixed.**
+>   `wifi_dethrash.lua:83` (`section.ssid` from UCI) **had** to be: `:86`
+>   compares it against the iwinfo-sourced SSID from `:56` to resolve `ifname`,
+>   so sanitizing one side only would have broken that match for any SSID with a
+>   space. `wifi_dethrash.lua:103` feeds an SSID into the `ap` label
+>   (`hostname .. "/" .. ssid`) with the same corrupt-the-line exposure; only the
+>   SSID component is sanitized, so the `"<router>/<ssid>"` shape is preserved.
+>   `wifi_dethrash.lua` had no `sanitize()` helper, so one was added matching the
+>   other two files (it already used the same class inline in `hostname()`).
+> - The alert-rule check the task asks for was run: **no** provisioned rule in
+>   `grafana/provisioning/alerting/` matches on a literal SSID string (the one
+>   `ssid` hit there is prose in a description).
+
 Do not "fix" this by removing the shell sanitizing — that would leave raw
 quotes reaching exposition output on both paths, which is worse.
 
@@ -529,6 +646,17 @@ literal SSID string.
 `tests/test_client_conntrack.sh` and `tests/test_client_inventory.lua`,
 asserting identical emitted `ssid=` values. This is the only way the two paths
 stay converged.
+
+**Done.** `tests/fixtures/wireless_status.json` was already shared by both tests
+(and by `tests/test_topology.lua`), so a `wlan3` interface named `Lab Net"5G` —
+a space and a double quote — was added to it rather than creating a new fixture.
+Both tests now assert the emitted value is `Lab_Net_5G`, with a cross-reference
+comment in each pointing at the other so the pair cannot drift. Adding an
+interface moved `test_topology.lua`'s *printed* count from 11 nodes/10 edges to
+12/11 (the new SSID node and its radio edge); that count is reported, not
+asserted, so no topology assertion changed. Confirmed the assertions fail
+against the pre-fix collectors, with the raw value rendering as the corrupt
+`ssid="Lab Net"5G"`.
 
 ---
 
@@ -578,6 +706,14 @@ and sharing the knob's documentation.
 **Test to add.** Extend `tests/test_client_conntrack.sh` with a fixture of
 `CLIENT_CONNTRACK_MAX + 10` hosts; assert exactly `CLIENT_CONNTRACK_MAX`
 `openwrt_client_conntrack_entries` series and the truncation gauge set to 1.
+
+**Status (2026-07-25): implemented.** The helper now sources
+`/etc/openwrt-grafana-monitor.conf`, validates `CLIENT_CONNTRACK_MAX`, defaults
+it to 256, sorts by descending count before applying the cap, and emits
+`openwrt_client_conntrack_truncated` on successful conntrack scrapes. The final
+exposition remains sorted by MAC for deterministic output. The related
+topology.lua cap mentioned above was left open because this pass was scoped to
+R7.
 
 ---
 

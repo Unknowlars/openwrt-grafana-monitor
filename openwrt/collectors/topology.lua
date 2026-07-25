@@ -111,7 +111,11 @@ local function wifi_ifaces(connection)
         local config = type(iface) == "table" and iface.config or {}
         ifaces[ifname] = {
           device = device,
-          ssid = config.ssid or "",
+          -- Sanitized at the single source so the ssid node ids, edge ids, and
+          -- node titles built from it downstream all agree, and so the value
+          -- matches the one client_inventory.lua and
+          -- openwrt-monitor-client-conntrack.sh emit for the same SSID.
+          ssid = sanitize(config.ssid, ""),
           band = band or "",
         }
       end

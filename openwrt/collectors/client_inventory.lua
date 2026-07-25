@@ -227,7 +227,14 @@ local function wifi_ifaces(connection)
         local network = type(config.network) == "table" and config.network[1] or nil
         ifaces[ifname] = {
           device = device,
-          ssid = config.ssid or "",
+          -- Sanitized here at the single source rather than at each use, so
+          -- every consumer of this table agrees. The shell helper
+          -- openwrt-monitor-client-conntrack.sh applies the same character
+          -- class to the same ubus value; the two must stay byte-identical or
+          -- one physical SSID appears under two different label values and
+          -- joins between openwrt_client_info and the assoc-event metrics
+          -- silently return nothing.
+          ssid = sanitize(config.ssid, ""),
           band = band or "",
           network = network,
         }
