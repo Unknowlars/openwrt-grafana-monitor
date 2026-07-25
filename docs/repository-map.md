@@ -76,8 +76,11 @@ sh tests/run_all.sh
 - `docs/troubleshooting.md`: known runtime symptoms and fixes.
 - `docs/client-topology-and-netflow-plan.md`: long historical implementation
   plan; read targeted sections only.
-- `docs/CODE-REVIEW-FINDINGS.md`: long review backlog; read targeted findings
-  only.
+- `docs/CODE-REVIEW-FINDINGS.md`: long review backlog (2026-07-23, report-only);
+  read targeted findings only.
+- `docs/CODE-REVIEW-REMEDIATION-PLAN.md`: prescriptive fix plan and task list
+  from the 2026-07-25 review (task IDs `R1`-`R13`, `M1`-`M2`). Complements, does
+  not supersede, `CODE-REVIEW-FINDINGS.md`.
 
 ## Normally avoid by default
 
