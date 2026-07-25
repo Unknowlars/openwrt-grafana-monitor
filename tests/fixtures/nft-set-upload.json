@@ -1,0 +1,19 @@
+{
+  "nftables": [
+    {"metainfo": {"version": "1.0.9", "release_name": "Old Doc Yak #3", "json_schema_version": 1}},
+    {"set": {
+      "family": "inet",
+      "name": "openwrt_device_upload",
+      "table": "fw4",
+      "type": "ipv4_addr",
+      "handle": 12,
+      "flags": ["dynamic", "timeout"],
+      "timeout": 86400,
+      "elem": [
+        {"elem": {"val": "192.168.0.122", "timeout": 86400, "expires": 82113, "counter": {"packets": 1841, "bytes": 402913}}},
+        {"elem": {"val": "192.168.0.154", "timeout": 86400, "expires": 71002, "counter": {"packets": 90124, "bytes": 88213771}}},
+        {"elem": {"val": "192.168.0.206", "timeout": 86400, "expires": 12000, "counter": {"packets": 12, "bytes": 1440}}}
+      ]
+    }}
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "A4:83:E7:AA:BB:CC": {
+    "name": "living-room-tv",
+    "ipaddrs": ["192.168.0.42"],
+    "ip6addrs": ["fd00::42", "2001:db8::42"]
+  },
+  "2a:11:22:33:44:55": {
+    "name": "phone-random",
+    "ipaddrs": ["192.168.0.77"],
+    "ip6addrs": ["fe80::abcd"]
+  },
+  "78:8c:b5:93:fb:a9": {
+    "name": "C100",
+    "ipaddrs": ["192.168.0.122"],
+    "ip6addrs": []
+  },
+  "f4:a3:10:5a:e9:74": {
+    "name": null,
+    "ipaddrs": ["192.168.0.206"],
+    "ip6addrs": []
+  },
+  "aa:bb:cc:dd:ee:01": {
+    "name": "printer",
+    "ipaddrs": ["192.168.0.50"],
+    "ip6addrs": []
+  },
+  "60:CF:84:F2:A4:30": {
+    "name": "OpenWrt.lan",
+    "ipaddrs": ["192.168.0.1"],
+    "ip6addrs": []
+  }
+}

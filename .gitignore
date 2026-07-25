@@ -8,11 +8,7 @@ old/
 .codex/
 claude/
 __pycache__/
-tests
-!tests/
-tests/*
-!tests/test_client_conntrack.sh
-!tests/test_mcp_policy.py
+tests/__pycache__/
 skills
 grafana_docs
 screenshot
