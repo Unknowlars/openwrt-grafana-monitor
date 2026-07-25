@@ -6,11 +6,33 @@ complete file inventory.
 ## Runtime stack
 
 - `docker-compose.yml`: runs Grafana OTEL-LGTM, Grafana Alloy, and the optional
-  `openwrt-ssh-mcp` profile.
+  `openwrt-ssh-mcp` and `netflow` profiles. The `netflow` profile adds Akvorado
+  (inlet/outlet/orchestrator/console), Kafka, ClickHouse, and Redis; it is off
+  by default and costs several GB of RAM.
 - `alloy/config.alloy`: reads generated file-SD targets, scrapes OpenWrt metrics,
   drops unbounded NAT traffic, receives syslog, and forwards telemetry.
-- `grafana/provisioning/datasources/`: provisioned Prometheus, Loki, and Tempo.
+- `grafana/provisioning/datasources/`: provisioned Prometheus, Loki, Tempo, and
+  ClickHouse. The ClickHouse entry is only reachable under the `netflow`
+  profile; it is provisioned unconditionally because the provisioning mount
+  cannot be made conditional.
 - `grafana/provisioning/alerting/`: provisioned alerting resources.
+
+## Optional NetFlow profile
+
+- `akvorado/akvorado.yaml`: Akvorado orchestrator config — Kafka, ClickHouse
+  schema and retention, inlet listeners, interface classifiers.
+- `akvorado/exporters.yaml.example`: template for the static interface metadata.
+  The operator's copy is gitignored; without it the orchestrator refuses to
+  start, which is deliberate — an unresolvable ifIndex discards every flow
+  silently.
+- `akvorado/geoip/`: committed empty mount point for optional GeoIP databases.
+  The orchestrator watches `/usr/share/GeoIP` even when GeoIP is optional, so
+  the directory must exist before the netflow profile starts.
+- `akvorado/clickhouse/`: ClickHouse server config (system-log TTLs, Prometheus
+  endpoint).
+- `openwrt/netflow/softflowd.config`: UCI template rendered per capture
+  interface by `setup.sh`.
+- `docs/netflow-akvorado.md`: setup, architecture, and the coverage limits.
 
 ## Router-side OpenWrt code
 
@@ -27,6 +49,7 @@ complete file inventory.
 - `openwrt/scripts/`: textfile helper scripts run from cron. Helpers should
   stage files under `/tmp` and atomically `mv` into the textfile directory.
 - `openwrt/nftables/`: optional traffic accounting rules.
+- `openwrt/netflow/`: softflowd UCI template for the optional `netflow` profile.
 - `openwrt/nlbwmon/`: protocol mapping used by client traffic collection.
 
 ## Dashboards
@@ -37,6 +60,8 @@ complete file inventory.
 - `build_openwrt_advanced_dashboard.py`: source for Advanced v2.
 - `build_openwrt_topology_dashboard.py`: source for Topology v2.
 - `build_openwrt_mission_control.py`: source for Mission Control.
+- `build_openwrt_netflow_dashboard.py`: source for NetFlow v2. Mostly ClickHouse
+  SQL rather than PromQL; its Pipeline Health tab is the PromQL part.
 - `build_oui_table.py`: regenerates `openwrt/lua/oui_data.lua` from the IEEE
   MA-L registry. Needs network access; run it only when refreshing vendors.
 - `grafana/provisioning/dashboards/`: generated provisioned dashboard JSON.
@@ -70,6 +95,11 @@ MCP/router mutations require explicit authorization and `confirm=true`.
   PromQL rather than Lua. Skips itself when docker is unavailable.
 - `tests/topology_exposition.lua`: fixture-driven harness that renders the
   topology collector's output as Prometheus exposition for that test.
+- `tests/test_netflow_config.py`: executes setup.sh's own softflowd rendering
+  block and pins placeholder substitution, per-interface pid/socket uniqueness,
+  and the self-capture pcap filter.
+- `tests/test_netflow_health.sh`: fixture test for the NetFlow exporter health
+  collector, including its fail-closed paths.
 - `tests/fixtures/`: fixture inputs for collector tests.
 - `tests/check_exposition.py`: optional authorized live duplicate-series check.
 
@@ -87,7 +117,12 @@ sh tests/run_all.sh
 - `README.md`: operator quick start and high-level project description.
 - `docs/openwrt-setup.md`: router install details.
 - `docs/advanced-profiles.md`: optional profile behavior.
+- `docs/netflow-akvorado.md`: NetFlow/Akvorado setup and its coverage limits.
 - `docs/monitoring-host-setup.md`: Docker host setup.
+- `docs/kubernetes-monitoring-setup.md`: using an existing Kubernetes
+  Prometheus/Loki instead of the Compose stack. Its Step 4 mirrors the
+  `prometheus.relabel` block in `alloy/config.alloy`; the two must stay in
+  step, or the k8s store and the Compose store disagree on MAC casing.
 - `docs/troubleshooting.md`: known runtime symptoms and fixes.
 - `docs/client-topology-and-netflow-plan.md`: long historical implementation
   plan; read targeted sections only.

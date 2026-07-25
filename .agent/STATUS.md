@@ -52,16 +52,72 @@ will run against.
 - Grafana UI has not been re-screenshotted since the rework;
   `OpenWrt-Topology-screenshots/` still shows the old broken graph.
 
+## NetFlow via Akvorado live state (2026-07-25)
+
+The gateway and monitoring host now have working NetFlow data. The router-side
+softflowd config renders `option interface '8:br-lan'`, matching
+`/sys/class/net/br-lan/ifindex`. `softflowd` is running, exporting flows, and
+reported zero libpcap drops, zero interface drops, zero forced expiries, and zero
+export failures in the user's live check.
+
+Akvorado is healthy after the GeoIP filename cleanup. Live ClickHouse checks
+confirmed fresh rows in `flows`, populated `SrcAS`/`DstAS`, populated source and
+destination ports, and AS dictionary names. The dashboard source is
+`build_openwrt_netflow_dashboard.py`; it now generates a richer 48-panel
+`openwrt-netflow-v2.json` with source/destination AS, source/destination
+country, source/destination ports, service-class buckets, AS/country matrices,
+and pipeline-health proof.
+
+Remaining caveats:
+
+- Live Grafana rendering/screenshots of `openwrt-netflow-v2.json` have not been
+  captured in this status file.
+- `openwrt_flow_offload_enabled{mode="hw"}` is enabled, so flow totals are a
+  lower bound unless the operator disables hardware flow offload.
+- softflowd CPU cost on this MT7621-class router has still not been measured
+  with the M10 load-test protocol in `docs/client-topology-and-netflow-plan.md`.
+- For additional routers, keep `akvorado/exporters.yaml` in sync with the real
+  ifIndex; a mismatch still drops every flow from that exporter.
+
+### Kubernetes guide
+
+`docs/kubernetes-monitoring-setup.md` was rewritten alongside this work. Its
+Step 4 (`metricRelabelings`) is a hand-maintained mirror of the
+`prometheus.relabel "openwrt_bound_cardinality"` block in `alloy/config.alloy`.
+Nothing enforces that they stay in sync — if you add or change a relabel rule
+there, update the Kubernetes doc too, or the two stores diverge on MAC casing
+and MAC-keyed dashboards silently empty against one of them.
+
+The manifests in that guide are illustrative and are not exercised by
+`tests/run_all.sh`. What was checked offline: YAML parses, the relabel rules
+match the Alloy block one-for-one, the embedded Alloy config passes `alloy fmt`,
+and every metric name cited exists in the repo. Nothing was applied to a
+cluster.
+
+### Design corrections from an operator's working Elastic setup (2026-07-25)
+
+A previously-working softflowd config (capturing `br-lan`, exporting v9 to an
+Elastic collector) surfaced three real errors in the first implementation, all
+now fixed: WAN-vs-LAN capture point, `InIfBoundary` being unusable with
+softflowd, and `TCPFlags` being disabled by default in Akvorado's schema. See
+`.agent/CHANGELOG.md` for the detail. The lesson worth keeping: softflowd is a
+single-interface exporter with no notion of ingress vs egress, so anything in
+this stack that reasons about interface direction is wrong by construction.
+
 ## Validation
 
 Static/offline checks passed on 2026-07-25:
 
 - `sh tests/run_all.sh` (includes the new `tests/test_topology_promql.sh`)
-- `python3 -m unittest discover -s tests -p 'test_*.py'` (27 tests)
+- `python3 -m unittest discover -s tests -p 'test_*.py'` (35 tests)
 - `sh -n openwrt/setup.sh openwrt/scripts/*.sh tests/*.sh`
 - `luac5.1 -p openwrt/collectors/*.lua openwrt/lua/*.lua`
-- `docker compose config`
-- `alloy fmt` and `alloy validate` against `grafana/alloy:latest`
+- `docker compose config` and `docker compose --profile netflow config`
+- `alloy fmt` against `grafana/alloy:latest`
+- `akvorado orchestrator --check --dump` against
+  `quay.io/akvorado/akvorado:2.4.1`, confirming the config parses, the
+  `!include` of `exporters.yaml` splices into `outlet.metadata.providers`, and
+  `default-sampling-rate` normalises to `::/0: 1`
 
 `tests/test_topology_promql.sh` runs the dashboard's shipped node-graph queries
 against a throwaway VictoriaMetrics container over exposition the real collector

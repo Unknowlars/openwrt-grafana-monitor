@@ -88,6 +88,22 @@ The dashboards include variables for `router`, `wan_interface`, `wifi24_interfac
 | 4318 | OTel Collector | OTLP HTTP |
 | 1234 | Alloy UI | Alloy debug/config UI (bound to `127.0.0.1` only) |
 
+Added by the optional `netflow` profile (`docker compose --profile netflow up -d`):
+
+| Port | Service | Purpose |
+|------|---------|---------|
+| 2055/UDP | Akvorado inlet | NetFlow v5/v9 from the routers. Bound on all interfaces |
+| 4739/UDP | Akvorado inlet | IPFIX. Bound on all interfaces |
+| 6343/UDP | Akvorado inlet | sFlow. Bound on all interfaces |
+| 8081 | Akvorado console | Flow explorer UI, **unauthenticated**, bound to `127.0.0.1` only |
+| 8123 | ClickHouse | HTTP interface for debugging, bound to `127.0.0.1` only |
+
+This profile also adds Kafka and ClickHouse and takes the stack from roughly
+1 GB to 5-6 GB of RAM. It is off by default. It requires the
+`grafana-clickhouse-datasource` Grafana plugin, which is installed at startup
+via `GF_PLUGINS_PREINSTALL` and needs outbound internet on first run. See
+[netflow-akvorado.md](netflow-akvorado.md).
+
 ---
 
 ## Data persistence

@@ -18,7 +18,8 @@ python3 -m py_compile build_dashboards.py \
   build_openwrt_advanced_dashboard.py \
   build_openwrt_clients_dashboard.py \
   build_openwrt_topology_dashboard.py \
-  build_openwrt_mission_control.py
+  build_openwrt_mission_control.py \
+  build_openwrt_netflow_dashboard.py
 
 echo "== dashboards regenerate deterministically =="
 python3 build_openwrt_advanced_dashboard.py
@@ -26,6 +27,7 @@ python3 build_openwrt_clients_dashboard.py
 python3 build_openwrt_operations_dashboard.py
 python3 build_openwrt_topology_dashboard.py
 python3 build_openwrt_mission_control.py
+python3 build_openwrt_netflow_dashboard.py
 
 echo "== generated copies are byte-identical =="
 cmp grafana-dashboard-exports/openwrt-advanced-v2.json \
@@ -38,6 +40,8 @@ cmp grafana-dashboard-exports/openwrt-topology-v2.json \
     grafana/provisioning/dashboards/openwrt-topology-v2.json
 cmp grafana-dashboard-exports/openwrt-mission-control.json \
     grafana/provisioning/dashboards/openwrt-mission-control.json
+cmp grafana-dashboard-exports/openwrt-netflow-v2.json \
+    grafana/provisioning/dashboards/openwrt-netflow-v2.json
 
 echo "== shell syntax =="
 sh -n openwrt/setup.sh openwrt/scripts/*.sh
@@ -60,6 +64,7 @@ sh tests/test_client_conntrack.sh
 sh tests/test_inodes.sh
 sh tests/test_wan_quality.sh
 sh tests/test_wan_info.sh
+sh tests/test_netflow_health.sh
 if command -v lua5.1 >/dev/null 2>&1; then
   lua5.1 tests/test_device_traffic.lua
   lua5.1 tests/test_dpi_netifyd.lua

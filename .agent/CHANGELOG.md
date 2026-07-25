@@ -2,6 +2,184 @@
 
 ## 2026-07-25
 
+- Changed: Expanded the generated NetFlow v2 dashboard from 31 to 48 panels now
+  that live Akvorado/GeoIP data is available.
+  - `build_openwrt_netflow_dashboard.py` now adds a stronger hero row, peak
+    bitrate and ASN coverage tiles, source-port and destination-port rankings,
+    service-class buckets, local service ports, source/destination AS rankings,
+    source/destination country rankings, AS and country matrices, and city-level
+    enrichment when a city database is present.
+  - Country grouping now strips Akvorado/ClickHouse `FixedString(2)` NUL bytes
+    so missing values do not render as `\0\0`.
+  - Top-N subqueries now keep the router filter inside the subquery so
+    multi-router selections do not leak global top ports/ASNs into a scoped
+    panel.
+- Reason: The first live GeoIP checks proved `SrcAS`, `DstAS`, country, and port
+  columns are populated, so the dashboard could move from "pipeline bring-up"
+  coverage to a richer operator/demo view that showcases the actual flow data.
+- Validation: `python3 build_openwrt_netflow_dashboard.py` regenerated both
+  dashboard copies with matching SHA-256
+  `4a046b214251b834cae8344725b38f49bcd7bda64f504fe890ef6e99e760a368`;
+  `python3 -m py_compile build_openwrt_netflow_dashboard.py` passed;
+  `python3 -m unittest tests.test_netflow_config tests.test_setup_package_selection`
+  passed (11 tests); `docker compose config` passed; `sh tests/run_all.sh`
+  passed, including byte-identical generated dashboard copies. Live ClickHouse
+  spot checks returned rows for source countries, source ASNs, source ports,
+  service buckets, and the AS conversation matrix.
+- Remaining risk: The JSON has not been rendered in a live Grafana browser
+  session or screenshotted in this changelog entry. Hardware flow offload remains
+  enabled on the router, so byte totals are still lower bounds.
+
+- Changed: Fixed first NetFlow deploy failures found on 2026-07-25.
+  - `docker-compose.yml` now mounts committed `akvorado/geoip/` at
+    `/usr/share/GeoIP` for `akvorado-orchestrator`. Akvorado watches that
+    directory even with `geoip.optional: true`, so an absent directory made the
+    orchestrator restart with `cannot watch database directory`.
+  - `openwrt/setup.sh` now selects the conntrack CLI package by package manager:
+    `apk` installs `conntrack` directly, while `opkg` tries `conntrack-tools`
+    then `conntrack`. This avoids the scary but non-fatal OpenWrt 25.12/APK
+    `conntrack-tools (no such package)` message.
+  - Added `tests/test_setup_package_selection.py` and updated the NetFlow,
+    router setup, advanced profile, and repository-map docs.
+- Changed: Fixed the next live NetFlow blocker from the same deploy. Akvorado
+  received packets and the outlet decoded NetFlow v9 records, but rejected all
+  flows with `input and output interfaces missing`. `openwrt/setup.sh` now reads
+  each capture interface's ifIndex from sysfs and `openwrt/netflow/softflowd.config`
+  renders `option interface '<ifindex>:<iface>'`, which softflowd uses to fill
+  both NetFlow v9 interface fields.
+- Reason: The monitoring-host profile failed live because the GeoIP directory
+  did not exist, and the router setup printed a misleading package error even
+  though setup completed. After those were fixed, the flow pipeline still
+  stopped before ClickHouse because softflowd had no interface indexes in its
+  export records.
+- Validation: `python3 -m unittest tests.test_setup_package_selection` passed
+  (2 tests); `python3 -m unittest tests.test_netflow_config` passed (9 tests);
+  `sh -n openwrt/setup.sh openwrt/scripts/*.sh` passed; `docker compose
+  --profile netflow config` rendered the `/usr/share/GeoIP` bind mount; and
+  `docker compose --profile netflow run --rm --no-deps akvorado-orchestrator
+  orchestrator --check /etc/akvorado/akvorado.yaml` exited 0.
+- Remaining risk: Restarting the live netflow profile and re-running router
+  setup were not performed by this changelog entry.
+
+- Added: NetFlow tier via Akvorado, behind a `netflow` Docker Compose profile
+  (off by default; adds Kafka + ClickHouse, taking the stack from ~1 GB to
+  ~5-6 GB RAM). New `akvorado/akvorado.yaml` (validated against
+  `quay.io/akvorado/akvorado:2.4.1` with `orchestrator --check --dump`),
+  `akvorado/exporters.yaml.example` (operator copy is gitignored; the
+  orchestrator refuses to start without it, deliberately, because an
+  unresolvable ifIndex makes Akvorado discard every flow silently), and
+  `akvorado/clickhouse/`. Retention cut from upstream's carrier defaults to
+  raw 7d / 1m 7d / 1h 1y. `default-sampling-rate: 1` set because Akvorado
+  rejects flows carrying no sampling rate and softflowd does not reliably
+  advertise one.
+- Added: `netflow` router profile in `openwrt/setup.sh` — installs `softflowd`,
+  renders `openwrt/netflow/softflowd.config` per capture interface (WAN by
+  default, `NETFLOW_INTERFACES` to widen), installs
+  `openwrt/scripts/openwrt-monitor-netflow-health.sh` on a 1-minute cron, and
+  enables the service. The template overrides two stock package defaults that
+  fail silently: `enabled '0'` (starts nothing) and `sampling_rate '100'`
+  (1-in-100 sampled byte counts). Carries the mandatory pcap filter excluding
+  the collector endpoint, without which softflowd captures and re-exports its
+  own NetFlow packets.
+- Changed: softflowd template gained `option timeout 'maxlife=60'`
+  (`NETFLOW_TIMEOUTS`) after checking softflowd's own defaults. A flow is only
+  exported when it expires, and the built-in defaults are tcp/general 1h and
+  maxlife **one week** (`softflowd.h DEFAULT_MAXIMUM_LIFETIME = 3600*24*7`), so
+  an ongoing transfer would have contributed nothing to the dashboard until it
+  ended and then landed as one spike stamped at expiry time — every throughput
+  graph wrong in both shape and placement. `tests/test_netflow_config.py`
+  asserts a bounded maxlife so this cannot silently regress.
+- Changed: verified the softflowd UCI option names against the official
+  OpenWrt `softflowd.init`. `filter`, `timeout`, `sampling_rate`, `max_flows`,
+  `track_ipv6` and `export_version` all map as assumed; the ruralroots fork's
+  `bpf_filter` naming does **not** apply to the packaged version. No change
+  needed, but the pcap filter silently doing nothing was the risk.
+- Changed: corrected two invented Akvorado metric names in the dashboard
+  against upstream's troubleshooting guide —
+  `akvorado_outlet_core_flows_total` → `akvorado_outlet_core_forwarded_flows_total`
+  and `akvorado_outlet_core_flows_errors_total` →
+  `akvorado_outlet_core_received_flows_total` plus a regex-matched error
+  breakdown. Added `akvorado_inlet_flow_input_udp_in_dropped_packets_total`
+  (kernel receive-buffer drops, which upstream states make byte and packet
+  counts unreliable) and a "Collector Error Reasons" panel that surfaces
+  Akvorado's own `error` label, naming `metadata missing` (the predicted
+  ifIndex failure) directly.
+- Changed: NetFlow capture defaults to the LAN bridge (`br-lan`,
+  `TRAFFIC_LAN_INTERFACE`), not the WAN device. WAN capture is post-SNAT, so
+  every outbound flow would carry the router's public address as its source and
+  per-client attribution -- the main reason to collect per-flow data at all --
+  would be lost. Capturing both would double-count every packet. Prompted by an
+  operator's known-good softflowd config, which used `br-lan`.
+- Changed: the dashboard derives internal/external and direction from
+  `SrcNetRole`/`DstNetRole` instead of `InIfBoundary`. softflowd sets
+  `if_index_in` and `if_index_out` to the SAME value -- the ifIndex of its one
+  capture device (`netflow9.c`: `dc[0]->if_index_in = dc[0]->if_index_out =
+  htonl(ifidx)`) -- so interface boundary is constant across the whole dataset
+  and any filter on it matches every row or none. `validate_dashboard()` now
+  rejects any query mentioning `IfBoundary`; verified the guard fires.
+  "Throughput by Boundary" became "Throughput by Direction"
+  (outbound/inbound/local).
+- Changed: `akvorado.yaml` sets `schema.enabled: [TCPFlags]`. That column is
+  `Disabled: true` by default in Akvorado's schema
+  (`common/schema/definition.go`), so the TCP-flags panel queried a column that
+  did not exist. Confirmed enabled via `orchestrator --check --dump`.
+- Corrected: earlier comments described the missing pcap filter as a
+  "self-amplifying" feedback loop. It is not -- every export packet shares one
+  5-tuple, so they collapse into a single flow entry at fixed trivial cost. The
+  filter is accounting hygiene (keep monitoring traffic out of top-talker
+  panels), not blowup prevention. Comments in `softflowd.config` and
+  `tests/test_netflow_config.py` corrected.
+- Added: `openwrt_netflow_*` health metrics — exporter liveness via the
+  softflowctl control socket, `openwrt_netflow_ifindex` (what Akvorado must be
+  told), and the two counters that make flow data quietly wrong rather than
+  obviously broken: `pcap_packets_dropped_total` (libpcap ring overflow) and
+  `flows_force_expired_total` (flow-table overflow truncating byte counts).
+- Added: `build_openwrt_netflow_dashboard.py` (34 panels, 4 tabs). Mostly
+  ClickHouse SQL — flow records never enter Prometheus — with a PromQL
+  "Pipeline Health" tab. Its `validate_dashboard()` asserts every ClickHouse
+  `sum()`/`sumIf()` over `Bytes`/`Packets` is multiplied by `SamplingRate`
+  (19 aggregates covered); omitting it under-reports silently by exactly the
+  sampling factor.
+- Changed: `docker-compose.yml` sets `GF_PLUGINS_PREINSTALL` for the ClickHouse
+  datasource plugin. otel-lgtm has no `docker-entrypoint.sh`, so
+  `GF_INSTALL_PLUGINS` is **not** honoured; `/otel-lgtm/run-grafana.sh` composes
+  with `GF_PLUGINS_PREINSTALL` instead. Verified by inspecting the image.
+- Changed: `alloy/config.alloy` scrapes Akvorado inlet/outlet and ClickHouse as
+  `job="akvorado"` / `job="clickhouse"` — deliberately not `job="openwrt"`,
+  which every existing dashboard filters on.
+- Changed: `grafana/provisioning/datasources/datasources.yaml` provisions a
+  ClickHouse datasource unconditionally (the provisioning mount cannot be made
+  conditional on a compose profile). Unreachable and harmless with the profile
+  down.
+- Changed: `docs/client-topology-and-netflow-plan.md` §3.6, §10.4 and M11
+  marked superseded. The flowlogs-pipeline/Loki collector design was replaced;
+  the §3.5 softflowd analysis and the M10 CPU gate still stand, and **M10 has
+  still not been run**.
+- Changed: rewrote `docs/kubernetes-monitoring-setup.md`, which had drifted far
+  enough to be actively wrong. Fixes: the install command copied only
+  `setup.sh`, which the installer now rejects outright ("expects the whole
+  openwrt/ directory"), so step 2 failed for anyone following it; the
+  ServiceMonitor had no `metricRelabelings`, so a Kubernetes deployment got
+  neither the `node_nat_traffic` drop (unbounded src x dst cross-product) nor
+  the mac/bssid/station lowercasing that the Clients, Topology and WiFi Client
+  Detail joins require — this is the same divergence STATUS.md records between
+  `vm.k8s.home.arpa` and the local stack; the syslog relabel used
+  `labelmap __syslog_(.+)`, the exact PID-into-stream-label anti-pattern
+  `alloy/config.alloy` documents rejecting, and had no
+  `__syslog_message_hostname` -> `router` rule so multi-AP logs all collapsed
+  onto one router; the dashboard list named four dashboards when there are ten;
+  and the `v1 Endpoints` object it told users to create is deprecated in
+  Kubernetes 1.33+. Added multi-router guidance, profile selection, and a
+  NetFlow/Akvorado section. Verified: all three YAML blocks parse, the four
+  metricRelabelings match `alloy/config.alloy` one-for-one, the embedded Alloy
+  config passes `alloy fmt`, and every metric name cited exists in the repo.
+- Note: `softflowd` captures via libpcap, so traffic forwarded by the switch
+  ASIC under hardware flow offload is invisible to it and flow totals are
+  incomplete on offloading hardware. Left visible rather than worked around:
+  the dashboard's "Flow Data Complete" tile reads from the existing
+  `openwrt_flow_offload_enabled{mode="hw"}`, and `NETFLOW_DISABLE_HW_OFFLOAD=1`
+  is opt-in.
+
 - Changed: Reworked the topology node graph for multi-router deployments.
   `topology.lua` now detects gateway vs downstream AP, so only a gateway emits
   `internet`/`modem:`/`router:`/`port:` nodes; node ids became

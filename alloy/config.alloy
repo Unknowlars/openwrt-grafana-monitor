@@ -228,3 +228,46 @@ prometheus.scrape "alloy_self" {
   scrape_interval = "30s"
   forward_to      = [prometheus.remote_write.lgtm.receiver]
 }
+
+// ── Akvorado / NetFlow health (optional, `--profile netflow`) ───────────────
+//
+// These are operational metrics ABOUT the flow pipeline — packets received,
+// flows forwarded, flows dropped for missing interface metadata. The flow
+// records themselves live in ClickHouse and are queried by Grafana directly;
+// nothing here carries per-flow data into Prometheus.
+//
+// job is deliberately "akvorado"/"clickhouse", NOT "openwrt": every existing
+// dashboard filters on job="openwrt", and reusing it would inject these series
+// into router panels.
+//
+// When the netflow profile is down these hostnames do not resolve and the
+// scrapes fail. That is expected — Alloy logs a resolution error per interval
+// and carries on; no other pipeline is affected. Remove these blocks if you
+// have decided against NetFlow and want the log noise gone.
+
+prometheus.scrape "akvorado_inlet" {
+  targets = [
+    {"__address__" = "akvorado-inlet:8080", "job" = "akvorado", "component" = "inlet"},
+  ]
+  metrics_path    = "/api/v0/inlet/metrics"
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.lgtm.receiver]
+}
+
+prometheus.scrape "akvorado_outlet" {
+  targets = [
+    {"__address__" = "akvorado-outlet:8080", "job" = "akvorado", "component" = "outlet"},
+  ]
+  metrics_path    = "/api/v0/outlet/metrics"
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.lgtm.receiver]
+}
+
+prometheus.scrape "clickhouse" {
+  targets = [
+    {"__address__" = "clickhouse:8123", "job" = "clickhouse"},
+  ]
+  metrics_path    = "/metrics"
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.lgtm.receiver]
+}

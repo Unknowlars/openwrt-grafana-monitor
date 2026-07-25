@@ -122,6 +122,8 @@ These are useful depending on your router and feature set:
 - `prometheus-node-exporter-lua-nft-counters`: nftables counters on newer OpenWrt releases
 - `lua-cjson`: JSON parsing for the traffic and DPI profiles
 - `nftables-json`: JSON output support for router-local nftables set inspection
+- `conntrack`: per-client conntrack CLI on OpenWrt 25.12/apk; OpenWrt 24.10/opkg
+  may use `conntrack-tools`, with a fallback to `conntrack`
 - `netifyd`: optional DPI engine used by the `dpi` profile
 - `prometheus-node-exporter-lua-ethtool`: lower-level Ethernet/NIC stats
 - `tc` (from `ip-full` on some builds): detailed SQM/qdisc counters used by `openwrt-monitor-sqm.sh`
@@ -136,8 +138,17 @@ These are useful depending on your router and feature set:
 - `PING_TARGET`: packet-loss and WAN internet probe target; default `1.1.1.1`
 - `DNS_PROBE_HOST`: DNS resolution probe host; default `openwrt.org`
 - `DNS_PROBE_TIMEOUT`: DNS probe ping fallback timeout in seconds; default `5`
-- `OPENWRT_MONITOR_PROFILE`: `core`, `traffic`, `wifi_mesh`, `dpi`, or `full`; default `core`
+- `OPENWRT_MONITOR_PROFILE`: `core`, `traffic`, `wifi_mesh`, `dpi`, `clients`, `netflow`, or `full`; also accepts a comma-separated list of the non-`full` names; default `core`
 - `TRAFFIC_LAN_INTERFACE`: LAN bridge counted by the traffic profile; default `br-lan`
+
+NetFlow profile only (see [netflow-akvorado.md](netflow-akvorado.md) before enabling):
+
+- `NETFLOW_INTERFACES`: devices softflowd captures on, space- or comma-separated; default `br-lan`. The setup script reads each device's ifIndex and passes `ifindex:interface` to softflowd so Akvorado can resolve input/output interfaces
+- `NETFLOW_PORT`: Akvorado inlet UDP port; default `2055`. Must match `NETFLOW_PORT` in `.env`
+- `NETFLOW_SAMPLING_RATE`: softflowd `-s`; default `1` (every packet). The stock OpenWrt default is `100`; if you raise this, raise `default-sampling-rate` in `akvorado/akvorado.yaml` to match or byte counts read low by exactly that factor
+- `NETFLOW_TIMEOUTS`: softflowd `-t`; default `maxlife=60`. softflowd's own defaults are tcp/general 1h and maxlife **one week**, and a flow is only exported when it expires — so without this an ongoing transfer shows nothing until it ends, then lands as one spike at expiry time. The stock init script maps exactly one `-t`
+- `NETFLOW_MAX_FLOWS`: softflowd flow-table cap; default `8192`. Overflow force-expires flows and truncates byte counts silently
+- `NETFLOW_DISABLE_HW_OFFLOAD`: `0` or `1`; default `0`. softflowd captures via libpcap, so traffic forwarded by the switch ASIC under hardware flow offload is invisible to it. `1` turns offload off for complete accounting at the cost of routing throughput
 
 ## Manual Setup
 
@@ -310,6 +321,7 @@ These repo-local files are part of the supported setup and should be treated as 
 - `openwrt/collectors/topology.lua`
 - `openwrt/lua/oui.lua` and `openwrt/lua/oui_data.lua` (installed to
   `/usr/lib/lua/` as `openwrt_oui.lua` / `openwrt_oui_data.lua`)
+- `openwrt/netflow/softflowd.config` (rendered to `/etc/config/softflowd`)
 - `openwrt/scripts/openwrt-monitor-device-status.sh`
 - `openwrt/scripts/openwrt-monitor-filesystem.sh`
 - `openwrt/scripts/openwrt-monitor-packet-loss.sh`
@@ -317,6 +329,7 @@ These repo-local files are part of the supported setup and should be treated as 
 - `openwrt/scripts/openwrt-monitor-wan-info.sh`
 - `openwrt/scripts/openwrt-monitor-wan-quality.sh`
 - `openwrt/scripts/openwrt-monitor-dhcp-pool.sh`
+- `openwrt/scripts/openwrt-monitor-netflow-health.sh`
 - `openwrt/scripts/openwrt-monitor-link-health.sh`
 - `openwrt/scripts/openwrt-monitor-softnet.sh`
 - `openwrt/scripts/openwrt-monitor-ipv6-health.sh`

@@ -21,12 +21,49 @@
 #   PING_TARGET                Packet-loss and WAN internet probe target; default: 1.1.1.1
 #   DNS_PROBE_HOST             DNS resolution probe host; default: openwrt.org
 #   DNS_PROBE_TIMEOUT          DNS probe ping fallback timeout; default: 5
-#   OPENWRT_MONITOR_PROFILE    core|traffic|wifi_mesh|dpi|clients|full, or a
-#                              comma-separated list of the non-full names
+#   OPENWRT_MONITOR_PROFILE    core|traffic|wifi_mesh|dpi|clients|netflow|full,
+#                              or a comma-separated list of the non-full names
 #                              (e.g. "traffic,wifi_mesh"); default: core.
 #                              "full" enables everything and cannot be
 #                              combined with other names.
 #   TRAFFIC_LAN_INTERFACE      LAN bridge for per-device nftables counters; default: br-lan
+#   NETFLOW_PORT               UDP port the Akvorado inlet listens on for
+#                              NetFlow; default: 2055. Only used by the
+#                              `netflow` profile.
+#   NETFLOW_INTERFACES         Space- or comma-separated devices softflowd
+#                              captures on; default: TRAFFIC_LAN_INTERFACE
+#                              (br-lan). One softflowd instance per device.
+#                              The LAN bridge, NOT the WAN device: traffic on
+#                              WAN is already SNATed, so every outbound flow
+#                              would carry the router's public address as its
+#                              source and per-client attribution would be lost
+#                              entirely. Capturing on the bridge sees pre-NAT
+#                              addresses. Do not capture both -- each packet
+#                              would be counted twice.
+#   NETFLOW_SAMPLING_RATE      softflowd `-s`; default: 1 (capture every packet).
+#                              The stock OpenWrt UCI default is 100. If you
+#                              raise this, raise `default-sampling-rate` in
+#                              akvorado/akvorado.yaml to match or byte counts
+#                              read low by exactly this factor.
+#   NETFLOW_TIMEOUTS           softflowd `-t`; default: maxlife=60. softflowd's
+#                              own defaults are tcp/general 1h and maxlife 1
+#                              WEEK, and a flow is only exported when it
+#                              expires -- so without this an ongoing transfer
+#                              shows up as nothing at all until it ends, then
+#                              as one spike stamped at expiry time. The stock
+#                              init script maps exactly one -t.
+#   NETFLOW_MAX_FLOWS          softflowd flow-table cap; default: 8192. Overflow
+#                              silently force-expires flows; watch the
+#                              openwrt_netflow_flows_dropped_total metric.
+#   NETFLOW_DISABLE_HW_OFFLOAD 0|1; default: 0 (leave offload alone). softflowd
+#                              captures via libpcap, so traffic forwarded by the
+#                              switch ASIC under hardware flow offload is
+#                              INVISIBLE to it and flow data is incomplete.
+#                              Setting 1 turns hardware offload off, which makes
+#                              accounting complete at the cost of routing
+#                              throughput. Left off by default because that is
+#                              an operator's call, not a monitoring tool's; the
+#                              dashboard shows the incomplete state either way.
 #   CLIENT_INVENTORY_MAX       Cap on distinct clients the `clients` profile's
 #                              inventory collector will export per scrape (and
 #                              on how many first-seen records it retains
@@ -54,6 +91,12 @@ DNS_PROBE_TIMEOUT="${DNS_PROBE_TIMEOUT:-5}"
 OPENWRT_MONITOR_PROFILE="${OPENWRT_MONITOR_PROFILE:-core}"
 TRAFFIC_LAN_INTERFACE="${TRAFFIC_LAN_INTERFACE:-br-lan}"
 CLIENT_INVENTORY_MAX="${CLIENT_INVENTORY_MAX:-256}"
+NETFLOW_PORT="${NETFLOW_PORT:-2055}"
+NETFLOW_INTERFACES="${NETFLOW_INTERFACES:-}"
+NETFLOW_SAMPLING_RATE="${NETFLOW_SAMPLING_RATE:-1}"
+NETFLOW_TIMEOUTS="${NETFLOW_TIMEOUTS:-maxlife=60}"
+NETFLOW_MAX_FLOWS="${NETFLOW_MAX_FLOWS:-8192}"
+NETFLOW_DISABLE_HW_OFFLOAD="${NETFLOW_DISABLE_HW_OFFLOAD:-0}"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 COLLECTOR_SRC_DIR="$SCRIPT_DIR/collectors"
 HELPER_SRC_DIR="$SCRIPT_DIR/scripts"
@@ -90,6 +133,16 @@ pkg_install_optional() {
   case "$PKG_MANAGER" in
     apk) apk add "$@" ;;
     opkg) opkg install "$@" ;;
+  esac
+}
+
+install_conntrack_cli() {
+  case "$PKG_MANAGER" in
+    # OpenWrt 25.12/APK ships the CLI as `conntrack`; trying the older
+    # `conntrack-tools` name first prints a scary "no such package" error even
+    # though the fallback succeeds.
+    apk) pkg_install_optional conntrack ;;
+    opkg) pkg_install_optional conntrack-tools || pkg_install_optional conntrack ;;
   esac
 }
 
@@ -201,13 +254,13 @@ esac
 # wrong; it is rejected here anyway to keep the input one unambiguous shape.
 case "$OPENWRT_MONITOR_PROFILE" in
   *[!A-Za-z0-9_,]*|''|*,|,*|*,,*)
-    die "OPENWRT_MONITOR_PROFILE must be a comma-separated list of: core, traffic, wifi_mesh, dpi, clients (or the single word full)" ;;
+    die "OPENWRT_MONITOR_PROFILE must be a comma-separated list of: core, traffic, wifi_mesh, dpi, clients, netflow (or the single word full)" ;;
 esac
 OLD_IFS=$IFS
 IFS=,
 for _profile_token in $OPENWRT_MONITOR_PROFILE; do
   case "$_profile_token" in
-    core|traffic|wifi_mesh|dpi|clients) ;;
+    core|traffic|wifi_mesh|dpi|clients|netflow) ;;
     full)
       if [ "$OPENWRT_MONITOR_PROFILE" != "full" ]; then
         IFS=$OLD_IFS
@@ -216,7 +269,7 @@ for _profile_token in $OPENWRT_MONITOR_PROFILE; do
       ;;
     *)
       IFS=$OLD_IFS
-      die "OPENWRT_MONITOR_PROFILE must be a comma-separated list of: core, traffic, wifi_mesh, dpi, clients (or the single word full) — got '$_profile_token'"
+      die "OPENWRT_MONITOR_PROFILE must be a comma-separated list of: core, traffic, wifi_mesh, dpi, clients, netflow (or the single word full) — got '$_profile_token'"
       ;;
   esac
 done
@@ -226,12 +279,64 @@ case "$CLIENT_INVENTORY_MAX" in
   ''|*[!0-9]*|0) die "CLIENT_INVENTORY_MAX must be a positive integer" ;;
 esac
 
+if profile_enabled netflow; then
+  NETFLOW_INTERFACE_SPECS=""
+  case "$NETFLOW_PORT" in
+    ''|*[!0-9]*|0) die "NETFLOW_PORT must be a positive integer" ;;
+  esac
+  case "$NETFLOW_SAMPLING_RATE" in
+    ''|*[!0-9]*|0) die "NETFLOW_SAMPLING_RATE must be a positive integer (1 = capture every packet)" ;;
+  esac
+  case "$NETFLOW_MAX_FLOWS" in
+    ''|*[!0-9]*|0) die "NETFLOW_MAX_FLOWS must be a positive integer" ;;
+  esac
+  # Substituted into a UCI value and then into a softflowd -t argument. Allow
+  # only what a timeout spec can contain, and reject the quote characters that
+  # would let it break out of the single-quoted option.
+  case "$NETFLOW_TIMEOUTS" in
+    ''|*[!A-Za-z0-9=.,_-]*) die "NETFLOW_TIMEOUTS must be a softflowd timeout spec such as maxlife=60" ;;
+  esac
+  case "$NETFLOW_DISABLE_HW_OFFLOAD" in
+    0|1) ;;
+    *) die "NETFLOW_DISABLE_HW_OFFLOAD must be 0 or 1" ;;
+  esac
+
+  # Commas are accepted for symmetry with OPENWRT_MONITOR_PROFILE and
+  # ROUTER_TARGETS; softflowd config generation below iterates on whitespace.
+  NETFLOW_INTERFACES=$(printf '%s' "$NETFLOW_INTERFACES" | tr ',' ' ')
+  if [ -z "$(printf '%s' "$NETFLOW_INTERFACES" | tr -d ' ')" ]; then
+    # The LAN bridge, deliberately, not the WAN device. softflowd captures with
+    # libpcap at the device, and on WAN that is *after* SNAT: every outbound
+    # flow would carry the router's public address as its source, so "which
+    # client is using the bandwidth" -- the whole point of per-flow data on a
+    # home network -- would be unanswerable. The bridge sees pre-NAT addresses.
+    NETFLOW_INTERFACES="$TRAFFIC_LAN_INTERFACE"
+  fi
+  for _iface in $NETFLOW_INTERFACES; do
+    # The device name is substituted into /etc/config/softflowd, into pid and
+    # control-socket paths, and into a pcap filter expression. Restrict it to
+    # what a Linux netdev name can actually contain.
+    case "$_iface" in
+      *[!A-Za-z0-9_.-]*|'') die "NETFLOW_INTERFACES entries must contain only letters, numbers, dots, underscores, or hyphens — got '$_iface'" ;;
+    esac
+    [ -e "/sys/class/net/$_iface" ] || die "NETFLOW_INTERFACES names '$_iface', which is not a network device on this router. softflowd would fail to start."
+    read -r _ifindex < "/sys/class/net/$_iface/ifindex" || die "cannot read ifIndex for NETFLOW_INTERFACES entry '$_iface'"
+    case "$_ifindex" in
+      ''|*[!0-9]*) die "invalid ifIndex for NETFLOW_INTERFACES entry '$_iface': $_ifindex" ;;
+    esac
+    NETFLOW_INTERFACE_SPECS="$NETFLOW_INTERFACE_SPECS $_ifindex:$_iface"
+  done
+fi
+
 log "==> OpenWrt Grafana Monitor setup"
 log "    Monitoring host: $MONITORING_HOST"
 log "    Package manager: $PKG_MANAGER"
 log "    Exporter interface: $EXPORTER_LISTEN_INTERFACE"
 log "    Syslog: $MONITORING_HOST:$SYSLOG_PORT/$SYSLOG_PROTO"
 log "    Monitoring profile: $OPENWRT_MONITOR_PROFILE"
+if profile_enabled netflow; then
+  log "    NetFlow: $NETFLOW_INTERFACES -> $MONITORING_HOST:$NETFLOW_PORT (v9, sampling 1:$NETFLOW_SAMPLING_RATE, -t $NETFLOW_TIMEOUTS)"
+fi
 log ""
 
 # ── Install packages ──────────────────────────────────────────────────────────
@@ -253,6 +358,15 @@ if profile_enabled traffic; then
   log "==> Installing nftables traffic dependencies..."
   if ! pkg_install_optional nftables-json; then
     log "    WARNING: nftables-json is unavailable; per-device traffic metrics will remain unavailable"
+  fi
+fi
+
+if profile_enabled netflow; then
+  # softflowd is the only NetFlow exporter in the stock OpenWrt feeds (pmacct,
+  # ipt-netflow, ipfixprobe and nprobe are all absent). It pulls in libpcap.
+  log "==> Installing NetFlow exporter (softflowd)..."
+  if ! pkg_install_optional softflowd; then
+    log "    WARNING: softflowd is unavailable; NetFlow export will remain unavailable"
   fi
 fi
 
@@ -295,9 +409,9 @@ if profile_enabled clients; then
   fi
   # openwrt-monitor-client-conntrack.sh prefers the `conntrack` CLI and falls
   # back to procfs conntrack rows when available. Package names vary across
-  # OpenWrt feeds, so try the common CLI providers before accepting degraded
-  # conntrack-only availability.
-  if ! pkg_install_optional conntrack-tools && ! pkg_install_optional conntrack; then
+  # OpenWrt feeds; select the quiet known name first for the active package
+  # manager before accepting degraded conntrack-only availability.
+  if ! install_conntrack_cli; then
     log "    WARNING: conntrack CLI packages are unavailable; per-client conntrack counts will use procfs when available or report unavailable"
   fi
 fi
@@ -339,6 +453,8 @@ DNS_PROBE_TIMEOUT="$DNS_PROBE_TIMEOUT"
 OPENWRT_MONITOR_PROFILE="$OPENWRT_MONITOR_PROFILE"
 TRAFFIC_LAN_INTERFACE="$TRAFFIC_LAN_INTERFACE"
 CLIENT_INVENTORY_MAX="$CLIENT_INVENTORY_MAX"
+NETFLOW_INTERFACES="$NETFLOW_INTERFACES"
+NETFLOW_PORT="$NETFLOW_PORT"
 EOF
 
 install_file "$COLLECTOR_SRC_DIR/dnsmasq.lua" /usr/lib/lua/prometheus-collectors/dnsmasq.lua 0644
@@ -354,6 +470,47 @@ if profile_enabled traffic; then
   esac
   sed "s/__LAN_INTERFACE__/$TRAFFIC_LAN_INTERFACE/g" \
     "$SCRIPT_DIR/nftables/openwrt-device-traffic.nft" > /etc/nftables.d/openwrt-device-traffic.nft
+fi
+
+if profile_enabled netflow; then
+  install_file "$HELPER_SRC_DIR/openwrt-monitor-netflow-health.sh" /usr/bin/openwrt-monitor-netflow-health.sh 0755
+
+  # Rendered wholesale rather than merged: /etc/config/softflowd is entirely
+  # owned by this profile, and the interface list can shrink between runs, so
+  # appending would leave orphaned sections exporting from devices the operator
+  # removed. Staged next to the target because /tmp is a separate filesystem on
+  # OpenWrt and an mv across it would not be atomic.
+  log "==> Writing /etc/config/softflowd for: $NETFLOW_INTERFACES"
+  : > /etc/config/softflowd.new
+  for netflow_spec in $NETFLOW_INTERFACE_SPECS; do
+    netflow_ifindex=${netflow_spec%%:*}
+    netflow_iface=${netflow_spec#*:}
+    sed -e "s/__IFINDEX__/$netflow_ifindex/g" \
+        -e "s/__IFACE__/$netflow_iface/g" \
+        -e "s/__COLLECTOR_HOST__/$MONITORING_HOST/g" \
+        -e "s/__COLLECTOR_PORT__/$NETFLOW_PORT/g" \
+        -e "s/__SAMPLING_RATE__/$NETFLOW_SAMPLING_RATE/g" \
+        -e "s/__MAX_FLOWS__/$NETFLOW_MAX_FLOWS/g" \
+        -e "s/__TIMEOUTS__/$NETFLOW_TIMEOUTS/g" \
+        "$SCRIPT_DIR/netflow/softflowd.config" >> /etc/config/softflowd.new
+    printf '\n' >> /etc/config/softflowd.new
+  done
+  mv /etc/config/softflowd.new /etc/config/softflowd
+
+  if [ "$NETFLOW_DISABLE_HW_OFFLOAD" = "1" ]; then
+    # Opt-in only. softflowd captures via libpcap; packets forwarded by the
+    # switch ASIC never reach the CPU, so they are invisible to it. Turning
+    # hardware offload off makes flow accounting complete at the cost of
+    # routing throughput on this hardware.
+    log "==> Disabling hardware flow offload so softflowd can see forwarded traffic..."
+    uci set firewall.@defaults[0].flow_offloading_hw='0'
+    uci commit firewall
+  else
+    log "    NOTE: hardware flow offload left as configured. If it is on, traffic"
+    log "          forwarded by the switch ASIC is invisible to softflowd and flow"
+    log "          data is incomplete. The dashboard's NetFlow health tab shows this"
+    log "          state explicitly. Set NETFLOW_DISABLE_HW_OFFLOAD=1 to turn it off."
+  fi
 fi
 
 if profile_enabled wifi_mesh; then
@@ -477,6 +634,9 @@ if profile_enabled clients; then
   ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-client-traffic.sh'
   ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-client-conntrack.sh'
 fi
+if profile_enabled netflow; then
+  ensure_cron_line '*/1 * * * * /usr/bin/openwrt-monitor-netflow-health.sh'
+fi
 
 log "==> Running helper scripts once so custom metrics appear immediately..."
 /usr/bin/openwrt-monitor-device-status.sh
@@ -501,6 +661,28 @@ fi
 if profile_enabled traffic; then
   log "==> Loading nftables device traffic rules..."
   /etc/init.d/firewall restart
+fi
+
+if profile_enabled netflow; then
+  if [ -x /etc/init.d/softflowd ]; then
+    log "==> Enabling and starting softflowd..."
+    /etc/init.d/softflowd enable
+    /etc/init.d/softflowd restart
+  else
+    log "    WARNING: /etc/init.d/softflowd is missing; softflowd did not install. NetFlow export is not running."
+  fi
+
+  # The flow_offloading_hw setting was committed earlier but only takes effect
+  # on a firewall reload. Skipped when the `traffic` profile is also enabled,
+  # because its block above already restarted the firewall after the commit.
+  if [ "$NETFLOW_DISABLE_HW_OFFLOAD" = "1" ] && ! profile_enabled traffic; then
+    log "==> Reloading firewall to apply the flow-offload change..."
+    /etc/init.d/firewall restart
+  fi
+
+  # Populate the health metrics immediately rather than waiting for cron, so a
+  # failed exporter is visible on the first scrape instead of a minute later.
+  /usr/bin/openwrt-monitor-netflow-health.sh
 fi
 
 # ── Start and enable the exporter ─────────────────────────────────────────────

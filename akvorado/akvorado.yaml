@@ -1,0 +1,184 @@
+---
+# Akvorado orchestrator configuration for the OpenWrt Grafana Monitor stack.
+#
+# The orchestrator owns everything: it creates the Kafka topic, manages the
+# ClickHouse schema, and serves this configuration over HTTP to the inlet,
+# outlet and console. Those three take no config file of their own — they are
+# started with `akvorado <role> http://akvorado-orchestrator:8080`.
+#
+# Upstream splits this across akvorado.yaml + inlet.yaml + outlet.yaml +
+# console.yaml. It is inlined here because this deployment is one router (maybe
+# two) rather than a carrier network, and one file is easier to reason about.
+# The single exception is the static interface metadata, which is genuinely
+# site-specific and lives in exporters.yaml (see below).
+#
+# Validate without starting anything:
+#   docker compose --profile netflow run --rm --no-deps \
+#     akvorado-orchestrator orchestrator --check /etc/akvorado/akvorado.yaml
+
+kafka:
+  topic: flows
+  brokers:
+    - kafka:9092
+  topic-configuration:
+    # Upstream defaults to 8 partitions for multi-outlet parallelism. One
+    # router does not need it, and each partition costs Kafka memory.
+    num-partitions: 2
+    replication-factor: 1
+    config-entries:
+      segment.bytes: 268435456
+      # Kafka is only a buffer in front of ClickHouse. 1 day is plenty of
+      # slack for an outlet restart, and caps the disk this volume can take.
+      retention.ms: 86400000
+      cleanup.policy: delete
+      compression.type: producer
+
+geoip:
+  # optional: true means Akvorado starts fine with no database present, which
+  # is the default here — no MaxMind account or IPinfo token is required.
+  #
+  # The consequence is honest and visible rather than silent: SrcAS/DstAS,
+  # SrcCountry/DstCountry and the Geo* columns stay EMPTY. The "External" tab
+  # of the Grafana dashboard detects this and says so instead of rendering a
+  # chart of blank labels. To populate them, see docs/netflow-akvorado.md.
+  optional: true
+  asn-database:
+    - /usr/share/GeoIP/GeoLite2-ASN.mmdb
+  geo-database:
+    - /usr/share/GeoIP/GeoLite2-City.mmdb
+    - /usr/share/GeoIP/GeoLite2-Country.mmdb
+
+clickhousedb:
+  servers:
+    - clickhouse:9000
+
+clickhouse:
+  # ClickHouse itself fetches dictionaries and GeoIP data from the orchestrator
+  # over HTTP, so this must be resolvable *from the clickhouse container*.
+  orchestrator-url: http://akvorado-orchestrator:8080
+  prometheus-endpoint: /metrics
+
+  # Retention. Upstream defaults are sized for a carrier (raw 15d, 1m 1w,
+  # 5m 3mo, 1h 1y) and are the single biggest driver of disk use. These are
+  # cut for a home NAS: a week of full-fidelity flows (with addresses and
+  # ports) plus a year of hourly rollups for long-term trends.
+  #
+  # NOTE: the consolidated tables drop SrcAddr/DstAddr/SrcPort/DstPort. Any
+  # per-host or per-port panel therefore only works inside the interval-0
+  # window below. Widen `interval: 0` if you want to look further back at
+  # that detail, and expect disk to scale roughly linearly with it.
+  resolutions:
+    - interval: 0
+      ttl: 168h # 7 days, raw flows (addresses + ports)
+    - interval: 1m
+      ttl: 168h # 7 days
+    - interval: 1h
+      ttl: 8760h # 1 year
+
+  # Names your own prefixes so the console and dashboards show something
+  # meaningful for LAN traffic even with no GeoIP database. Adjust to match
+  # your addressing; these mirror the repo's documented 192.168.0.0/24 example.
+  networks:
+    192.168.0.0/16:
+      name: lan
+      role: internal
+    10.0.0.0/8:
+      name: lan
+      role: internal
+    172.16.0.0/12:
+      name: lan
+      role: internal
+    fd00::/8:
+      name: lan
+      role: internal
+  network-sources: []
+
+# TCPFlags is Disabled by default in Akvorado's schema
+# (common/schema/definition.go), so the column simply does not exist unless it
+# is turned on here. The dashboard's TCP flag panel queries it to spot scans
+# and connection-refused patterns.
+schema:
+  enabled:
+    - TCPFlags
+
+inlet:
+  flow:
+    inputs:
+      # NetFlow v5/v9. This is what openwrt/netflow/softflowd.config targets.
+      - type: udp
+        decoder: netflow
+        listen: :2055
+        workers: 2
+        receive-buffer: 212992
+      # IPFIX. Not used by the default softflowd template (which exports v9),
+      # but kept open so `option export_version '10'` works without a config
+      # change on this side.
+      - type: udp
+        decoder: netflow
+        listen: :4739
+        workers: 2
+        receive-buffer: 212992
+      # sFlow. Nothing in this repo emits it; open for third-party exporters.
+      - type: udp
+        decoder: sflow
+        listen: :6343
+        workers: 2
+        receive-buffer: 212992
+
+outlet:
+  metadata:
+    providers:
+      # Flows carry an ifIndex and nothing else. Akvorado DISCARDS any flow
+      # whose ifIndex it cannot resolve to an interface, so this is
+      # load-bearing, not decoration.
+      #
+      # The `static` provider is used instead of SNMP so no snmpd has to run
+      # on the routers — this is what Akvorado's own docs recommend for
+      # software exporters. See akvorado/exporters.yaml.example for how to
+      # fill it in, and read the live ifIndex off the router from the
+      # `openwrt_netflow_ifindex` metric rather than guessing.
+      !include "exporters.yaml"
+
+  core:
+    # Without this, flows arriving with no advertised sampling rate are
+    # REJECTED outright (`akvorado orchestrator --dump` shows the built-in
+    # default as null). softflowd does not reliably advertise one, and with
+    # `option sampling_rate '1'` in the router template there is nothing to
+    # advertise anyway — every packet is accounted. Setting it to 1 makes
+    # Bytes/Packets exact rather than throwing the data away.
+    #
+    # If you ever raise softflowd's sampling_rate, raise this to match, or
+    # byte counts will read low by exactly that factor.
+    default-sampling-rate: 1
+
+    interface-classifiers:
+      # NOTE: with softflowd these rules cannot separate inbound from outbound.
+      # softflowd sets if_index_in and if_index_out to the SAME value -- the
+      # ifIndex of the single capture device (netflow9.c:295, `dc[0]->if_index_in
+      # = dc[0]->if_index_out = htonl(ifidx)`). So InIfBoundary and OutIfBoundary
+      # are always equal and always constant for the whole dataset.
+      #
+      # The Grafana dashboard therefore derives internal-vs-external from
+      # SrcNetRole/DstNetRole (driven by `clickhouse.networks` above) rather than
+      # from interface boundary. These rules are kept only so Akvorado's own
+      # console has something coherent to show; its homepage defaults to
+      # filtering InIfBoundary = 'external', which is not very useful for a
+      # single-interface software exporter -- change the filter in the console UI
+      # instead.
+      - |
+        ClassifyConnectivityRegex(Interface.Description, "^(?i)(transit|pni|ix):? ", "$1") &&
+        ClassifyProviderRegex(Interface.Description, "^\\S+?\\s(\\S+)", "$1") &&
+        ClassifyExternal()
+      - ClassifyInternal()
+
+  # `routing` is deliberately absent. It only supports `bmp` and `bioris`, and
+  # a home router has no BGP table to feed either one. The outlet's default BMP
+  # listener stays on the compose network with no peers and no published port,
+  # so AS numbers come from the flow records (or from GeoIP, once configured)
+  # rather than from routing.
+
+console:
+  http:
+    cache:
+      type: redis
+      server: redis:6379

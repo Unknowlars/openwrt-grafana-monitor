@@ -13,6 +13,7 @@ install depend on nftables JSON, usteer, or Netifyd.
 | `wifi_mesh` | Radio settings, 802.11r/k/v flags, and usteer local metrics | `openwrt_wifi_mesh_collector_available` |
 | `dpi` | Bounded Netifyd application/protocol snapshot metrics | `openwrt_dpi_collector_available` |
 | `clients` | Unified per-client identity, bounded conntrack occupancy, nlbwmon MAC-keyed service traffic, Loki-first WiFi roaming, and the topology node graph | `openwrt_client_inventory_collector_available`, `openwrt_client_traffic_collector_available`, `openwrt_client_conntrack_collector_available`, `openwrt_topology_collector_available` |
+| `netflow` | Per-flow NetFlow v9 export via softflowd, collected by Akvorado into ClickHouse. Adds only exporter *health* to Prometheus; the flows themselves go to ClickHouse | `openwrt_netflow_collector_available`, `openwrt_netflow_exporter_up` |
 | `full` | All optional profiles | All optional-profile metrics above |
 
 Enable a profile during router setup. `OPENWRT_MONITOR_PROFILE` also accepts a
@@ -132,8 +133,10 @@ minute. It uses `getHostHints` only to map known local IPv4 addresses back to
 the existing lowercase `mac` identity, then counts each `conntrack -L` row
 once for every matching client. It exports one bounded gauge per known client:
 
-The helper prefers the `conntrack` package (`conntrack -L`) and falls back to
+The helper prefers the `conntrack` CLI (`conntrack -L`) and falls back to
 `/proc/net/nf_conntrack` or `/proc/net/ip_conntrack` when the CLI is absent.
+The setup script installs `conntrack` on OpenWrt 25.12/apk and tries
+`conntrack-tools` then `conntrack` on OpenWrt 24.10/opkg.
 Client identity still prefers `getHostHints`, but falls back to DHCP leases and
 ARP when the LuCI host-hints path is unavailable or cannot be parsed.
 If no conntrack source is available, only the conntrack metrics fail closed;
@@ -277,6 +280,27 @@ uci commit firewall
 
 OpenWrt's flowtable counter synchronization is a possible software-offload
 mitigation, but it has a throughput cost and is not configured by this repo.
+
+## NetFlow collector
+
+The `netflow` profile is the only optional profile whose data does not land in
+Prometheus. `softflowd` captures on the WAN device (configurable via
+`NETFLOW_INTERFACES`) and exports NetFlow v9 to the Akvorado inlet on the
+monitoring host, which stores per-flow records in ClickHouse. What this profile
+adds to Prometheus is exporter *health*: liveness, libpcap drops, flow-table
+overflow, and the interface ifIndex that Akvorado has to be told about.
+
+It also carries a coverage caveat the other profiles do not. softflowd captures
+via libpcap, so traffic forwarded by the switch ASIC under hardware flow offload
+is invisible to it — the same offload interaction described under
+[Per-client nlbwmon traffic](#per-client-nlbwmon-traffic), but total rather than
+partial for the offloaded flows. `NETFLOW_DISABLE_HW_OFFLOAD=1` trades routing
+throughput for complete accounting; the default leaves offload alone and shows
+the incomplete state on the dashboard instead.
+
+This profile needs the `netflow` Docker Compose profile running on the
+monitoring host, and a hand-written `akvorado/exporters.yaml`. Full setup,
+limits, and troubleshooting are in [netflow-akvorado.md](netflow-akvorado.md).
 
 ## Dashboard and validation
 

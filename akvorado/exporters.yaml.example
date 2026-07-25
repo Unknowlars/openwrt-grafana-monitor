@@ -1,0 +1,94 @@
+---
+# Static interface metadata for Akvorado. REQUIRED — copy to exporters.yaml:
+#
+#   cp akvorado/exporters.yaml.example akvorado/exporters.yaml
+#
+# and edit before `docker compose --profile netflow up -d`. The orchestrator
+# fails to start without it, which is intentional: NetFlow records carry an
+# ifIndex and nothing else, and Akvorado DISCARDS every flow whose ifIndex it
+# cannot resolve. A wrong value here looks exactly like "NetFlow isn't working"
+# — an empty `flows` table with no error anywhere obvious — so it is better to
+# refuse to start than to ship a plausible default.
+#
+# This file is a list, spliced into `outlet.metadata.providers` by the
+# !include in akvorado.yaml. Using the `static` provider means no snmpd has to
+# run on the router; this is what Akvorado's own docs recommend for software
+# exporters such as softflowd.
+#
+# ── Finding the values ──────────────────────────────────────────────────────
+#
+# `name:` must match the router's Prometheus `router` label (ROUTER_NAME or the
+# name in ROUTER_TARGETS in .env), because the dashboard's Router variable is
+# populated from Prometheus and then filtered against ExporterName here.
+#
+# Exporter address: the router's IP as seen by the monitoring host — the same
+# address as ROUTER_IP in .env. softflowd sources its export packets from the
+# interface it egresses on, so if that is not the router's LAN address, check
+# the akvorado_inlet_flows_received_total metric's `exporter` label for the
+# address actually arriving.
+#
+# ifIndex: do NOT guess. Once the router-side `netflow` profile is installed,
+# openwrt-monitor-netflow-health.sh exports it to Prometheus:
+#
+#   openwrt_netflow_ifindex{router="...", interface="wan"}
+#
+# Or read it directly on the router:
+#
+#   cat /sys/class/net/br-lan/ifindex
+#
+# It is stable across reboots in practice but is NOT guaranteed to be; if flows
+# stop resolving after a firmware upgrade, re-check it here first.
+#
+# ── Which interface, and why it is the LAN bridge ───────────────────────────
+#
+# Capture happens on br-lan, not on the WAN device. softflowd captures with
+# libpcap at the device, and on WAN that is *after* SNAT -- every outbound flow
+# would carry the router's public address as its source, and "which client is
+# using the bandwidth" would be unanswerable. The bridge sees pre-NAT addresses.
+#
+# Do not list both br-lan and the WAN device: each packet crosses both, so every
+# byte would be counted twice.
+#
+# ── Interface descriptions ──────────────────────────────────────────────────
+#
+# The `description` feeds Akvorado's interface-classifiers, which set
+# InIfBoundary. NOTE that softflowd sets if_index_in and if_index_out to the
+# same value, so boundary is constant across every flow and cannot separate
+# inbound from outbound. The Grafana dashboard therefore ignores boundary and
+# derives direction from SrcNetRole/DstNetRole instead (see
+# `clickhouse.networks` in akvorado.yaml).
+#
+# So the description below is cosmetic for our dashboard. It only affects
+# Akvorado's own console, whose homepage happens to default to filtering
+# InIfBoundary = 'external'; adjust the filter in the console UI rather than
+# mislabelling the bridge as transit.
+
+- type: static
+  exporters:
+    # Replace with your router's address. A /32 (or /128) pins it to one host;
+    # a wider prefix would apply to every router in it.
+    192.168.0.1/32:
+      name: openwrt-main
+      ifindexes:
+        # <ifindex>: { name, description, speed }
+        # speed is in Mbps and is only used to render link-utilisation
+        # percentages; an approximate value is fine.
+        #
+        # This must be the ifIndex of the LAN BRIDGE, matching whatever
+        # NETFLOW_INTERFACES resolved to on the router (br-lan by default). Read
+        # the real number from the openwrt_netflow_ifindex metric, or on the
+        # router with:  cat /sys/class/net/br-lan/ifindex
+        3:
+          name: br-lan
+          description: "LAN bridge"
+          speed: 1000
+
+    # A second router (e.g. a downstream AP also running the netflow profile)
+    # would be another entry here.
+    # 192.168.0.2/32:
+    #   name: openwrt-new
+    #   ifindexes:
+    #     3:
+    #       name: br-lan
+    #       description: "LAN bridge"
+    #       speed: 1000

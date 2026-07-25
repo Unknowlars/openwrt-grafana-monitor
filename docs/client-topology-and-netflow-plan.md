@@ -985,6 +985,18 @@ sum by (mac, service, direction) (
 )
 ```
 
+> **SUPERSEDED (2026-07-25).** The collector half of this section — flowlogs-pipeline
+> writing bounded flow metrics and full flows into Loki — was not built. NetFlow was
+> instead implemented with [Akvorado](https://github.com/akvorado/akvorado): a real
+> flow store (Kafka + ClickHouse) with a queryable schema, rather than log lines and
+> a `maxMetrics` cap. See `docs/netflow-akvorado.md`.
+>
+> The router-side analysis in §3.5 still stands and *is* what shipped: softflowd as
+> the only packaged exporter, the mandatory pcap filter against the self-capture
+> feedback loop, the stock `sampling_rate 100` trap, and the UCI init script's
+> one-`-t` limit. The M10 CPU gate (§12.2) also still stands and **has still not
+> been run**.
+
 `netflow/flowlogs-pipeline.yaml`, concrete:
 
 ```yaml
@@ -1714,6 +1726,13 @@ the useful signal.
 
 ### 10.4 Phase 3, conditional — NetFlow (M11, gated on M10)
 
+> **SUPERSEDED (2026-07-25).** Flow records live in ClickHouse, not Prometheus, so
+> this metric contract does not apply. What the router now exports to Prometheus is
+> exporter *health* (`openwrt_netflow_exporter_up`, `openwrt_netflow_ifindex`,
+> `openwrt_netflow_pcap_packets_dropped_total`,
+> `openwrt_netflow_flows_force_expired_total`, and siblings) — roughly a dozen
+> series per capture interface rather than 1800. See `docs/netflow-akvorado.md`.
+
 | Metric | Type | Labels | Series |
 |---|---|---|---|
 | `openwrt_flow_bytes_total` | counter | `ip, service, peer_kind` | 60 × 10 × 3 = 1800, hard-capped by FLP `maxMetrics: 5000` |
@@ -2217,6 +2236,16 @@ Not deployed to either router.
 ### M10 — softflowd measurement spike → see §12.2
 
 ### M11 — NetFlow (conditional on M10)
+
+> **SUPERSEDED (2026-07-25) — partially delivered.** Implemented with Akvorado
+> instead of flowlogs-pipeline. Delivered: `openwrt/netflow/softflowd.config`,
+> `openwrt/scripts/openwrt-monitor-netflow-health.sh`, the `netflow` profile in
+> `openwrt/setup.sh`, the `netflow` Docker Compose profile, `akvorado/`,
+> `build_openwrt_netflow_dashboard.py`, `tests/test_netflow_config.py`,
+> `tests/test_netflow_health.sh`. Not delivered: `netflow/flowlogs-pipeline.yaml`
+> and the Loki flow stream, which the Akvorado approach replaces. **M10 was still
+> not run** — the CPU cost on this hardware remains unmeasured, so the capability
+> ships without a claim that the router can afford it.
 
 **Files:** `openwrt/netflow/softflowd.config` (new),
 `openwrt/scripts/openwrt-monitor-netflow-health.sh` (new),

@@ -3,6 +3,9 @@ old/
 .env
 .env.*
 !.env.example
+# Site-specific Akvorado interface metadata (router addresses + ifindexes).
+# Ship akvorado/exporters.yaml.example; keep the operator's copy local.
+akvorado/exporters.yaml
 .agents/
 .claude/
 .codex/
@@ -13,3 +16,7 @@ skills
 grafana_docs
 screenshot
 docs/screenshots
+
+# Site-specific Akvorado interface metadata (router addresses + ifindexes).
+# Ship akvorado/exporters.yaml.example; keep the operator's copy local.
+akvorado/exporters.yaml
