@@ -2,6 +2,21 @@
 
 ## 2026-07-25
 
+- Changed: Synced `docs/kubernetes-monitoring-setup.md` with the live NetFlow
+  and second-AP work from this session. The guide now uses `openwrt-ap` as the
+  second-router example, shows AP setup commands, calls out when to omit the
+  AP `netflow` profile to avoid double-counting, documents the 48-panel
+  `openwrt-netflow-v2` coverage, lists the standard MaxMind filenames, and
+  shows the second AP `akvorado/exporters.yaml` ifIndex block. The commented
+  second-router example in `akvorado/exporters.yaml.example` now uses the same
+  `openwrt-ap` name.
+- Reason: The Kubernetes guide previously predated the dashboard expansion,
+  live GeoIP filename cleanup, and the user's second AP at `192.168.0.2`.
+- Validation: `git diff --check -- docs/kubernetes-monitoring-setup.md
+  akvorado/exporters.yaml.example` passed.
+- Remaining risk: Documentation only; no Kubernetes manifests were applied and
+  no cluster Grafana import was rendered.
+
 - Changed: Expanded the generated NetFlow v2 dashboard from 31 to 48 panels now
   that live Akvorado/GeoIP data is available.
   - `build_openwrt_netflow_dashboard.py` now adds a stronger hero row, peak

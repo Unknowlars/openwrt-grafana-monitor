@@ -1,7 +1,7 @@
 # Graph Report - openwrt-grafana-monitor  (2026-07-25)
 
 ## Corpus Check
-- 109 files · ~405,115 words
+- 109 files · ~412,954 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary

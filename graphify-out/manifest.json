@@ -365,13 +365,13 @@
     "semantic_hash": ""
   },
   ".agent/CHANGELOG.md": {
-    "mtime": 1785009724.9234328,
-    "ast_hash": "78d212c5cf2c6f97ba6e822f6d454241",
+    "mtime": 1785011777.6242628,
+    "ast_hash": "532522fc529e34bc36265160f15cc7ca",
     "semantic_hash": ""
   },
   ".agent/STATUS.md": {
-    "mtime": 1785009724.294383,
-    "ast_hash": "2d800889188df9ca5e247e97235e49d5",
+    "mtime": 1785011244.0063517,
+    "ast_hash": "aafae0e8c26e33c2c1673bdee7d55f1d",
     "semantic_hash": ""
   },
   ".agent/repository-agent-audit.md": {
@@ -425,8 +425,8 @@
     "semantic_hash": ""
   },
   "docs/kubernetes-monitoring-setup.md": {
-    "mtime": 1785005289.9696517,
-    "ast_hash": "f2e1da502f1b1aabb5fea951cb4d5847",
+    "mtime": 1785011745.3319695,
+    "ast_hash": "ac03204937fa5229d75464edba1a6424",
     "semantic_hash": ""
   },
   "docs/mcp-ssh.md": {
@@ -615,8 +615,8 @@
     "semantic_hash": ""
   },
   "docs/netflow-akvorado.md": {
-    "mtime": 1785010525.2275279,
-    "ast_hash": "9a1ea07905911f17073c08fe7e9b8501",
+    "mtime": 1785011212.8087926,
+    "ast_hash": "b926db57f29de05ac7b013e4f76a3f3b",
     "semantic_hash": ""
   },
   "tests/fixtures/softflowctl-statistics.txt": {

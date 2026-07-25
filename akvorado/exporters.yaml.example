@@ -86,7 +86,7 @@
     # A second router (e.g. a downstream AP also running the netflow profile)
     # would be another entry here.
     # 192.168.0.2/32:
-    #   name: openwrt-new
+    #   name: openwrt-ap
     #   ifindexes:
     #     3:
     #       name: br-lan
