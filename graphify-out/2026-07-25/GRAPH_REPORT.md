@@ -1,16 +1,16 @@
 # Graph Report - openwrt-grafana-monitor  (2026-07-25)
 
 ## Corpus Check
-- 92 files · ~330,654 words
+- 95 files · ~340,121 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 868 nodes · 1476 edges · 82 communities (57 shown, 25 thin omitted)
-- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 8 edges (avg confidence: 0.5)
+- 910 nodes · 1560 edges · 84 communities (58 shown, 26 thin omitted)
+- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 12 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `92d5fa78`
+- Built from commit: `b47a8f33`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -68,11 +68,12 @@
 - OpenWrt Grafana Monitor
 - Plan: Client Inventory, Network Node Graph, and Traffic Attribution
 - 1.2 `openwrt/collectors/`
-- SSH MCP sidecar
+- Monitoring Host Setup
 - Current status
 - 3. Phase 3 — Traffic attribution
 - 4. Metrics and features worth adding
 - 9. Implementation conventions — read before writing code
+- SSH MCP sidecar
 - Repository map
 - 10. Metric contract
 - 8. Risks and open questions
@@ -85,13 +86,14 @@
 - Agent changelog
 - graphify.js
 - CLAUDE.md
-- Logs not appearing in Grafana
 - test_setup_legacy_crontab.sh
 - test_wan_quality.sh
+- Manual Setup
+- test_wan_info.sh
 
 ## God Nodes (most connected - your core abstractions)
-1. `build_dashboard()` - 28 edges
-2. `PolicyError` - 26 edges
+1. `PolicyError` - 29 edges
+2. `build_dashboard()` - 28 edges
 3. `prom_query()` - 23 edges
 4. `build_dashboard()` - 22 edges
 5. `DashboardBuilder` - 22 edges
@@ -116,11 +118,11 @@
 ## Import Cycles
 - None detected.
 
-## Communities (82 total, 25 thin omitted)
+## Communities (84 total, 26 thin omitted)
 
 ### Community 0 - "MCP Server Core"
-Cohesion: 0.06
-Nodes (65): BaseHTTPMiddleware, build_configure_syslog_command(), build_diagnostic_command(), build_metrics_sample_command(), build_monitoring_status_command(), build_restart_monitoring_command(), build_setup_command(), build_system_facts_command() (+57 more)
+Cohesion: 0.05
+Nodes (76): BaseHTTPMiddleware, build_configure_syslog_command(), build_diagnostic_command(), build_metrics_sample_command(), build_monitoring_status_command(), build_restart_monitoring_command(), build_setup_command(), build_system_facts_command() (+68 more)
 
 ### Community 1 - "Advanced Dashboard"
 Cohesion: 0.09
@@ -131,7 +133,7 @@ Cohesion: 0.19
 Nodes (45): bargauge(), build_dashboard(), clean(), color_override(), data_group(), gauge(), grid_items_by_tab(), histogram() (+37 more)
 
 ### Community 3 - "Lua Collectors"
-Cohesion: 0.22
+Cohesion: 0.23
 Nodes (18): arp_by_ip(), assoc_by_mac(), collect(), config_value(), flow_offload_state(), is_locally_administered(), lease_expiry_by_mac(), leasefile_hosts() (+10 more)
 
 ### Community 4 - "Legacy Dashboards"
@@ -139,7 +141,7 @@ Cohesion: 0.32
 Nodes (16): bargauge(), build_devices(), build_logs(), build_network(), build_overview(), loki_logs(), loki_stat(), loki_tgt() (+8 more)
 
 ### Community 5 - "Topology Collection"
-Cohesion: 0.33
+Cohesion: 0.35
 Nodes (11): add_edge(), add_node(), assoc_by_mac(), collect(), leasefile_hosts(), normalize_mac(), reachable_ips(), router_hostname() (+3 more)
 
 ### Community 6 - "Setup & Installation"
@@ -170,6 +172,10 @@ Nodes (3): openwrt-monitor-wan-quality.sh script, write_dns_probe(), write_probe
 Cohesion: 0.60
 Nodes (4): find_duplicates(), main(), parse(), Return (name, normalised-labels, value) for every sample line.
 
+### Community 16 - "WiFi Dethrash Detection"
+Cohesion: 0.60
+Nodes (3): hostname(), sanitize(), scrape()
+
 ### Community 41 - "CODE-REVIEW-REMEDIATION-PLAN.md"
 Cohesion: 0.06
 Nodes (35): A.1 — R1 Alloy image defaults, A.2 — R2 legacy-crontab abort, A.3 — R3 awk on a missing ROWSFILE, A.4 — R13 profile validation asymmetry, Appendix A — reproductions, Appendix B — relationship to `docs/CODE-REVIEW-FINDINGS.md`, Batch A — outright breakage, Batch A — outright breakage (+27 more)
@@ -191,8 +197,8 @@ Cohesion: 0.09
 Nodes (23): 3.1 `build_dashboards.py` (the 4 classic dashboards), 3.2 v2 builders (`build_openwrt_operations_dashboard.py`, `build_openwrt_advanced_dashboard.py`, `build_openwrt_topology_dashboard.py`, `build_openwrt_clients_dashboard.py`), 3.3 Metric/label mismatches between emit-side and dashboards, [P0] "Static Reservations" panel queries the wrong metric, [P0] v1 `router` template variable is hardcoded to `openwrt`; multi-router breaks, [P1] Cross-dashboard nav links omit all 4 v2 dashboards, [P1] Hardcoded `version: 1` overwrites saved versions; no determinism check; no overlap detection, [P1] Heavy code duplication across the v2 builders (+15 more)
 
 ### Community 46 - "Troubleshooting"
-Cohesion: 0.22
-Nodes (9): Alloy can't connect to otel-lgtm, Custom helper metrics missing, Dashboards not loading, Grafana shows "No data", otel-lgtm container keeps restarting, Port 514 permission denied, Troubleshooting, WAN throughput panel shows wrong interface (+1 more)
+Cohesion: 0.09
+Nodes (22): 1. Check if logd is sending syslog, 1. Check the router's metrics endpoint, 1a. Check which collectors are actually succeeding, 2. Check Alloy is receiving syslog, 2. Check Alloy is scraping, 3. Check port 514 is accessible, 3. Check Prometheus received data, 3a. Check the custom dashboard metrics directly (+14 more)
 
 ### Community 47 - "Kubernetes monitoring setup"
 Cohesion: 0.11
@@ -203,8 +209,8 @@ Cohesion: 0.11
 Nodes (19): 1.3 `openwrt/scripts/`, `openwrt-monitor-client-conntrack.sh`, `openwrt-monitor-client-traffic.sh`, `openwrt-monitor-device-status.sh`, `openwrt-monitor-dhcp-pool.sh`, `openwrt-monitor-filesystem.sh`, `openwrt-monitor-firewall-counters.sh`, `openwrt-monitor-inodes.sh` (+11 more)
 
 ### Community 49 - "OpenWrt Router Setup"
-Cohesion: 0.11
-Nodes (18): 1. Install exporter packages, 2. Configure the exporter to listen on LAN, 3. Copy the bundled collectors and scripts, 4. Add the helper cron jobs, 5. Configure remote syslog, 6. Restart services, Files This Repo Adds To The Router, Important Notes (+10 more)
+Cohesion: 0.18
+Nodes (11): Files This Repo Adds To The Router, Important Notes, On the monitoring host, On the router, OpenWrt Router Setup, Optional Packages, Recommended Setup, Required Packages (+3 more)
 
 ### Community 50 - "1.1 `openwrt/setup.sh`"
 Cohesion: 0.13
@@ -215,8 +221,8 @@ Cohesion: 0.14
 Nodes (13): Agent Handoff Files, Architecture Boundaries, Component Map, Default Exclusions, Definition of Done, Editing, Efficient Repository Navigation, Git and Reporting (+5 more)
 
 ### Community 52 - "5.2 Coverage gaps"
-Cohesion: 0.20
-Nodes (10): 5.2 Coverage gaps, [P1] 13 of 16 helper scripts have no tests, [P1] Classic dashboards are not determinism-verified, [P1] Core-profile Lua collectors have no behaviour tests, [P2] `check_exposition.py` scope is narrow, [P2] Test runtime hidden dependency on `jq`, [P2] `wifi_dethrash.lua` (wifi_mesh profile) has no test, [P3] `test_client_inventory.lua` sleeps to defeat 1-second `os.time()` resolution (+2 more)
+Cohesion: 0.14
+Nodes (14): 5.1 Coverage, 5.2 Coverage gaps, 5.3 Fixture realism — verified, 5.4 Are the Lua tests testing the collectors correctly?, [P1] 13 of 16 helper scripts have no tests, [P1] Classic dashboards are not determinism-verified, [P1] Core-profile Lua collectors have no behaviour tests, [P2] `check_exposition.py` scope is narrow (+6 more)
 
 ### Community 53 - "Part 6 — Missing metrics / data the OpenWrt router exposes but the repo doesn't capture"
 Cohesion: 0.14
@@ -231,12 +237,8 @@ Cohesion: 0.15
 Nodes (13): 11. Milestone specifications, M0 — Bound existing cardinality; make profiles composable — done (2026-07-22), M10 — softflowd measurement spike → see §12.2, M11 — NetFlow (conditional on M10), M1 — Client inventory collector — done, live-verified (2026-07-22), M2 — Multi-target Alloy, M3 — Clients dashboard, M4 — Node graph feasibility spike — done (2026-07-22) (+5 more)
 
 ### Community 56 - "Advanced Router Profiles"
-Cohesion: 0.17
-Nodes (12): Advanced Router Profiles, Client inventory collector, Dashboard and validation, DPI collector, Flow offload makes traffic accounting unreliable, Per-client conntrack and WiFi roaming, Per-client nlbwmon traffic, Profiles (+4 more)
-
-### Community 57 - "Monitoring Host Setup"
-Cohesion: 0.17
-Nodes (12): 1. Clone the repo, 2. Configure, 3. Start, 4. Open Grafana, Adding more routers, Alloy UI, Data persistence, Monitoring Host Setup (+4 more)
+Cohesion: 0.15
+Nodes (13): Advanced Router Profiles, Client inventory collector, Dashboard and validation, DPI collector, Flow offload makes traffic accounting unreliable, Per-client conntrack and WiFi roaming, Per-client nlbwmon traffic, Profiles (+5 more)
 
 ### Community 58 - "OpenWrt Grafana Monitor"
 Cohesion: 0.12
@@ -250,13 +252,13 @@ Nodes (10): 12.1 M4 — node graph frame detection, 12.2 M10 — softflowd cost 
 Cohesion: 0.20
 Nodes (10): 1.2 `openwrt/collectors/`, `client_inventory.lua`, `device_status.lua`, `device_traffic.lua`, `dnsmasq.lua`, `dpi_netifyd.lua`, `packet_loss.lua`, `topology.lua` (+2 more)
 
-### Community 61 - "SSH MCP sidecar"
-Cohesion: 0.22
-Nodes (9): Available tools, Claude Code, Codex, Configure and start, OpenCode, Router user, Security model, SSH MCP sidecar (+1 more)
+### Community 61 - "Monitoring Host Setup"
+Cohesion: 0.17
+Nodes (12): 1. Clone the repo, 2. Configure, 3. Start, 4. Open Grafana, Adding more routers, Alloy UI, Data persistence, Monitoring Host Setup (+4 more)
 
 ### Community 62 - "Current status"
-Cohesion: 0.25
-Nodes (7): Blockers, Completed, Confirmed findings, Current goal, Current status, Next action, Relevant files
+Cohesion: 0.22
+Nodes (8): Blockers, Completed, Confirmed findings, Current goal, Current status, Live deployment findings (2026-07-25, authorized read-only session), Next action, Relevant files
 
 ### Community 63 - "3. Phase 3 — Traffic attribution"
 Cohesion: 0.25
@@ -270,7 +272,11 @@ Nodes (8): 4.1 Per-client DNS query attribution — **adopt, and it is nearly fr
 Cohesion: 0.25
 Nodes (8): 9.1 Router-side Lua collectors, 9.2 Router-side helper scripts (POSIX sh), 9.3 `openwrt/setup.sh` integration, 9.4 Dashboard builders, 9.5 Alloy and compose, 9.6 Tests, 9.7 Naming rules, 9. Implementation conventions — read before writing code
 
-### Community 66 - "Repository map"
+### Community 66 - "SSH MCP sidecar"
+Cohesion: 0.20
+Nodes (10): Available tools, Claude Code, Codex, Configure and start, OpenCode, Router user, Security model, SSH known_hosts (required by default) (+2 more)
+
+### Community 67 - "Repository map"
 Cohesion: 0.25
 Nodes (8): Dashboards, Documentation, Normally avoid by default, Optional MCP sidecar, Repository map, Router-side OpenWrt code, Runtime stack, Tests and validation
 
@@ -283,8 +289,8 @@ Cohesion: 0.33
 Nodes (6): 8. Risks and open questions, MAC randomisation — resolved with evidence, not deferred, Open question 1: where does the clients table live? — **resolved**, Open question 2: OUI vendor lookup on-router or in Grafana? — **resolved by dropping it**, Risks, Still open, honestly
 
 ### Community 70 - "CODE-REVIEW-FINDINGS.md"
-Cohesion: 0.20
-Nodes (9): 5.1 Coverage, 5.3 Fixture realism — verified, 5.4 Are the Lua tests testing the collectors correctly?, How to read this document, OpenWrt Grafana Monitor — Code Review Findings, Part 1 — Router side (`openwrt/`), Part 5 — Tests, Part 7 — Summary / prioritisation map (+1 more)
+Cohesion: 0.33
+Nodes (5): How to read this document, OpenWrt Grafana Monitor — Code Review Findings, Part 1 — Router side (`openwrt/`), Part 7 — Summary / prioritisation map, Part 8 — Notes for the implementing agent
 
 ### Community 71 - "1. Phase 1 — Unified client inventory"
 Cohesion: 0.40
@@ -295,8 +301,8 @@ Cohesion: 0.40
 Nodes (5): 2.1 Required data shape, 2.2 Getting those frames out of Prometheus — **the first draft was wrong**, 2.3 Topology model, 2.4 Deliverable, 2. Phase 2 — Node graph
 
 ### Community 73 - "Dashboard previews"
-Cohesion: 0.29
-Nodes (7): 1. Check the router's metrics endpoint, 1a. Check which collectors are actually succeeding, 2. Check Alloy is scraping, 3. Check Prometheus received data, 3a. Check the custom dashboard metrics directly, 4. Verify the ROUTER_IP env var reached Alloy, Metrics not appearing in Grafana
+Cohesion: 0.23
+Nodes (9): config_text(), promoted_labels(), Guards the Loki syslog stream-label contract in alloy/config.alloy.  Two failure, Stream labels the syslog relabel block creates via target_label., A labelmap over __syslog_(.+) promotes the PID -- see R5., Load bearing for multi-router setups (ROUTER_TARGETS)., The regression that R5's own prescribed snippet would have caused.          If a, strip_comments() (+1 more)
 
 ### Community 74 - "0. Where the repo is today"
 Cohesion: 0.50
@@ -306,29 +312,29 @@ Nodes (4): 0.1 Client identity is spread across six metric families, 0.2 What th
 Cohesion: 0.50
 Nodes (3): plugin, $schema, .opencode/plugins/graphify.js
 
-### Community 79 - "Logs not appearing in Grafana"
-Cohesion: 0.40
-Nodes (5): 1. Check if logd is sending syslog, 2. Check Alloy is receiving syslog, 3. Check port 514 is accessible, 4. Check Loki received logs, Logs not appearing in Grafana
+### Community 82 - "Manual Setup"
+Cohesion: 0.29
+Nodes (7): 1. Install exporter packages, 2. Configure the exporter to listen on LAN, 3. Copy the bundled collectors and scripts, 4. Add the helper cron jobs, 5. Configure remote syslog, 6. Restart services, Manual Setup
 
 ## Knowledge Gaps
-- **392 isolated node(s):** `$schema`, `.opencode/plugins/graphify.js`, `openwrt-monitor-device-status.sh script`, `openwrt-monitor-dhcp-pool.sh script`, `openwrt-monitor-filesystem.sh script` (+387 more)
+- **396 isolated node(s):** `$schema`, `.opencode/plugins/graphify.js`, `openwrt-monitor-device-status.sh script`, `openwrt-monitor-dhcp-pool.sh script`, `openwrt-monitor-filesystem.sh script` (+391 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **25 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **26 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Part 1 — Router side (`openwrt/`)` connect `CODE-REVIEW-FINDINGS.md` to `1.3 `openwrt/scripts/``, `1.1 `openwrt/setup.sh``, `1.2 `openwrt/collectors/``?**
-  _High betweenness centrality (0.015) - this node is a cross-community bridge._
+  _High betweenness centrality (0.013) - this node is a cross-community bridge._
 - **Why does `Part 4 — Docs` connect `4.1 `docs/openwrt-setup.md`` to `CODE-REVIEW-FINDINGS.md`?**
-  _High betweenness centrality (0.011) - this node is a cross-community bridge._
+  _High betweenness centrality (0.010) - this node is a cross-community bridge._
 - **Why does `Part 2 — Monitoring host (`alloy/`, `docker-compose.yml`, `.env.example`)` connect `2.2 `docker-compose.yml`` to `CODE-REVIEW-FINDINGS.md`?**
-  _High betweenness centrality (0.009) - this node is a cross-community bridge._
-- **Are the 5 inferred relationships involving `PolicyError` (e.g. with `SecurityMiddleware` and `Settings`) actually correct?**
-  _`PolicyError` has 5 INFERRED edges - model-reasoned connections that need verification._
+  _High betweenness centrality (0.008) - this node is a cross-community bridge._
+- **Are the 6 inferred relationships involving `PolicyError` (e.g. with `SecurityMiddleware` and `Settings`) actually correct?**
+  _`PolicyError` has 6 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `$schema`, `.opencode/plugins/graphify.js`, `openwrt-monitor-device-status.sh script` to the rest of the system?**
-  _392 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _396 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `MCP Server Core` be split into smaller, more focused modules?**
-  _Cohesion score 0.06046511627906977 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.050183150183150185 - nodes in this community are weakly interconnected._
 - **Should `Advanced Dashboard` be split into smaller, more focused modules?**
   _Cohesion score 0.09490509490509491 - nodes in this community are weakly interconnected._

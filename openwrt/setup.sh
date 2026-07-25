@@ -288,14 +288,19 @@ if profile_enabled clients; then
   if ! pkg_install_optional nlbwmon; then
     log "    WARNING: nlbwmon is unavailable; per-client traffic accounting will report unavailable"
   fi
-  # openwrt-monitor-client-conntrack.sh shells out to the `conntrack` CLI
-  # (package `conntrack`, confirmed present in the 24.10/25.12 mipsel_24kc
-  # feed) to list conntrack rows; without it the script's shared fail-closed
-  # gate trips before either per-client conntrack counts or bounded WiFi
-  # roam events are ever attempted. Both metrics then always report
-  # unavailable, not just conntrack -- see docs/client-topology-and-netflow-plan.md M7.
-  if ! pkg_install_optional conntrack; then
-    log "    WARNING: conntrack is unavailable; per-client conntrack counts and bounded WiFi roam events will report unavailable"
+  # openwrt-monitor-client-conntrack.sh prefers the `conntrack` CLI and falls
+  # back to procfs conntrack rows when available. Package names vary across
+  # OpenWrt feeds, so try the common CLI providers before accepting degraded
+  # conntrack-only availability.
+  if ! pkg_install_optional conntrack-tools && ! pkg_install_optional conntrack; then
+    log "    WARNING: conntrack CLI packages are unavailable; per-client conntrack counts will use procfs when available or report unavailable"
+  fi
+fi
+
+log "==> Installing inode helper dependency..."
+if ! df -iP / >/dev/null 2>&1 && ! command -v stat >/dev/null 2>&1; then
+  if ! pkg_install_optional coreutils-stat; then
+    log "    WARNING: coreutils-stat is unavailable; inode metrics will report unavailable if df lacks -i support"
   fi
 fi
 
@@ -356,7 +361,6 @@ fi
 
 if profile_enabled clients; then
   install_file "$COLLECTOR_SRC_DIR/client_inventory.lua" /usr/lib/lua/prometheus-collectors/client_inventory.lua 0644
-  install_file "$SCRIPT_DIR/nlbwmon/protocols" /usr/share/nlbwmon/protocols 0644
   install_file "$HELPER_SRC_DIR/openwrt-monitor-client-traffic.sh" /usr/bin/openwrt-monitor-client-traffic.sh 0755
   install_file "$HELPER_SRC_DIR/openwrt-monitor-client-conntrack.sh" /usr/bin/openwrt-monitor-client-conntrack.sh 0755
   # topology.lua reshapes the same identity/association data client_inventory
@@ -364,9 +368,15 @@ if profile_enabled clients; then
   # same package dependencies (getHostHints, iwinfo assoclist), so it rides
   # along in the same profile rather than getting its own.
   install_file "$COLLECTOR_SRC_DIR/topology.lua" /usr/lib/lua/prometheus-collectors/topology.lua 0644
-  log "==> Restarting nlbwmon to load the trimmed service buckets..."
-  /etc/init.d/nlbwmon enable
-  /etc/init.d/nlbwmon restart
+  if [ -x /etc/init.d/nlbwmon ]; then
+    ensure_dir /usr/share/nlbwmon
+    install_file "$SCRIPT_DIR/nlbwmon/protocols" /usr/share/nlbwmon/protocols 0644
+    log "==> Restarting nlbwmon to load the trimmed service buckets..."
+    /etc/init.d/nlbwmon enable
+    /etc/init.d/nlbwmon restart
+  else
+    log "    WARNING: nlbwmon is not installed; skipping protocols file and service restart"
+  fi
 fi
 
 install_file "$HELPER_SRC_DIR/openwrt-monitor-device-status.sh" /usr/bin/openwrt-monitor-device-status.sh 0755
@@ -510,6 +520,7 @@ log "==> Enabling and restarting cron..."
 sleep 2
 
 LAN_IP="$(uci get network.lan.ipaddr 2>/dev/null || printf '%s' '<ROUTER_IP>')"
+LAN_IP="${LAN_IP%%/*}"
 METRICS_URL="http://$LAN_IP:9100/metrics"
 
 if fetch_url "$METRICS_URL" > /dev/null 2>&1; then

@@ -125,7 +125,8 @@ groups:
         labels:
           severity: info
 
-      - uid: openwrt_client_inventory_collector_unavailable
+      # UID max 40 chars (Grafana rejects longer and aborts provisioning).
+      - uid: openwrt_client_inv_collector_unavail
         title: OpenWrt - Client inventory collector unavailable
         condition: C
         data:

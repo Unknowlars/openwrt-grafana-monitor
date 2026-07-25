@@ -1,0 +1,9 @@
+# OpenWrt SSH MCP known_hosts (mounted read-only at /app/known_hosts).
+# Populate with your router keys before using the MCP sidecar:
+#   ssh-keyscan -H 192.168.0.1 >> known_hosts
+#   ssh-keyscan -H 192.168.0.2 >> known_hosts
+# Host-key verification is required by default. Only set
+# OPENWRT_MCP_INSECURE_HOST_KEYS=1 on a trusted network if you must skip it.
+|1|YSfqFWuw5r6QTyye7jDruURv2Fk=|JUcvDS2+TreC96GvL20jVW3i+80= ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCYqhP1VObUzJp4vCqKnJpdwnp0HQLs+CZfIfNxDyzBBa8MUjDO1lxDFP6hsCOzuOAsPpBykv2Eohx65ToBV++SQ0YkTTyeu4IidlrfMrlDCisy6hNDfpau9XY/LDBgkzDlQ1vjV0qlikHIaybPEv6/xlISSsxWXSXxlLi6fzHZUOa+StiT2iGAxtPhjZx/ThBBSI92YAsfaPlrASErjR+RXySmzNjimOeD8NZLbB5ZCcaECC5v5V2FdH9+vtPec/TtWR+yWV/gA17VVBMmtnqIDp+9NsZhfCFDitwulpdvyYyhg6F8FBZV4bwCqp0P1pWU38UBM6tKIA0YgV1i99Ut
+|1|+eLQmkPwypBainndJMC+BKc3qb4=|b6zBtFHWRbGtfmL2k+JPLkOhddw= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA5e5pJN5wT0HONFt0L99Q2gYG3pYVcM0pN3OKxj2bvR
+|1|osa7yusiKABNBKT/wHjAU2OQi84=|Zji6X0y9p9Tmm5ky2e/bEA8Pp9Q= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEOqYNcJONKlCCqDA46LooHqU9KhIGyAfKs3IclFZAES

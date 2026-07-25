@@ -132,24 +132,33 @@ minute. It uses `getHostHints` only to map known local IPv4 addresses back to
 the existing lowercase `mac` identity, then counts each `conntrack -L` row
 once for every matching client. It exports one bounded gauge per known client:
 
-Requires the `conntrack` package (the `conntrack` CLI binary). Both metrics
-below share one fail-closed gate that trips before either is attempted if
-`conntrack` is missing -- **live audit, 2026-07-23:** this package was not in
-setup.sh's `clients` profile install list before that date, so both metrics
-reported unavailable on every scrape on both reference routers despite the
-collector, cron job, and files all being correctly deployed. `setup.sh` now
-installs it alongside the other `clients` profile dependencies.
+The helper prefers the `conntrack` package (`conntrack -L`) and falls back to
+`/proc/net/nf_conntrack` or `/proc/net/ip_conntrack` when the CLI is absent.
+Client identity still prefers `getHostHints`, but falls back to DHCP leases and
+ARP when the LuCI host-hints path is unavailable or cannot be parsed.
+If no conntrack source is available, only the conntrack metrics fail closed;
+the WiFi association-event companion still runs from `network.wireless status`
+and `logread` when those sources are available. **Live audit, 2026-07-25:**
+both reference routers had the helper deployed but reported
+`openwrt_client_conntrack_collector_available 0`; the fallback keeps that from
+being a CLI-packaging-only outage on routers with readable procfs conntrack
+state.
+
+The MCP `conntrack_sources` diagnostic reports only source availability and
+row/byte counts for this path. It deliberately does not return raw conntrack
+rows, host hints, client addresses, or MAC addresses.
 
 - `openwrt_client_conntrack_entries{mac}`
 - `openwrt_client_conntrack_truncated`
 
 There are no remote-IP, port, IPv6-address, domain, or vendor labels. For 60
 clients this adds 60 series plus its availability gauge. The association
-counter adds a separate availability gauge. A known busy client
-must be checked on the router with `conntrack -L | grep <ip> | wc -l` before
-the number is treated as trustworthy. Flow offload invalidates byte accounting;
-whether it changes *entry occupancy* is a separate router-specific live gate,
-so this repo does not infer it from the traffic result.
+counter adds a separate availability gauge. A known busy client should be
+spot-checked on the router with `conntrack -L | grep <ip> | wc -l`, or against
+`/proc/net/nf_conntrack` when the CLI is absent, before the number is treated as
+trustworthy. Flow offload invalidates byte accounting; whether it changes
+*entry occupancy* is a separate router-specific live gate, so this repo does
+not infer it from the traffic result.
 
 Bounded by `CLIENT_CONNTRACK_MAX` (default 256), matching the inventory
 collector's default cap. When `getHostHints` has more known clients than the
@@ -211,7 +220,11 @@ wget -qO- "http://$LAN_IP:9100/metrics" | grep -E '^openwrt_client_(info|up|inve
 The `clients` profile installs `nlbwmon`, replaces its default protocol file
 with a deliberately small service set (`https`, `http`, `dns`, `quic`, `ssh`,
 `smb`, `ntp`, `imaps`, `rtp`, and `other`), and runs
-`openwrt-monitor-client-traffic.sh` each minute. It exports bounded counters:
+`openwrt-monitor-client-traffic.sh` each minute. If the `nlbwmon` package is
+unavailable, setup skips the protocol-file install and service restart instead
+of aborting; the traffic helper then reports
+`openwrt_client_traffic_collector_available 0` until the package is installed.
+It exports bounded counters:
 
 - `openwrt_client_bytes_total{mac,direction,service}`
 - `openwrt_client_packets_total{mac,direction,service}`
@@ -292,6 +305,15 @@ Do not enable software or hardware flow offload when relying on nlbwmon or
 nftables traffic counters; both can bypass the observation path.
 
 ## Validating the exposition
+
+`openwrt-monitor-inodes.sh` uses `df -iP` when the router supports it and falls
+back to `stat -f` inode totals on BusyBox builds where `df` omits inode support.
+Setup installs `coreutils-stat` opportunistically when neither source is already
+usable.
+If neither source is available, `openwrt_filesystem_inode_collector_available`
+stays `0` and no inode series are emitted.
+The MCP `inode_sources` diagnostic reports only whether those source commands
+are present and usable.
 
 Prometheus does **not** fail a scrape that contains the same series twice: it
 keeps the first sample, drops the later one, and records it as a duplicate. The

@@ -145,6 +145,9 @@ services:
       - "127.0.0.1:${OPENWRT_MCP_PORT:-8033}:8033"
     volumes:
       - ./openwrt:/app/openwrt:ro
+      # Operator-managed SSH host keys. Create/populate before first use:
+      #   ssh-keyscan -H 192.168.0.1 >> known_hosts
+      - ${OPENWRT_MCP_KNOWN_HOSTS_FILE:-./known_hosts}:/app/known_hosts:ro
     environment:
       - OPENWRT_MCP_BIND=0.0.0.0
       - OPENWRT_MCP_PORT=8033
@@ -153,7 +156,10 @@ services:
       - OPENWRT_MCP_ALLOWED_HOSTS=${OPENWRT_MCP_ALLOWED_HOSTS:-127.0.0.1,localhost}
       - OPENWRT_MCP_ALLOWED_ORIGINS=${OPENWRT_MCP_ALLOWED_ORIGINS:-}
       - OPENWRT_MCP_SSH_TIMEOUT=${OPENWRT_MCP_SSH_TIMEOUT:-15}
+      - OPENWRT_MCP_SETUP_TIMEOUT=${OPENWRT_MCP_SETUP_TIMEOUT:-600}
       - OPENWRT_MCP_OUTPUT_LIMIT=${OPENWRT_MCP_OUTPUT_LIMIT:-12000}
+      - OPENWRT_MCP_KNOWN_HOSTS=${OPENWRT_MCP_KNOWN_HOSTS:-/app/known_hosts}
+      - OPENWRT_MCP_INSECURE_HOST_KEYS=${OPENWRT_MCP_INSECURE_HOST_KEYS:-}
       - OPENWRT_SSH_USERNAME=${OPENWRT_SSH_USERNAME:-}
       - OPENWRT_SSH_PASSWORD=${OPENWRT_SSH_PASSWORD:-}
     healthcheck:

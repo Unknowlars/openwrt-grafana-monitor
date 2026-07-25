@@ -2,6 +2,104 @@
 
 ## 2026-07-25
 
+- Changed: Follow-up live fixes for MCP/router issues found after `R13`.
+  Added safe `conntrack_sources` and `inode_sources` MCP diagnostics, made
+  per-client conntrack fall back from `getHostHints` to DHCP leases/ARP, made
+  inode metrics fall back from `df -iP` to `stat -f`, and made setup install
+  `coreutils-stat` opportunistically when no inode source is present.
+- Validation: focused MCP/collector/setup checks, full unittest discovery,
+  shell syntax, Compose config, `tests/run_all.sh`, generated-dashboard drift
+  check, `git diff --check`, and live exposition checks all passed. The fixes
+  were deployed to both configured routers with bounded MCP setup.
+- Remaining risk: Grafana UI was not screenshot-verified in this follow-up.
+
+- Changed: Remediated read-only live issues found through the OpenWrt MCP pass.
+  MCP metrics helpers now resolve `network.lan.ipaddr` before fetching the
+  router-local exporter, and the `wifi` diagnostic redacts common wireless
+  secret fields before returning `wifi status`. The clients conntrack helper
+  now falls back to `/proc/net/nf_conntrack`/`ip_conntrack` when the `conntrack`
+  CLI is absent and reports WiFi association events independently of conntrack
+  availability. Docs and focused tests updated.
+- Validation: focused MCP policy and client-conntrack tests passed; see the
+  completion report for broader static/live checks.
+- Remaining risk: live routers and the running MCP container still need an
+  authorized deployment/rebuild before these source changes affect production
+  MCP/tool output.
+
+- Changed: Implemented `R13` from
+  `docs/CODE-REVIEW-REMEDIATION-PLAN.md`. MCP setup profile validation now
+  rejects `full` combined with any other profile before staging files or opening
+  the setup SSH command, matching `openwrt/setup.sh`. `tests/test_mcp_policy.py`
+  covers both `full,traffic` and `traffic,full`; `docs/mcp-ssh.md` documents the
+  accepted profile shapes.
+- Validation: static/offline only; see the R13 completion report in-session.
+- Remaining risk: none known for the local validation asymmetry; no live setup
+  run was needed or performed.
+
+- Changed: Implemented `R12` from
+  `docs/CODE-REVIEW-REMEDIATION-PLAN.md`. `openwrt_run_repo_setup` now uses a
+  setup-specific 600 s default timeout via `OPENWRT_MCP_SETUP_TIMEOUT`, without
+  raising the shared fast command default. Setup command timeouts return
+  `timed_out=true`, exit code 124, and an explicit partial-configuration warning
+  that names `openwrt_monitoring_status` as the next read-only check. Compose,
+  `.env.example`, `docs/mcp-ssh.md`, and `tests/test_mcp_policy.py` updated.
+- Validation: static/offline only; see the R12 completion report in-session.
+- Remaining risk: no live router setup was run, so real slow-link behavior and
+  operator recovery flow were not exercised.
+
+- Changed: Implemented `R11` from
+  `docs/CODE-REVIEW-REMEDIATION-PLAN.md`. MCP sidecar defaults to SSH
+  `RejectPolicy` with operator-managed `known_hosts`
+  (`OPENWRT_MCP_KNOWN_HOSTS`, compose mount of `./known_hosts`). Explicit
+  `OPENWRT_MCP_INSECURE_HOST_KEYS=1` restores `AutoAddPolicy` with a warning
+  log on every connection. Actionable host-key failure errors; docs and
+  `.env.example` updated; `tests/test_mcp_policy.py` extended. Key-based auth
+  still not supported (noted only).
+- Validation: see the R11 completion report in-session.
+- Remaining risk: existing MCP deployments need a populated `known_hosts`
+  before SSH tools work; insecure override is available but not recommended.
+  No live MCP/SSH validation was run.
+
+- Changed: Implemented `R10` from
+  `docs/CODE-REVIEW-REMEDIATION-PLAN.md`. `openwrt-monitor-client-conntrack.sh`
+  resets `ssid` and `ifname` each interface iteration so a missing wireless
+  `config` cannot attribute roams to the previous SSID. Extended
+  `tests/test_client_conntrack.sh` (missing-config fixture + stale-SSID
+  assertion) and made the offline jshn mock fail-close on absent keys. Plan
+  checkbox ticked.
+- Validation: see the R10 completion report in-session.
+- Remaining risk: trigger depends on a live `network.wireless status` entry
+  lacking `config` (not observed on a router this pass); fix is unconditionally
+  safe.
+
+- Changed: Implemented `R9` from
+  `docs/CODE-REVIEW-REMEDIATION-PLAN.md`. `openwrt-monitor-wan-info.sh` stages
+  the metric temp file under `/tmp`, traps cleanup of `$tmp_file` and
+  `$metric_tmp`, sweeps pre-fix `"$metric_file".[0-9]*` leftovers, and honors
+  `OPENWRT_MONITOR_TEXTFILE_DIR` (environment-contract change; same override
+  every other textfile helper already uses). `/lib/functions/network.sh` is
+  sourced only when present. Added `tests/test_wan_info.sh`, wired into
+  `tests/run_all.sh`, and ticked the plan checkbox.
+- Validation: see the R9 completion report in-session (focused shell test,
+  unittest, `sh -n`, `docker compose config`, `tests/run_all.sh`, graphify).
+- Remaining risk: static/offline only; no live router cron run was performed.
+
+- Changed: Implemented `R8` from
+  `docs/CODE-REVIEW-REMEDIATION-PLAN.md`. `openwrt/setup.sh` now skips the
+  nlbwmon protocols-file install and service enable/restart when
+  `/etc/init.d/nlbwmon` is absent, logging a warning instead of aborting after
+  the earlier optional-package warning. Added `tests/test_setup_nlbwmon_optional.sh`,
+  wired it into `tests/run_all.sh`, documented the degraded nlbwmon behavior in
+  `docs/advanced-profiles.md`, and ticked the plan checkbox.
+- Validation: `sh -n openwrt/setup.sh tests/test_setup_nlbwmon_optional.sh`,
+  `sh tests/test_setup_nlbwmon_optional.sh`, `sh tests/test_setup_legacy_crontab.sh`,
+  `python3 -m unittest discover -s tests -p 'test_*.py'` (15 tests OK),
+  `sh -n openwrt/setup.sh openwrt/scripts/*.sh`, `docker compose config`, and
+  `sh tests/run_all.sh` all passed. `run_all.sh` reported every generated
+  dashboard copy unchanged and byte-identical; Lua checks ran.
+- Remaining risk: static-only so far. A real router without nlbwmon was not used,
+  and no setup/service run was performed.
+
 - Changed: Implemented `R7` from
   `docs/CODE-REVIEW-REMEDIATION-PLAN.md`. `openwrt-monitor-client-conntrack.sh`
   now caps `openwrt_client_conntrack_entries` with `CLIENT_CONNTRACK_MAX`

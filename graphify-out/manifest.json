@@ -55,37 +55,37 @@
     "semantic_hash": "2e3d9b33b9553f4c45d2749dbd69badc"
   },
   "grafana-dashboard-exports/openwrt-advanced-v2.json": {
-    "mtime": 1784973594.4652176,
+    "mtime": 1784980905.011034,
     "ast_hash": "f5902b0af749ed57f18f2e8ca3e1439b",
     "semantic_hash": "f5902b0af749ed57f18f2e8ca3e1439b"
   },
   "grafana-dashboard-exports/openwrt-clients-v2.json": {
-    "mtime": 1784973594.5845485,
+    "mtime": 1784980905.1217394,
     "ast_hash": "677cc39678cf74400c55c01755bdd013",
     "semantic_hash": "677cc39678cf74400c55c01755bdd013"
   },
   "grafana-dashboard-exports/openwrt-mission-control.json": {
-    "mtime": 1784973595.021641,
+    "mtime": 1784980905.5532627,
     "ast_hash": "cc6d148d4dfa920be7d97aa5c64f7764",
     "semantic_hash": "cc6d148d4dfa920be7d97aa5c64f7764"
   },
   "grafana-dashboard-exports/openwrt-operations-v2.json": {
-    "mtime": 1784973594.7550428,
+    "mtime": 1784980905.2888737,
     "ast_hash": "ac7b6fdb17ed0ca15c5cd3339e4b3f62",
     "semantic_hash": "ac7b6fdb17ed0ca15c5cd3339e4b3f62"
   },
   "grafana-dashboard-exports/openwrt-topology-v2.json": {
-    "mtime": 1784973594.8601918,
+    "mtime": 1784980905.3940556,
     "ast_hash": "c088429ab305beefa10b6a85cd909d53",
     "semantic_hash": "c088429ab305beefa10b6a85cd909d53"
   },
   "grafana/provisioning/dashboards/openwrt-advanced-v2.json": {
-    "mtime": 1784973594.483427,
+    "mtime": 1784980905.0276423,
     "ast_hash": "f5902b0af749ed57f18f2e8ca3e1439b",
     "semantic_hash": "f5902b0af749ed57f18f2e8ca3e1439b"
   },
   "grafana/provisioning/dashboards/openwrt-clients-v2.json": {
-    "mtime": 1784973594.6045492,
+    "mtime": 1784980905.1426003,
     "ast_hash": "677cc39678cf74400c55c01755bdd013",
     "semantic_hash": "677cc39678cf74400c55c01755bdd013"
   },
@@ -100,7 +100,7 @@
     "semantic_hash": "c1765c33e13fb6c9cb31feee28154556"
   },
   "grafana/provisioning/dashboards/openwrt-mission-control.json": {
-    "mtime": 1784973595.0479302,
+    "mtime": 1784980905.5781689,
     "ast_hash": "cc6d148d4dfa920be7d97aa5c64f7764",
     "semantic_hash": "cc6d148d4dfa920be7d97aa5c64f7764"
   },
@@ -110,7 +110,7 @@
     "semantic_hash": "d66e9acf82d293974284199e119993ff"
   },
   "grafana/provisioning/dashboards/openwrt-operations-v2.json": {
-    "mtime": 1784973594.7810774,
+    "mtime": 1784980905.3172708,
     "ast_hash": "ac7b6fdb17ed0ca15c5cd3339e4b3f62",
     "semantic_hash": "ac7b6fdb17ed0ca15c5cd3339e4b3f62"
   },
@@ -120,7 +120,7 @@
     "semantic_hash": "c221f2f044065934833744fdbafef9a2"
   },
   "grafana/provisioning/dashboards/openwrt-topology-v2.json": {
-    "mtime": 1784973594.876323,
+    "mtime": 1784980905.4066052,
     "ast_hash": "c088429ab305beefa10b6a85cd909d53",
     "semantic_hash": "c088429ab305beefa10b6a85cd909d53"
   },
@@ -130,14 +130,14 @@
     "semantic_hash": "d31b9eafcebf2581a0d593d19ef19cb6"
   },
   "mcp_server/core.py": {
-    "mtime": 1784818644.6301713,
-    "ast_hash": "d4d888824d1f49470f9d4a222b081964",
-    "semantic_hash": "d4d888824d1f49470f9d4a222b081964"
+    "mtime": 1784980619.7416873,
+    "ast_hash": "9b5ed20e304abe22545634b00d191945",
+    "semantic_hash": ""
   },
   "mcp_server/server.py": {
-    "mtime": 1784818910.589075,
-    "ast_hash": "430e9898ba027f2eaab9c51dfbdcf5fe",
-    "semantic_hash": "430e9898ba027f2eaab9c51dfbdcf5fe"
+    "mtime": 1784980620.1099994,
+    "ast_hash": "cb7756ca7c1ba27de67a90f9becb7198",
+    "semantic_hash": ""
   },
   "openwrt/collectors/client_inventory.lua": {
     "mtime": 1784969567.1680303,
@@ -185,8 +185,8 @@
     "semantic_hash": ""
   },
   "openwrt/scripts/openwrt-monitor-client-conntrack.sh": {
-    "mtime": 1784973552.4229393,
-    "ast_hash": "62dd6167f5cea67770a0fb305918ba5e",
+    "mtime": 1784980370.2221596,
+    "ast_hash": "f87f0c83ba11114696e495181c21515f",
     "semantic_hash": ""
   },
   "openwrt/scripts/openwrt-monitor-client-traffic.sh": {
@@ -215,9 +215,9 @@
     "semantic_hash": "498a1409f8809fa4d891032c60470b23"
   },
   "openwrt/scripts/openwrt-monitor-inodes.sh": {
-    "mtime": 1784667976.0090785,
-    "ast_hash": "fa2e39787bb25c2b33e8cb9554c9d6f5",
-    "semantic_hash": "fa2e39787bb25c2b33e8cb9554c9d6f5"
+    "mtime": 1784980029.417557,
+    "ast_hash": "295ff2465bb78120354c3696e52278d0",
+    "semantic_hash": ""
   },
   "openwrt/scripts/openwrt-monitor-ipv6-health.sh": {
     "mtime": 1784667976.0209267,
@@ -250,9 +250,9 @@
     "semantic_hash": "42c3dfec3ccdd87779b207b5dd581566"
   },
   "openwrt/scripts/openwrt-monitor-wan-info.sh": {
-    "mtime": 1784293113.7825048,
-    "ast_hash": "3ba0e4731416bd5db298e4d867edf349",
-    "semantic_hash": "3ba0e4731416bd5db298e4d867edf349"
+    "mtime": 1784974303.53063,
+    "ast_hash": "64d7139e8bf9c79ac172536d435bc7ea",
+    "semantic_hash": ""
   },
   "openwrt/scripts/openwrt-monitor-wan-quality.sh": {
     "mtime": 1784970929.452266,
@@ -265,8 +265,8 @@
     "semantic_hash": "069394f0a5c237bf962e8f70bef66fc8"
   },
   "openwrt/setup.sh": {
-    "mtime": 1784968588.2661686,
-    "ast_hash": "1c66281b60d4ed63f50d7c2a7d511222",
+    "mtime": 1784980671.4275832,
+    "ast_hash": "167127eeee2fa74e86675d724339f0a5",
     "semantic_hash": ""
   },
   "tests/check_exposition.py": {
@@ -310,13 +310,13 @@
     "semantic_hash": "acd2960d8bc36630c30af61b98394867"
   },
   "tests/run_all.sh": {
-    "mtime": 1784968602.7426949,
-    "ast_hash": "f6617ed03892d4e0b005a0db8c44d031",
+    "mtime": 1784980030.1506011,
+    "ast_hash": "7a2d8306f11d2f998348490970079ad0",
     "semantic_hash": ""
   },
   "tests/test_client_conntrack.sh": {
-    "mtime": 1784973570.1141355,
-    "ast_hash": "88cfca38e8790a3f188b642ea9980bd7",
+    "mtime": 1784980370.623691,
+    "ast_hash": "34347d9b20b310016eae384c118d5d6e",
     "semantic_hash": ""
   },
   "tests/test_client_inventory.lua": {
@@ -340,9 +340,9 @@
     "semantic_hash": "2b35f4115780adad42f4386ff7a5a54c"
   },
   "tests/test_mcp_policy.py": {
-    "mtime": 1784818646.196758,
-    "ast_hash": "3d2e6043c167ed944d790daadfa07be8",
-    "semantic_hash": "3d2e6043c167ed944d790daadfa07be8"
+    "mtime": 1784980620.483784,
+    "ast_hash": "65eb46f2dfee48e93a44bb6a6adaa373",
+    "semantic_hash": ""
   },
   "tests/test_sqm_collector.sh": {
     "mtime": 1784668028.677155,
@@ -365,13 +365,13 @@
     "semantic_hash": ""
   },
   ".agent/CHANGELOG.md": {
-    "mtime": 1784973159.3422706,
-    "ast_hash": "df5211e5af5c96bc9a215852041ba0f3",
+    "mtime": 1784980973.3283217,
+    "ast_hash": "d521ad21aa2f02f61029c8e987da4ebc",
     "semantic_hash": ""
   },
   ".agent/STATUS.md": {
-    "mtime": 1784973158.9395196,
-    "ast_hash": "c5221baea48940b4c69765c33f436992",
+    "mtime": 1784980972.9460442,
+    "ast_hash": "3669402ffed3708e76b93c9bd2fbdf84",
     "semantic_hash": ""
   },
   ".agent/repository-agent-audit.md": {
@@ -400,8 +400,8 @@
     "semantic_hash": ""
   },
   "docker-compose.yml": {
-    "mtime": 1784968401.3219435,
-    "ast_hash": "5827f0028ae0f158fb50d9854cd31922",
+    "mtime": 1784976615.379799,
+    "ast_hash": "39241801a605d9c29330fc63a065c258",
     "semantic_hash": ""
   },
   "docs/CODE-REVIEW-FINDINGS.md": {
@@ -410,13 +410,13 @@
     "semantic_hash": ""
   },
   "docs/CODE-REVIEW-REMEDIATION-PLAN.md": {
-    "mtime": 1784973553.6646092,
-    "ast_hash": "b95de9ea5edb0a9b42b61f04131fd402",
+    "mtime": 1784977809.2807474,
+    "ast_hash": "beffd5df2c2f1def91d460ebfc6c3c22",
     "semantic_hash": ""
   },
   "docs/advanced-profiles.md": {
-    "mtime": 1784973553.2442365,
-    "ast_hash": "5d25274c1a950500490320dd8d5bbb6e",
+    "mtime": 1784980672.176577,
+    "ast_hash": "854364c6b5043ab8aa82151de9fbf0bc",
     "semantic_hash": ""
   },
   "docs/client-topology-and-netflow-plan.md": {
@@ -430,8 +430,8 @@
     "semantic_hash": ""
   },
   "docs/mcp-ssh.md": {
-    "mtime": 1784818648.6165512,
-    "ast_hash": "7fe5e51cfaac71b4d0d4c1dd6d4e93d7",
+    "mtime": 1784980620.8639314,
+    "ast_hash": "0315100b285383b0c44329449996d488",
     "semantic_hash": ""
   },
   "docs/monitoring-host-setup.md": {
@@ -455,8 +455,8 @@
     "semantic_hash": ""
   },
   "grafana/provisioning/alerting/openwrt-alerts.yaml": {
-    "mtime": 1784824989.9153316,
-    "ast_hash": "bef92a6f1051b0af4c5fef1f3791bc3a",
+    "mtime": 1784976204.1383612,
+    "ast_hash": "fa002ec79cca31f69c10713de54341e0",
     "semantic_hash": ""
   },
   "grafana/provisioning/dashboards/dashboards.yaml": {
@@ -502,6 +502,21 @@
   "tests/test_alloy_syslog_labels.py": {
     "mtime": 1784969046.50233,
     "ast_hash": "7fae0c967b2499e4404e1ce3ac4817ec",
+    "semantic_hash": ""
+  },
+  "tests/test_setup_nlbwmon_optional.sh": {
+    "mtime": 1784980671.8026986,
+    "ast_hash": "61d7f825669d3c645c12566fe4a78428",
+    "semantic_hash": ""
+  },
+  "tests/test_wan_info.sh": {
+    "mtime": 1784974304.2054024,
+    "ast_hash": "0a906751d887ebe69239cf10309b6739",
+    "semantic_hash": ""
+  },
+  "tests/test_inodes.sh": {
+    "mtime": 1784980029.781616,
+    "ast_hash": "465f6af86aae6d6e4c6d0b2651a2f0c7",
     "semantic_hash": ""
   }
 }

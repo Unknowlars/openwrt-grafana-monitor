@@ -10,11 +10,14 @@ The sidecar is intentionally not a raw shell server. It only exposes allowlisted
 - MCP client auth: static bearer token in the `Authorization` header.
 - Router auth: one OpenWrt SSH username/password from untracked `.env`.
 - Router allowlist: labels from `OPENWRT_MCP_ROUTERS`; defaults to `openwrt-main=192.168.0.1,openwrt-new=192.168.0.2`.
+- SSH host keys: verified against an operator-managed `known_hosts` file (RejectPolicy). Missing or mismatched keys fail closed with an actionable error.
 - HTTP bind: localhost-only on the Docker host by default.
 - Mutations require `confirm=true`.
 - No arbitrary shell, arbitrary host, package upgrade, sysupgrade, firewall/network restart, or secret-reading tools.
 
-The sidecar currently auto-accepts SSH host keys inside the container because OpenWrt/Dropbear deployments often lack pre-provisioned known-hosts. Keep the MCP port bound to localhost or a trusted private network.
+Host-key pinning is what makes the router allowlist meaningful: without it, a LAN attacker who answers on the router IP can harvest `OPENWRT_SSH_PASSWORD` and feed arbitrary command output back to the sidecar. Keep the MCP port bound to localhost or a trusted private network either way.
+
+SSH public-key auth is not wired yet (`look_for_keys=False`); password auth is still required. Pinning host keys reduces MITM risk but the password still crosses the wire on every call.
 
 ## Router user
 
@@ -26,9 +29,9 @@ The guarded tools need enough privilege to run:
 - `/etc/init.d/log status|restart`
 - `/etc/init.d/cron status|restart`
 - `uci show` and selected `uci set`/`uci commit system`
-- `wget -qO- http://127.0.0.1:9100/metrics`
+- `uci get network.lan.ipaddr` and `wget -qO- http://<lan-ip>:9100/metrics`
 - `logger`
-- read-only diagnostics such as `ip`, `df`, `nft`, `wifi`, `iw`, `logread`
+- read-only diagnostics such as `ip`, `df`, `nft`, redacted `wifi`, `iw`, `logread`
 - optional setup staging under `/tmp/openwrt` and `sh /tmp/openwrt/setup.sh <monitoring_host>`
 
 ## Configure and start
@@ -41,6 +44,29 @@ OPENWRT_SSH_USERNAME=<router-ssh-user>
 OPENWRT_SSH_PASSWORD=<router-ssh-password>
 OPENWRT_MCP_ROUTERS=openwrt-main=192.168.0.1,openwrt-new=192.168.0.2
 ```
+
+### SSH known_hosts (required by default)
+
+Populate the host-side `known_hosts` file (mounted read-only at
+`/app/known_hosts` in the container) before the first SSH tool call:
+
+```sh
+ssh-keyscan -H 192.168.0.1 >> known_hosts
+ssh-keyscan -H 192.168.0.2 >> known_hosts
+```
+
+Related env vars:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `OPENWRT_MCP_KNOWN_HOSTS_FILE` | `./known_hosts` | Host path bind-mounted into the container |
+| `OPENWRT_MCP_KNOWN_HOSTS` | `/app/known_hosts` | Path the sidecar loads inside the container |
+| `OPENWRT_MCP_INSECURE_HOST_KEYS` | empty/off | Set to `1` only to fall back to AutoAddPolicy (logs a warning on every connection) |
+| `OPENWRT_MCP_SETUP_TIMEOUT` | `600` | Timeout in seconds for `openwrt_run_repo_setup`; separate from the fast SSH/read-only timeout |
+
+Do not enable `OPENWRT_MCP_INSECURE_HOST_KEYS` unless the monitoring host and
+LAN path to the routers are fully trusted. It disables host-key verification
+and restores the pre-fix MITM exposure.
 
 Start only the MCP sidecar:
 
@@ -65,6 +91,17 @@ The Compose port mapping is `127.0.0.1:${OPENWRT_MCP_PORT:-8033}:8033`. To expos
 - `openwrt_configure_syslog` — requires `confirm=true`
 - `openwrt_run_repo_setup` — requires `confirm=true`
 
+`openwrt_run_repo_setup` stages this repository's `openwrt/` payload and then
+runs `setup.sh`, so it can take several minutes on a fresh router or slow
+package mirror. If it times out, treat the router as potentially partially
+configured and run `openwrt_monitoring_status` next as a read-only check before
+rerunning setup or changing router state.
+
+The `profile` argument follows `OPENWRT_MONITOR_PROFILE`: use `core`, `traffic`,
+`wifi_mesh`, `dpi`, `clients`, a comma-separated list of non-`full` profiles, or
+the single word `full`. The MCP policy rejects `full` combined with any other
+profile before staging files on the router.
+
 Allowed diagnostics for `openwrt_diagnostic`:
 
 ```text
@@ -74,7 +111,9 @@ wifi
 dhcp
 firewall_counters
 collector_success
+conntrack_sources
 disk
+inode_sources
 processes
 ```
 

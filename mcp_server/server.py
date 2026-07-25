@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from io import BytesIO
+import logging
 import os
 from pathlib import Path
 import socket
@@ -22,7 +23,10 @@ from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.routing import Mount, Route
 
 from .core import (
+    DEFAULT_KNOWN_HOSTS_PATH,
+    HOST_KEY_POLICY_AUTO_ADD,
     CommandSpec,
+    HostKeyPolicy,
     PolicyError,
     build_configure_syslog_command,
     build_diagnostic_command,
@@ -32,13 +36,18 @@ from .core import (
     build_setup_command,
     build_system_facts_command,
     build_test_log_command,
+    host_key_failure_message,
     parse_router_inventory,
     redact,
     require_confirm,
+    resolve_host_key_policy,
+    resolve_setup_timeout_seconds,
     resolve_router,
     truncate_output,
     validate_port,
 )
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_ROUTERS = "openwrt-main=192.168.0.1,openwrt-new=192.168.0.2"
@@ -54,8 +63,10 @@ class Settings:
     allowed_hosts: frozenset[str]
     allowed_origins: frozenset[str]
     ssh_timeout_seconds: int
+    setup_timeout_seconds: int
     output_limit: int
     repo_openwrt_dir: Path
+    host_key_policy: HostKeyPolicy
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -69,6 +80,11 @@ class Settings:
         if len(token) < 16 or token == "change-me-openwrt-mcp-token":
             raise RuntimeError("OPENWRT_MCP_TOKEN must be set to a non-default value of at least 16 characters")
 
+        host_key_policy = resolve_host_key_policy(
+            os.getenv("OPENWRT_MCP_KNOWN_HOSTS", DEFAULT_KNOWN_HOSTS_PATH),
+            os.getenv("OPENWRT_MCP_INSECURE_HOST_KEYS"),
+        )
+
         return cls(
             routers_raw=os.getenv("OPENWRT_MCP_ROUTERS", DEFAULT_ROUTERS),
             username=username,
@@ -77,8 +93,10 @@ class Settings:
             allowed_hosts=_csv_set(os.getenv("OPENWRT_MCP_ALLOWED_HOSTS", "127.0.0.1,localhost")),
             allowed_origins=_csv_set(os.getenv("OPENWRT_MCP_ALLOWED_ORIGINS", "")),
             ssh_timeout_seconds=_int_env("OPENWRT_MCP_SSH_TIMEOUT", 15),
+            setup_timeout_seconds=resolve_setup_timeout_seconds(os.getenv("OPENWRT_MCP_SETUP_TIMEOUT")),
             output_limit=_int_env("OPENWRT_MCP_OUTPUT_LIMIT", DEFAULT_OUTPUT_LIMIT),
             repo_openwrt_dir=Path(os.getenv("OPENWRT_MCP_OPENWRT_DIR", "/app/openwrt")),
+            host_key_policy=host_key_policy,
         )
 
 
@@ -139,6 +157,17 @@ class SSHRunner:
             exit_code = stdout.channel.recv_exit_status()
             out = stdout.read().decode("utf-8", "replace")
             err = stderr.read().decode("utf-8", "replace")
+        except (socket.timeout, TimeoutError):
+            message = spec.timeout_message or f"command timed out after {spec.timeout_seconds} seconds"
+            return self._result(
+                router_name,
+                spec,
+                124,
+                "",
+                message,
+                started,
+                extra={"timed_out": True, "timeout_seconds": spec.timeout_seconds},
+            )
         finally:
             client.close()
         return self._result(router_name, spec, exit_code, out, err, started)
@@ -189,18 +218,42 @@ class SSHRunner:
 
     def _connect(self, host: str, port: int) -> paramiko.SSHClient:
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(
-            hostname=host,
-            port=port,
-            username=self.cfg.username,
-            password=self.cfg.password,
-            look_for_keys=False,
-            allow_agent=False,
-            timeout=self.cfg.ssh_timeout_seconds,
-            banner_timeout=self.cfg.ssh_timeout_seconds,
-            auth_timeout=self.cfg.ssh_timeout_seconds,
-        )
+        policy = self.cfg.host_key_policy
+        known_hosts = Path(policy.known_hosts_path)
+        if policy.policy == HOST_KEY_POLICY_AUTO_ADD:
+            logger.warning(
+                "OPENWRT_MCP_INSECURE_HOST_KEYS enabled: accepting any SSH host "
+                "key for %s:%s (MITM risk; password auth still in use)",
+                host,
+                port,
+            )
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        else:
+            if known_hosts.is_file():
+                client.load_host_keys(str(known_hosts))
+            client.set_missing_host_key_policy(paramiko.RejectPolicy())
+        try:
+            client.connect(
+                hostname=host,
+                port=port,
+                username=self.cfg.username,
+                password=self.cfg.password,
+                look_for_keys=False,
+                allow_agent=False,
+                timeout=self.cfg.ssh_timeout_seconds,
+                banner_timeout=self.cfg.ssh_timeout_seconds,
+                auth_timeout=self.cfg.ssh_timeout_seconds,
+            )
+        except paramiko.BadHostKeyException as exc:
+            raise PolicyError(
+                host_key_failure_message(host, port, policy.known_hosts_path)
+            ) from exc
+        except paramiko.SSHException as exc:
+            if "not found in known_hosts" in str(exc).lower():
+                raise PolicyError(
+                    host_key_failure_message(host, port, policy.known_hosts_path)
+                ) from exc
+            raise
         return client
 
     def _result(
@@ -274,7 +327,7 @@ def openwrt_metrics_sample(router: str, limit_lines: int = 120) -> dict[str, Any
 
 @mcp.tool()
 def openwrt_diagnostic(router: str, diagnostic: str) -> dict[str, Any]:
-    """Run a read-only diagnostic by enum: routes, interfaces, wifi, dhcp, firewall_counters, collector_success, disk, processes."""
+    """Run a read-only diagnostic by enum: routes, interfaces, wifi, dhcp, firewall_counters, collector_success, conntrack_sources, disk, inode_sources, processes."""
 
     return runner.run(router, build_diagnostic_command(diagnostic))
 
@@ -329,6 +382,7 @@ def openwrt_run_repo_setup(
         traffic_lan_interface=traffic_lan_interface,
         syslog_port=syslog_port,
         syslog_proto=syslog_proto,
+        timeout_seconds=settings.setup_timeout_seconds,
     )
     require_confirm(confirm, spec)
     stage = runner.stage_openwrt_payload(router)

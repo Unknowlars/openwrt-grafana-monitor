@@ -38,8 +38,25 @@ json_load() { JSHN_JSON=$1; JSHN_PATH='.'; JSHN_STACK=''; }
 json_cleanup() { :; }
 json_select() {
   case "$1" in
-    ..) JSHN_PATH=${JSHN_STACK##*|}; JSHN_STACK=${JSHN_STACK%|*} ;;
-    *) JSHN_STACK="$JSHN_STACK|$JSHN_PATH"; case "$1" in *[!0-9]*) JSHN_PATH="$JSHN_PATH[\"$1\"]" ;; *) JSHN_PATH="$JSHN_PATH[$(( $1 - 1 ))]" ;; esac ;;
+    ..)
+      JSHN_PATH=${JSHN_STACK##*|}
+      JSHN_STACK=${JSHN_STACK%|*}
+      ;;
+    *)
+      # Match real jshn: fail closed when the key/index is absent and do not
+      # leave the cursor on a missing path. Needed so R10 can exercise a
+      # missing interface `config` object.
+      new_stack="$JSHN_STACK|$JSHN_PATH"
+      case "$1" in
+        *[!0-9]*) new_path="$JSHN_PATH[\"$1\"]" ;;
+        *) new_path="$JSHN_PATH[$(( $1 - 1 ))]" ;;
+      esac
+      if ! printf '%s' "$JSHN_JSON" | jq -e "$new_path | type != \"null\"" >/dev/null 2>&1; then
+        return 1
+      fi
+      JSHN_STACK=$new_stack
+      JSHN_PATH=$new_path
+      ;;
   esac
 }
 json_get_keys() { eval "$1=\$(printf '%s' \"\$JSHN_JSON\" | jq -r \"\$JSHN_PATH | if type == \\\"array\\\" then range(0; length) + 1 else keys[] end\")"; }
@@ -59,6 +76,30 @@ grep -q 'openwrt_client_conntrack_entries{mac="a4:83:e7:aa:bb:cc"} 3' "$OUT" || 
 grep -q 'openwrt_client_conntrack_entries{mac="2a:11:22:33:44:55"} 1' "$OUT" || { echo 'FAIL: phone conntrack count'; exit 1; }
 grep -q 'openwrt_client_conntrack_entries{mac="78:8c:b5:93:fb:a9"} 0' "$OUT" || { echo 'FAIL: known idle client must emit zero'; exit 1; }
 grep -q '^openwrt_client_conntrack_truncated 0$' "$OUT" || { echo 'FAIL: small host set should not be truncated'; exit 1; }
+
+PATH="$WORK/bin:$PATH" OPENWRT_MONITOR_TEXTFILE_DIR="$WORK/out" \
+  OPENWRT_MONITOR_JSHN_PATH="$WORK/libubox/jshn.sh" \
+  OPENWRT_MONITOR_LOGREAD_BIN=missing-logread \
+  OPENWRT_MONITOR_CONNTRACK_BIN=missing-conntrack \
+  OPENWRT_MONITOR_CONNTRACK_PROC="$WORK/conntrack_rows" \
+  sh "$ROOT/openwrt/scripts/openwrt-monitor-client-conntrack.sh"
+grep -q '^openwrt_client_conntrack_collector_available 1$' "$OUT" || { echo 'FAIL: readable proc conntrack fallback unavailable'; exit 1; }
+grep -q 'openwrt_client_conntrack_entries{mac="a4:83:e7:aa:bb:cc"} 3' "$OUT" || { echo 'FAIL: proc fallback TV conntrack count'; exit 1; }
+grep -q '^openwrt_wifi_assoc_events_collector_available 0$' "$OUT" || { echo 'FAIL: proc fallback no logread must be explicit unavailable'; exit 1; }
+
+cat > "$WORK/dhcp.leases" <<'EOF'
+1000 A4:83:E7:AA:BB:CC 192.168.0.42 living-room-tv *
+1000 2a:11:22:33:44:55 192.168.0.77 phone-random *
+EOF
+PATH="$WORK/bin:$PATH" OPENWRT_MONITOR_TEXTFILE_DIR="$WORK/out" \
+  OPENWRT_MONITOR_JSHN_PATH="$WORK/missing-jshn.sh" \
+  OPENWRT_MONITOR_LOGREAD_BIN=missing-logread \
+  OPENWRT_MONITOR_DHCP_LEASES="$WORK/dhcp.leases" \
+  OPENWRT_MONITOR_ARP_FILE="$WORK/missing-arp" \
+  sh "$ROOT/openwrt/scripts/openwrt-monitor-client-conntrack.sh"
+grep -q '^openwrt_client_conntrack_collector_available 1$' "$OUT" || { echo 'FAIL: DHCP lease fallback unavailable'; exit 1; }
+grep -q 'openwrt_client_conntrack_entries{mac="a4:83:e7:aa:bb:cc"} 3' "$OUT" || { echo 'FAIL: DHCP lease fallback TV conntrack count'; exit 1; }
+grep -q '^openwrt_wifi_assoc_events_collector_available 0$' "$OUT" || { echo 'FAIL: missing jshn must leave association events unavailable'; exit 1; }
 
 # Hostapd detail is preserved in Loki; this verifies the Prometheus companion
 # is only the bounded AP/SSID/event aggregate and does not double-count the
@@ -145,8 +186,58 @@ grep -q 'openwrt_client_conntrack_entries{mac="02:00:00:00:00:03"} 3' "$OUT" || 
 ! grep -q 'openwrt_client_conntrack_entries{mac="02:00:00:00:00:04"}' "$OUT" || { echo 'FAIL: lower-count client survived cap ahead of a busier client'; exit 1; }
 ! grep -q 'openwrt_client_conntrack_entries{mac="02:00:00:00:00:0d"}' "$OUT" || { echo 'FAIL: idle tail survived cap'; exit 1; }
 
+# R10: an interface entry without `config` must not inherit the previous
+# interface's SSID. Without the per-iteration reset, wlan-stale would map to
+# Home-5G and both roam events would count under that SSID.
+cat > "$WORK/wireless_missing_config.json" <<'EOF'
+{
+  "radio0": {
+    "config": {"band": "5g"},
+    "interfaces": [
+      {"ifname": "wlan1", "config": {"ssid": "Home-5G", "network": ["lan"]}},
+      {"ifname": "wlan-stale", "section": "orphan"}
+    ]
+  }
+}
+EOF
+cat > "$WORK/bin/ubus" <<EOF
+#!/bin/sh
+case "\$2 \$3" in
+  'luci-rpc getHostHints') cat "$WORK/gethosthints.json" ;;
+  'network.wireless status') cat "$WORK/wireless_missing_config.json" ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$WORK/bin/ubus"
+cat > "$WORK/bin/logread" <<'EOF'
+#!/bin/sh
+printf '%s\n' 'Thu Jul 22 12:00:00 2026 daemon.info hostapd: wlan1: AP-STA-CONNECTED aa:bb:cc:dd:ee:ff'
+printf '%s\n' 'Thu Jul 22 12:00:01 2026 daemon.info hostapd: wlan-stale: AP-STA-CONNECTED 11:22:33:44:55:66'
+EOF
+chmod +x "$WORK/bin/logread"
+cp "$ROOT/tests/fixtures/gethosthints.json" "$WORK/gethosthints.json"
+PATH="$WORK/bin:$PATH" OPENWRT_MONITOR_TEXTFILE_DIR="$WORK/out" \
+  OPENWRT_MONITOR_ASSOC_EVENTS_STATE="$WORK/assoc-events-r10" \
+  OPENWRT_MONITOR_JSHN_PATH="$WORK/libubox/jshn.sh" \
+  sh "$ROOT/openwrt/scripts/openwrt-monitor-client-conntrack.sh"
+grep -q 'openwrt_wifi_assoc_events_total{ap=".*",ssid="Home-5G",event="connected"} 1' "$OUT" \
+  || { echo 'FAIL: expected only the configured ifname roam under Home-5G'; exit 1; }
+! grep -q 'openwrt_wifi_assoc_events_total{ap=".*",ssid="Home-5G",event="connected"} 2' "$OUT" \
+  || { echo 'FAIL: no-config ifname inherited previous SSID (stale ssid leak)'; exit 1; }
+! grep -q 'ssid="orphan"' "$OUT" \
+  || { echo 'FAIL: unexpected ssid label from non-config fields'; exit 1; }
+
 # A failed conntrack command must replace prior data with availability only.
 cp "$ROOT/tests/fixtures/gethosthints.json" "$WORK/gethosthints.json"
+cat > "$WORK/bin/ubus" <<EOF
+#!/bin/sh
+case "\$2 \$3" in
+  'luci-rpc getHostHints') cat "$WORK/gethosthints.json" ;;
+  'network.wireless status') cat "$ROOT/tests/fixtures/wireless_status.json" ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$WORK/bin/ubus"
 cat > "$WORK/bin/conntrack" <<'EOF'
 #!/bin/sh
 exit 1
@@ -154,8 +245,12 @@ EOF
 chmod +x "$WORK/bin/conntrack"
 PATH="$WORK/bin:$PATH" OPENWRT_MONITOR_TEXTFILE_DIR="$WORK/out" \
   OPENWRT_MONITOR_JSHN_PATH="$WORK/libubox/jshn.sh" \
+  OPENWRT_MONITOR_ASSOC_EVENTS_STATE="$WORK/assoc-events-failed-conntrack" \
+  OPENWRT_MONITOR_CONNTRACK_PROC="$WORK/missing-nf-conntrack" \
+  OPENWRT_MONITOR_CONNTRACK_LEGACY_PROC="$WORK/missing-ip-conntrack" \
   sh "$ROOT/openwrt/scripts/openwrt-monitor-client-conntrack.sh"
 grep -q '^openwrt_client_conntrack_collector_available 0$' "$OUT" || { echo 'FAIL: conntrack failure did not fail closed'; exit 1; }
 ! grep -q '^openwrt_client_conntrack_entries{' "$OUT" || { echo 'FAIL: failed run retained conntrack values'; exit 1; }
+grep -q '^openwrt_wifi_assoc_events_collector_available 1$' "$OUT" || { echo 'FAIL: conntrack failure suppressed association events'; exit 1; }
 
 echo 'PASS: tests/test_client_conntrack.sh'

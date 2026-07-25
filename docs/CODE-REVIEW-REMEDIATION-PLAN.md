@@ -71,15 +71,15 @@ any order or in parallel.
 
 ### Batch C — installer and staging robustness
 
-- [ ] **R8** `[P1]` nlbwmon init script and `protocols` dir used unconditionally after install failure was tolerated — `openwrt/setup.sh:359,367-369`
-- [ ] **R9** `[P2]` `wan-info` stages inside the textfile dir with no trap — `openwrt/scripts/openwrt-monitor-wan-info.sh:10`
-- [ ] **R10** `[P2]` `$ssid` not reset per interface iteration — roams may be attributed to the wrong SSID — `openwrt/scripts/openwrt-monitor-client-conntrack.sh:141`
+- [x] **R8** `[P1]` nlbwmon init script and `protocols` dir used unconditionally after install failure was tolerated — `openwrt/setup.sh:359,367-369`
+- [x] **R9** `[P2]` `wan-info` stages inside the textfile dir with no trap — `openwrt/scripts/openwrt-monitor-wan-info.sh:10`
+- [x] **R10** `[P2]` `$ssid` not reset per interface iteration — roams may be attributed to the wrong SSID — `openwrt/scripts/openwrt-monitor-client-conntrack.sh:141`
 
 ### Batch D — MCP sidecar
 
-- [ ] **R11** `[P1]` `AutoAddPolicy` accepts any SSH host key while sending the router root password — `mcp_server/server.py:192`
-- [ ] **R12** `[P2]` 180 s timeout on `openwrt_run_repo_setup` is shorter than a real setup run — `mcp_server/core.py:222`
-- [ ] **R13** `[P2]` MCP accepts a profile combination `setup.sh` always rejects — `mcp_server/core.py:21,228-238`
+- [x] **R11** `[P1]` `AutoAddPolicy` accepts any SSH host key while sending the router root password — `mcp_server/server.py:192`
+- [x] **R12** `[P2]` 180 s timeout on `openwrt_run_repo_setup` is shorter than a real setup run — `mcp_server/core.py:222`
+- [x] **R13** `[P2]` MCP accepts a profile combination `setup.sh` always rejects — `mcp_server/core.py:21,228-238`
 
 ### Batch E — new metrics
 
@@ -790,6 +790,16 @@ Full validation needs a router without nlbwmon; per `AGENTS.md`, do **not**
 run `setup.sh` against a live router as routine validation. Report this as a
 static-only fix unless the operator explicitly authorizes a live run.
 
+**Status (2026-07-25): implemented, static-only.** The clients-profile install
+block now gates the nlbwmon protocols file install and service enable/restart
+on `[ -x /etc/init.d/nlbwmon ]`. It creates `/usr/share/nlbwmon` inside that
+gate and logs a warning when nlbwmon is unavailable. The other tolerated
+optional clients-profile dependencies (`rpcd-mod-luci`, `libubus-lua`,
+`libiwinfo-lua`, `libuci-lua`, `conntrack`) were checked for equivalent
+package-owned path or init-script consumers in `setup.sh`; none was found.
+`tests/test_setup_nlbwmon_optional.sh` statically asserts the nlbwmon operations
+stay guarded.
+
 ---
 
 ## R9 `[P2]` `wan-info` stages inside the textfile dir with no trap
@@ -823,6 +833,17 @@ in the changelog as a behavior change to an environment contract.
 
 **Verification.** `sh -n openwrt/scripts/openwrt-monitor-wan-info.sh`, plus the
 directory-cleanliness assertion from R4 if the override is added.
+
+**Status (2026-07-25): implemented.** Stages
+`/tmp/.openwrt-monitor-openwrt_wan_info.$$`, installs
+`trap 'rm -f "$tmp_file" "$metric_tmp"' EXIT`, sweeps
+`"$metric_file".[0-9]*` once near the top, and honors
+`OPENWRT_MONITOR_TEXTFILE_DIR` (default `/var/prometheus`) so offline tests can
+point at a temp dir — environment-contract change, same knob every other helper
+already uses. `/lib/functions/network.sh` is sourced only when present so a
+missing file no longer aborts the helper under `set -e` (wan_ip stays
+`unknown`). `tests/test_wan_info.sh` seeds a pre-fix leftover, runs the helper
+with stubs, and asserts the textfile dir contains only the `.prom` file.
 
 ---
 
@@ -865,6 +886,17 @@ correctly skips the entry instead of writing a wrong one.
 **Test to add.** A `network.wireless status` fixture with two radios where the
 second interface entry lacks `config`; assert the second ifname is **absent**
 from the ifaces map rather than present with the first radio's SSID.
+
+**Status (2026-07-25): implemented.** The interface loop now resets `ssid=""`
+and `ifname=""` before `json_get_var`. Anchor drifted with prior Batch B edits
+to the same file; the defect was still present at the loop body
+(`emit_assoc_events`, ~`:166`). `tests/test_client_conntrack.sh` gained an R10
+case with a dedicated wireless fixture (`wlan1` + `wlan-stale` without
+`config`), hostapd lines for both ifnames, and assertions that only
+`Home-5G`/`connected`=1 is emitted (not 2 from a stale SSID map). The offline
+jshn mock's `json_select` now fail-closes on a missing key so the test matches
+real jshn. Confirmed the assertion fails against the pre-fix loop (count 2)
+and passes with the reset (count 1).
 
 ---
 
@@ -921,6 +953,20 @@ vars, and the security rationale.
 policy is `RejectPolicy` by default and that the insecure override requires the
 explicit env var. Do not add a test that makes a real SSH connection.
 
+**Status (2026-07-25): implemented.** Host-key policy resolution lives in
+`mcp_server/core.py` (`resolve_host_key_policy`, default `RejectPolicy`,
+`OPENWRT_MCP_INSECURE_HOST_KEYS` for explicit `AutoAddPolicy`) so tests stay
+free of paramiko. `SSHRunner._connect` loads `OPENWRT_MCP_KNOWN_HOSTS` when the
+file exists, uses `RejectPolicy` by default, logs a warning on every insecure
+connection, and rewrites missing/mismatched host-key errors via
+`host_key_failure_message`. Compose mounts
+`${OPENWRT_MCP_KNOWN_HOSTS_FILE:-./known_hosts}` read-only at `/app/known_hosts`;
+a comment-only starter `known_hosts` is committed so the bind mount is a file.
+Docs: `docs/mcp-ssh.md`. Key-based auth is still not wired (`look_for_keys=False`);
+noted in the doc as optional future work, not expanded here.
+`tests/test_mcp_policy.py` covers default reject, truthy insecure override, and
+the actionable error text. No live SSH connection was made.
+
 ---
 
 ## R12 `[P2]` 180 s timeout on `openwrt_run_repo_setup` is shorter than a real setup run
@@ -957,6 +1003,17 @@ downgrades.
 
 **Test to add.** `tests/test_mcp_policy.py` assertion that the setup tool's
 timeout is greater than the read-only tools' and honors the env override.
+
+**Status (2026-07-25): implemented, static-only.** `build_setup_command`
+defaults to a setup-specific 600 s timeout (`DEFAULT_SETUP_TIMEOUT_SECONDS`)
+and accepts an explicit timeout without changing the shared 15 s `CommandSpec`
+default used by read-only tools. `OPENWRT_MCP_SETUP_TIMEOUT` is resolved in
+`mcp_server/server.py`, passed into `build_setup_command`, and documented in
+Compose, `.env.example`, and `docs/mcp-ssh.md`. If an SSH command times out,
+`SSHRunner.run` returns `timed_out=true`, exit code 124, and for
+`openwrt_run_repo_setup` warns that the router may be partially configured and
+names `openwrt_monitoring_status` as the next read-only check. No live setup or
+router mutation was run.
 
 ---
 
@@ -997,6 +1054,13 @@ explanation.
 **Test to add.** `tests/test_mcp_policy.py:74` covers the valid combined case.
 Add the rejection case: `normalize_profile("full,traffic")` raises
 `PolicyError`. Also add `"traffic,full"` — order must not matter.
+
+**Status (2026-07-25): implemented, static-only.** `normalize_profile` now
+mirrors `setup.sh` by rejecting any profile list that contains `full` plus
+another profile, with wording aligned to the installer error. The MCP policy
+therefore fails locally before staging the repo payload or opening a setup SSH
+command. `tests/test_mcp_policy.py` covers `full,traffic` and `traffic,full`;
+`docs/mcp-ssh.md` documents the accepted profile shapes.
 
 **Verification.**
 

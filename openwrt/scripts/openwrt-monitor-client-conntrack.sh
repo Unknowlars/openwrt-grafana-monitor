@@ -22,6 +22,10 @@ EVENTSTMP="${EVENTSFILE}.tmp.$$"
 JSHN_PATH="${OPENWRT_MONITOR_JSHN_PATH:-/usr/share/libubox/jshn.sh}"
 UBUS_BIN="${OPENWRT_MONITOR_UBUS_BIN:-ubus}"
 CONNTRACK_BIN="${OPENWRT_MONITOR_CONNTRACK_BIN:-conntrack}"
+CONNTRACK_PROC="${OPENWRT_MONITOR_CONNTRACK_PROC:-/proc/net/nf_conntrack}"
+CONNTRACK_LEGACY_PROC="${OPENWRT_MONITOR_CONNTRACK_LEGACY_PROC:-/proc/net/ip_conntrack}"
+DHCP_LEASES="${OPENWRT_MONITOR_DHCP_LEASES:-/tmp/dhcp.leases}"
+ARP_FILE="${OPENWRT_MONITOR_ARP_FILE:-/proc/net/arp}"
 LOGREAD_BIN="${OPENWRT_MONITOR_LOGREAD_BIN:-logread}"
 CLIENT_CONNTRACK_MAX="${CLIENT_CONNTRACK_MAX:-256}"
 AP_NAME=$(cat /proc/sys/kernel/hostname 2>/dev/null | tr -c 'A-Za-z0-9._-' '_' | sed 's/_$//')
@@ -34,7 +38,7 @@ esac
 
 mkdir -p "$OUTDIR"
 rm -f "$OUTFILE".[0-9]*
-trap 'rm -f "$TMPFILE" "$HOSTSFILE" "$HOSTSFILE.ifaces" "$HOSTSFILE.events" "$CONNTRACKFILE" "$CONNTRACK_ROWSFILE" "$EVENTSTMP"' EXIT
+trap 'rm -f "$TMPFILE" "$HOSTSFILE" "$HOSTSFILE.fallback" "$HOSTSFILE.ifaces" "$HOSTSFILE.events" "$CONNTRACKFILE" "$CONNTRACK_ROWSFILE" "$EVENTSTMP"' EXIT
 
 headers() {
   printf '# HELP openwrt_client_conntrack_collector_available Whether per-client conntrack entries were collected successfully.\n'
@@ -81,31 +85,78 @@ valid_ipv4() {
   done
 }
 
-command -v "$UBUS_BIN" >/dev/null 2>&1 || fail_closed
-command -v "$CONNTRACK_BIN" >/dev/null 2>&1 || fail_closed
-[ -r "$JSHN_PATH" ] || fail_closed
-
 # jshn handles MAC-keyed objects safely; parsing getHostHints with sed would
 # risk assigning a conntrack row to the wrong client after a format change.
-. "$JSHN_PATH"
-json_init
-HOSTS_JSON=$($UBUS_BIN call luci-rpc getHostHints 2>/dev/null) || fail_closed
-json_load "$HOSTS_JSON" || fail_closed
-json_get_keys host_macs
-for raw_mac in $host_macs; do
-  mac=$(printf '%s' "$raw_mac" | tr 'A-F' 'a-f')
-  valid_mac "$mac" || continue
-  json_select "$raw_mac" || fail_closed
-  if json_select ipaddrs; then
-    json_get_var ip 1
-    json_select ..
-    if valid_ipv4 "$ip"; then printf '%s\t%s\n' "$mac" "$ip" >> "$HOSTSFILE"; fi
-  fi
-  json_select ..
-done
-[ -s "$HOSTSFILE" ] || fail_closed
+JSHN_AVAILABLE=0
+if command -v "$UBUS_BIN" >/dev/null 2>&1 && [ -r "$JSHN_PATH" ]; then
+  . "$JSHN_PATH"
+  json_init
+  JSHN_AVAILABLE=1
+fi
 
-"$CONNTRACK_BIN" -L > "$CONNTRACKFILE" 2>/dev/null || fail_closed
+collect_client_hosts_hints() {
+  [ "$JSHN_AVAILABLE" = 1 ] || return 1
+  : > "$HOSTSFILE"
+  HOSTS_JSON=$($UBUS_BIN call luci-rpc getHostHints 2>/dev/null) || return 1
+  json_cleanup >/dev/null 2>&1 || true
+  json_load "$HOSTS_JSON" || return 1
+  json_get_keys host_macs
+  for raw_mac in $host_macs; do
+    mac=$(printf '%s' "$raw_mac" | tr 'A-F' 'a-f')
+    valid_mac "$mac" || continue
+    json_select "$raw_mac" || return 1
+    if json_select ipaddrs; then
+      json_get_var ip 1
+      json_select ..
+      if valid_ipv4 "$ip"; then printf '%s\t%s\n' "$mac" "$ip" >> "$HOSTSFILE"; fi
+    fi
+    json_select ..
+  done
+  [ -s "$HOSTSFILE" ]
+}
+
+collect_client_hosts_fallback() {
+  : > "$HOSTSFILE"
+  if [ -r "$DHCP_LEASES" ]; then
+    awk '
+      $2 ~ /^[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]$/ &&
+      $3 ~ /^[0-9][0-9.]*[0-9]$/ {
+        mac = tolower($2)
+        print mac "\t" $3
+      }
+    ' "$DHCP_LEASES" >> "$HOSTSFILE"
+  fi
+  if [ -r "$ARP_FILE" ]; then
+    awk '
+      NR > 1 &&
+      $1 ~ /^[0-9][0-9.]*[0-9]$/ &&
+      $4 ~ /^[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]$/ {
+        mac = tolower($4)
+        print mac "\t" $1
+      }
+    ' "$ARP_FILE" >> "$HOSTSFILE"
+  fi
+  sort -u "$HOSTSFILE" > "$HOSTSFILE.fallback"
+  mv "$HOSTSFILE.fallback" "$HOSTSFILE"
+  [ -s "$HOSTSFILE" ]
+}
+
+collect_client_hosts() {
+  collect_client_hosts_hints || collect_client_hosts_fallback
+}
+
+collect_conntrack_rows() {
+  if command -v "$CONNTRACK_BIN" >/dev/null 2>&1; then
+    "$CONNTRACK_BIN" -L > "$CONNTRACKFILE" 2>/dev/null && return 0
+  fi
+  if [ -r "$CONNTRACK_PROC" ]; then
+    cat "$CONNTRACK_PROC" > "$CONNTRACKFILE" 2>/dev/null && return 0
+  fi
+  if [ -r "$CONNTRACK_LEGACY_PROC" ]; then
+    cat "$CONNTRACK_LEGACY_PROC" > "$CONNTRACKFILE" 2>/dev/null && return 0
+  fi
+  return 1
+}
 
 emit_conntrack() {
   awk -v ap="$AP_NAME" -F '\t' '
@@ -153,6 +204,7 @@ emit_conntrack() {
 # the router's finite log ring. This prevents each minute's logread snapshot
 # from re-counting the same hostapd line while preserving counter semantics.
 emit_assoc_events() {
+  [ "$JSHN_AVAILABLE" = 1 ] || return 1
   command -v "$LOGREAD_BIN" >/dev/null 2>&1 || return 1
   WIFI_JSON=$($UBUS_BIN call network.wireless status 2>/dev/null) || return 1
   json_cleanup >/dev/null 2>&1 || true
@@ -164,6 +216,11 @@ emit_assoc_events() {
     if json_select interfaces; then
       json_get_keys iface_indexes
       for iface_index in $iface_indexes; do
+        # Reset every iteration. json_get_var / a failed json_select config leave
+        # the previous interface's values in place otherwise, so a later ifname
+        # can be attributed to the neighbouring SSID.
+        ssid=""
+        ifname=""
         json_select "$iface_index" || return 1
         json_get_var ifname ifname
         if json_select config; then json_get_var ssid ssid; json_select ..; fi
@@ -214,8 +271,12 @@ emit_assoc_events() {
 
 {
   headers
-  emit_conntrack
-  printf 'openwrt_client_conntrack_collector_available 1\n'
+  if collect_client_hosts && collect_conntrack_rows; then
+    emit_conntrack
+    printf 'openwrt_client_conntrack_collector_available 1\n'
+  else
+    printf 'openwrt_client_conntrack_collector_available 0\n'
+  fi
   if emit_assoc_events; then
     printf 'openwrt_wifi_assoc_events_collector_available 1\n'
   else
