@@ -174,17 +174,35 @@ end
 
 -- uci get firewall.@defaults[0].flow_offloading{,_hw}. Read defensively: a
 -- misread here must not make the rest of the collector look broken.
+--
+-- Live audit (2026-07-23): this read was found to fail silently on most
+-- scrapes on both reference routers -- openwrt_flow_offload_enabled showed
+-- samples on only ~10% (openwrt-main) / ~3% (openwrt-new) of scrapes over 24h,
+-- with no error surfaced anywhere, because a failed pcall left `state` empty
+-- and the caller's `if offload.sw ~= nil` guard then omits the metric
+-- entirely rather than reporting it unavailable. The exact UCI failure mode
+-- was not isolated (no live shell session was available to trace it further),
+-- so this hardens against it two ways instead of guessing at one cause: (1)
+-- retry a few times with a fresh cursor, in case it is transient contention;
+-- (2) always report whether the read succeeded, via a second return value,
+-- so a dashboard or alert can distinguish "read failed" from "genuinely off"
+-- instead of trusting the absence of a sample as if it were a truthful zero.
 local function flow_offload_state()
   local state = {}
-  if not ok_uci then return state end
-  pcall(function()
-    local cursor = uci.cursor()
-    cursor:foreach("firewall", "defaults", function(section)
-      state.sw = section.flow_offloading
-      state.hw = section.flow_offloading_hw
+  local read_ok = false
+  if not ok_uci then return state, read_ok end
+  for _ = 1, 3 do
+    local ok = pcall(function()
+      local cursor = uci.cursor()
+      cursor:foreach("firewall", "defaults", function(section)
+        state.sw = section.flow_offloading
+        state.hw = section.flow_offloading_hw
+        read_ok = true
+      end)
     end)
-  end)
-  return state
+    if ok and read_ok then break end
+  end
+  return state, read_ok
 end
 
 -- network.wireless status: for every radio interface, resolve
@@ -305,7 +323,7 @@ local function update_seen_store(seen_macs, max_entries, now)
   return store
 end
 
-local function collect(info, up, lease_expiry_metric, ipv6_metric, first_seen_metric, offload_metric, truncated_metric)
+local function collect(info, up, lease_expiry_metric, ipv6_metric, first_seen_metric, offload_metric, offload_read_metric, truncated_metric)
   local max_clients = tonumber(config_value("CLIENT_INVENTORY_MAX", "")) or DEFAULT_MAX
 
   local hosts, hosts_ok = {}, false
@@ -358,7 +376,7 @@ local function collect(info, up, lease_expiry_metric, ipv6_metric, first_seen_me
   local statics = static_leases()
   local arp = arp_by_ip()
   local networks = network_by_device()
-  local offload = flow_offload_state()
+  local offload, offload_read_ok = flow_offload_state()
 
   local ok_seen, seen_store = pcall(update_seen_store, emit_macs, max_clients, os.time())
   if not ok_seen then
@@ -427,6 +445,10 @@ local function collect(info, up, lease_expiry_metric, ipv6_metric, first_seen_me
 
   if offload.sw ~= nil then offload_metric({mode = "sw"}, offload.sw == "1" and 1 or 0) end
   if offload.hw ~= nil then offload_metric({mode = "hw"}, offload.hw == "1" and 1 or 0) end
+  -- Always emitted, unlike openwrt_flow_offload_enabled above, so a dashboard
+  -- or alert can tell "the UCI read failed this scrape" apart from "offload
+  -- is genuinely off" instead of treating silence as a truthful zero.
+  offload_read_metric({}, offload_read_ok and 1 or 0)
 
   truncated_metric({}, truncated and 1 or 0)
 
@@ -441,6 +463,7 @@ local function scrape()
   local ipv6_addresses = metric("openwrt_client_ipv6_addresses", "gauge")
   local first_seen = metric("openwrt_client_first_seen_seconds", "gauge")
   local offload = metric("openwrt_flow_offload_enabled", "gauge")
+  local offload_read = metric("openwrt_flow_offload_read_success", "gauge")
   local truncated = metric("openwrt_client_inventory_truncated", "gauge")
 
   -- Availability is reported only after collection completes -- see plan
@@ -448,7 +471,7 @@ local function scrape()
   -- happens before any metric() call above is invoked, so a failure at any
   -- point during gathering (ubus dying mid-run, a malformed response, a
   -- read-only /etc) leaves zero partial series, not a half-populated scrape.
-  local ok, completed = pcall(collect, info, up, lease_expiry, ipv6_addresses, first_seen, offload, truncated)
+  local ok, completed = pcall(collect, info, up, lease_expiry, ipv6_addresses, first_seen, offload, offload_read, truncated)
   available({}, (ok and completed) and 1 or 0)
 end
 

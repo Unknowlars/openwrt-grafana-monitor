@@ -132,6 +132,14 @@ minute. It uses `getHostHints` only to map known local IPv4 addresses back to
 the existing lowercase `mac` identity, then counts each `conntrack -L` row
 once for every matching client. It exports one bounded gauge per known client:
 
+Requires the `conntrack` package (the `conntrack` CLI binary). Both metrics
+below share one fail-closed gate that trips before either is attempted if
+`conntrack` is missing -- **live audit, 2026-07-23:** this package was not in
+setup.sh's `clients` profile install list before that date, so both metrics
+reported unavailable on every scrape on both reference routers despite the
+collector, cron job, and files all being correctly deployed. `setup.sh` now
+installs it alongside the other `clients` profile dependencies.
+
 - `openwrt_client_conntrack_entries{mac}`
 
 There are no remote-IP, port, IPv6-address, domain, or vendor labels. For 60
@@ -200,6 +208,16 @@ The Clients dashboard checks the existing
 every nlbwmon traffic panel suppresses values and shows `Accounting unreliable
 - flow offload enabled` instead of displaying zeros. Do not treat an empty
 traffic chart in this state as idle traffic.
+
+**Live audit finding, 2026-07-23:** `openwrt_flow_offload_enabled` itself was
+found to be present in the exposition's `# TYPE` line but absent as an actual
+sample on ~90-97% of scrapes on both reference routers, with no error
+anywhere -- the UCI read in `flow_offload_state()` (client_inventory.lua) was
+failing almost every time, silently. This was hardened (retry, and a new
+always-emitted `openwrt_flow_offload_read_success` gauge) but the exact UCI
+failure mode was not isolated -- no live shell session was available to trace
+it further this session. Check `openwrt_flow_offload_read_success` before
+trusting an absence of `openwrt_flow_offload_enabled` as "offload is off".
 
 If accurate conntrack-derived accounting is required, disable both modes:
 

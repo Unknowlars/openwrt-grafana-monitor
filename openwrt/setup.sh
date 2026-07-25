@@ -34,6 +34,11 @@
 #   CRON_LOG_LEVEL             busybox crond log level; default: 9 (suppresses the
 #                              per-job-start lines this setup would otherwise send
 #                              to syslog at ERROR severity). Use 8 to restore them.
+#   DNS_QUERY_LOGGING          0|1; default: 0 (off). When 1, enables dnsmasq
+#                              per-client DNS query logging to syslog/Loki --
+#                              this is a full household browsing history for as
+#                              long as Loki retains logs. Opt-in only; see
+#                              docs/client-topology-and-netflow-plan.md §4.1.
 #
 # =============================================================================
 
@@ -283,6 +288,15 @@ if profile_enabled clients; then
   if ! pkg_install_optional nlbwmon; then
     log "    WARNING: nlbwmon is unavailable; per-client traffic accounting will report unavailable"
   fi
+  # openwrt-monitor-client-conntrack.sh shells out to the `conntrack` CLI
+  # (package `conntrack`, confirmed present in the 24.10/25.12 mipsel_24kc
+  # feed) to list conntrack rows; without it the script's shared fail-closed
+  # gate trips before either per-client conntrack counts or bounded WiFi
+  # roam events are ever attempted. Both metrics then always report
+  # unavailable, not just conntrack -- see docs/client-topology-and-netflow-plan.md M7.
+  if ! pkg_install_optional conntrack; then
+    log "    WARNING: conntrack is unavailable; per-client conntrack counts and bounded WiFi roam events will report unavailable"
+  fi
 fi
 
 for package in $OPTIONAL_PACKAGES; do
@@ -509,6 +523,34 @@ uci commit system
 
 /etc/init.d/log restart
 log "    OK: syslog configured"
+
+# ── Optional: per-client DNS query attribution (plan §4.1, M9) ────────────────
+#
+# Off by default. dnsmasq's logqueries writes one syslog line per DNS query,
+# prefixed with the requesting client's IP -- this repo already ships syslog
+# to Loki, so enabling this is the entire cost, but the line is a household
+# browsing history for as long as Loki keeps it. It must stay opt-in and
+# loudly flagged; never enable it without the operator explicitly asking.
+DNS_QUERY_LOGGING="${DNS_QUERY_LOGGING:-0}"
+case "$DNS_QUERY_LOGGING" in
+  1)
+    log "==> Enabling dnsmasq DNS query logging (DNS_QUERY_LOGGING=1)..."
+    log "    WARNING: every DNS lookup by every device on this network will now be"
+    log "    written to syslog and shipped to Loki -- this is a household browsing"
+    log "    history, retained for as long as Loki keeps logs. Disable by re-running"
+    log "    this setup with DNS_QUERY_LOGGING unset or =0."
+    uci set dhcp.@dnsmasq[0].logqueries='1'
+    uci commit dhcp
+    /etc/init.d/dnsmasq restart
+    ;;
+  0|"")
+    uci set dhcp.@dnsmasq[0].logqueries='0'
+    uci commit dhcp
+    ;;
+  *)
+    die "DNS_QUERY_LOGGING must be 0 or 1"
+    ;;
+esac
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 

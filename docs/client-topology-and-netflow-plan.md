@@ -1,6 +1,17 @@
 # Plan: Client Inventory, Network Node Graph, and Traffic Attribution
 
-Status: proposal. Nothing in this document is implemented yet.
+Status (updated 2026-07-23, live SSH audit against both production routers and
+VictoriaMetrics/Loki): M0, M1, M2, M3, M4, M5 are implemented and confirmed
+live-working on both `openwrt-main` and `openwrt-new`. M6 (nlbwmon traffic) is
+implemented but currently broken on `openwrt-main` only (regression found this
+audit, root cause in the M6 section). M7 (conntrack + roaming) is deployed on
+both routers but has never worked on either (root cause in the M7 section).
+M8/M9 are not started. M10/M11 are correctly not started (gated, and their
+precondition — flow offload off — is not met on live hardware). See the
+milestone-by-milestone live-audit notes added throughout §7/§11 and the new
+§8 findings for full evidence; do not treat this document's older "done"
+claims as current without reading those notes, several of which correct or
+add to them.
 
 Revision note: this is a second draft. The first draft's recommendations for the
 node graph datasource and the NetFlow collector were both changed after
@@ -115,6 +126,39 @@ internet. Provisioning is bind-mounted from `grafana/provisioning/`
 `build_dashboards.py` (four classic), `build_openwrt_operations_dashboard.py`,
 and `build_openwrt_advanced_dashboard.py`, each writing to **both**
 `grafana/provisioning/dashboards/` and `grafana-dashboard-exports/`.
+
+**Correction, live audit (2026-07-23): this docker-compose stack is not what
+production runs.** Querying the live VictoriaMetrics
+(`vm.k8s.home.arpa/prometheus`) shows every `openwrt` series carrying
+`cluster="homelab-k8s"` and `prometheus="monitoring/kube-prometheus-stack-
+prometheus"`, and the live Alloy's own metrics appear at instance
+`10.244.0.24:12345` — a Kubernetes pod IP, not a docker-compose container.
+Meanwhile this repo's committed `alloy/config.alloy` remote-writes to
+`http://otel-lgtm:9090/api/v1/write` and `grafana/provisioning/datasources/
+datasources.yaml` points Grafana at `http://localhost:9090` — both are the
+bundled docker-compose Prometheus, which is not the datasource the generated
+dashboards are actually verified against. Production is a separately
+maintained Kubernetes deployment (VictoriaMetrics + kube-prometheus-stack +
+Loki) that happens to load this repo's generated dashboard JSON and run some
+equivalent of the router-scrape/multi-target config, but its Alloy config,
+Prometheus retention, and rule provisioning are **not** in this repository and
+were not inspected as part of this audit (no cluster access, only router SSH
+and the VM/Loki HTTP APIs). This means:
+- §4.7's retention plan (`PROM_RETENTION` env var, `otel-lgtm/run-prometheus.sh`
+  bind-mount override) only affects the local/offline dev stack. Production
+  retention is independently set at the cluster level and is short in practice
+  (~2 days, per live measurement) — this repo has no lever over it.
+- §8 open item 8 ("does otel-lgtm's Prometheus read a rule file from a
+  predictable path") is moot for production: production isn't otel-lgtm.
+  Grafana-managed alert rules (provisioned under `grafana/provisioning/
+  alerting/`, evaluated by Grafana itself against whatever datasource the
+  panels already use) remain viable regardless of this, since the same
+  provisioning directory is confirmed to reach the live Grafana (the generated
+  dashboards do). Cluster-native recording/alerting (`PrometheusRule` CRDs) is
+  a second option but is infrastructure this repo does not own or version.
+- The docker-compose stack still has standalone value as the offline-capable
+  dev/test path the skill/plan both call out — keep it, but do not assume
+  changes to it reach production.
 
 Profiles in `openwrt/setup.sh` are `core|traffic|wifi_mesh|dpi|full`, gated by
 `profile_enabled()`, which is true when `OPENWRT_MONITOR_PROFILE` equals the
@@ -1355,15 +1399,40 @@ of them may be resolved by assertion.
 |---|---|---|---|
 | 1 | Alloy relabel syntax for bounding `node_nat_traffic` — the snippet in §0.3 is explicitly wrong and must not be copied | §0.3 | **M0 — resolved: no relabel syntax preserves it.** A per-`src` rollup cannot be computed at the Alloy layer at all (relabel is per-sample, not an aggregation); the only correct fix was to drop the metric outright via a plain `action = "drop"` on `__name__`, tested against a live Alloy/Prometheus. See §0.3 below. |
 | 2 | Actual churn rate of `node_nat_traffic` on a real home LAN | §0.3 | **M0 — measured.** 147 series across 19 distinct `src` on the reference router at time of measurement (2026-07-22); 11 of those 19 (58%) had more than one destination with a non-zero byte count, one with 8 active destinations simultaneously. See §0.3. |
-| 3 | Node graph frame detection against the Grafana bundled in otel-lgtm | §2.2 | **M4 — passed.** Grafana 13.0.1 (`a100054f`) rendered Prometheus instant table frames with `refId="edges"` and `refId="nodes"`; see §2.2. |
-| 4 | nlbwmon's CPU cost on MT7621 | §3.3 | **M6 — measured idle-only.** Two 60-second stop/run windows on the reference router showed 10.19% versus 10.45% aggregate CPU busy time, `node_load1` 1.32 versus 1.16, and zero softnet drops in both; see §3.3. This does not establish transfer-load cost. |
-| 5 | softflowd's CPU cost on MT7621 — the first draft asserted it was fine with no evidence | §3.5 | **M10**, protocol in §12.2 |
-| 6 | FLP's aggregate output key name (`recent_op_value` is provisional) | §3.6 | **M11** |
-| 7 | Whether softflowd's v9 templates carry MAC fields — asserted no, from its template set | §3.6 | **M11** (only matters if M11 happens) |
-| 8 | Whether otel-lgtm's Prometheus reads a rule file from a predictable path | §4.7 | **M8** — if not, drop the recording-rule idea rather than shipping a no-op |
+| 3 | Node graph frame detection against the Grafana bundled in otel-lgtm | §2.2 | **M4 — passed, and reconfirmed live 2026-07-23.** Grafana 13.0.1 (`a100054f`) rendered Prometheus instant table frames with `refId="edges"` and `refId="nodes"` in the M4 spike; M5's actual production deployment now shows this working end-to-end on real hardware (26/25 node/edge series on `openwrt-main`, 16/15 on `openwrt-new`, `openwrt_topology_collector_available=1` on both). See §2.2 and the M5 live-audit note. |
+| 4 | nlbwmon's CPU cost on MT7621 | §3.3 | **M6 — measured idle-only.** Two 60-second stop/run windows on the reference router showed 10.19% versus 10.45% aggregate CPU busy time, `node_load1` 1.32 versus 1.16, and zero softnet drops in both; see §3.3. This does not establish transfer-load cost. Not re-measured 2026-07-23 (would require a deliberate load test, which this audit did not run without approval). |
+| 5 | softflowd's CPU cost on MT7621 — the first draft asserted it was fine with no evidence | §3.5 | **Still M10, not run.** Confirmed live 2026-07-23: no `softflowd` process on either router (`ps` shows neither), no `openwrt/netflow/` or `netflow/` directory in the repo, hardware and software flow offload both still enabled on `openwrt-main` (`count_over_time(openwrt_flow_offload_enabled[1d])` shows `mode="hw"` and `mode="sw"` both present — see the new flow-offload bug note in §3.4/§10.1 below), which is itself a precondition violation for M10's protocol (§12.2 requires both offloads **off** to measure anything meaningful). M10 was correctly not attempted this session — it requires installing a package and running load tests on a live router, which needs explicit approval per this audit's own workflow. |
+| 6 | FLP's aggregate output key name (`recent_op_value` is provisional) | §3.6 | **Still M11**, unreached — no `flowlogs-pipeline.yaml` or FLP compose profile exists in the repo. |
+| 7 | Whether softflowd's v9 templates carry MAC fields — asserted no, from its template set | §3.6 | **Still M11** (only matters if M11 happens; unreached, same evidence as #6). |
+| 8 | Whether otel-lgtm's Prometheus reads a rule file from a predictable path | §4.7 | **Resolved as moot, 2026-07-23.** Production does not run otel-lgtm's bundled Prometheus at all — see the new §0.2 correction above (live series carry `cluster="homelab-k8s"`, `prometheus="monitoring/kube-prometheus-stack-prometheus"`; the live Alloy is a Kubernetes pod, not this repo's docker-compose container). Drop the otel-lgtm-rule-file idea outright, per the plan's own instruction for exactly this outcome. If M8 wants recording/alert rules, target Grafana-managed alerting (works against any datasource the panels already use, and this repo's `grafana/provisioning/` is confirmed to reach the live Grafana) or note that cluster-native `PrometheusRule` CRDs are a second option this repo does not own. |
 
 No default may be flipped, and no `[unmeasured]` claim may be restated as fact,
 before its milestone runs.
+
+**Two new findings from this audit, not on the original list (2026-07-23):**
+live per-client traffic accounting (M6) is currently broken on `openwrt-main`
+only, and per-client conntrack + WiFi roaming (M7) is currently broken on
+**both** routers — both root-caused to specific lines of the deployed shell
+scripts, not left as guesses. Full detail is in the M6 and M7 sections above;
+summary: M6's `service_bucket()` fail-closes the entire scrape on one
+unrecognized `nlbwmon` protocol name instead of degrading gracefully, and M7's
+shared fail-closed gate trips on a missing `conntrack` CLI binary that
+`setup.sh` never installs. Also newly found: `openwrt_flow_offload_enabled`
+(§10.1, M1) is present in the live exposition's `# TYPE` line but currently
+emits **zero data samples** on both routers at any given instant, despite
+`count_over_time(...[1d])` showing ~295 hits/day on `openwrt-main` and ~96/day
+on `openwrt-new` out of ~2880 possible scrapes — i.e. it is intermittently
+emitted, not truly present. Reading `openwrt/collectors/client_inventory.lua`:
+the metric is only emitted `if offload.sw ~= nil` / `if offload.hw ~= nil`
+(lines 428–429), and `flow_offload_state()` (lines 177–188) silently returns
+an empty table on any UCI-read failure inside its own `pcall`. The intermittent
+presence points to that UCI read failing on most scrapes rather than a NaN
+value (no NaN was observed in the raw exposition — the metric is simply
+absent on failure, which is arguably more honest than a NaN, but it currently
+undermines any dashboard tile or alert built on it). This needs a live
+`uci get firewall.@defaults[0].flow_offloading` success-rate check to confirm
+the exact failure mode before proposing a fix; flagged here rather than
+guessed further.
 
 ---
 
@@ -1597,8 +1666,9 @@ recorded before it ships.
 | `openwrt_client_inventory_collector_available` | gauge | — | 1 | self |
 | `openwrt_client_inventory_truncated` | gauge | — | 1 | self |
 | `openwrt_flow_offload_enabled` | gauge | `mode="sw"\|"hw"` | 2 | UCI firewall |
+| `openwrt_flow_offload_read_success` | gauge | — | 1 | self — added 2026-07-23, see M1 live-audit note |
 
-**Subtotal ≈ 304 series.**
+**Subtotal ≈ 305 series.**
 
 ### 10.2 Phase 2 — topology (M5)
 
@@ -1837,6 +1907,26 @@ if the latter is unreadable.
 scraped series set before and after); with two targets, both appear with
 distinct `router` labels.
 
+**Live audit result (2026-07-23) — done, previously unrecorded.** This
+milestone's own section never got a completion note (unlike M0/M1/M3/M4/M6),
+but it is verifiably working: `count by (router,instance,job)
+(up{job="openwrt"})` against the live VictoriaMetrics returns exactly two
+series — `router="openwrt-main"` at `instance="192.168.0.1:9100"` and
+`router="openwrt-new"` at `instance="192.168.0.2:9100"` — which is the M2
+acceptance criterion met in production. Caveat, found while tracing this: the
+`alloy/config.alloy` and `docker-compose.yml` committed in this repo hardcode
+`prometheus.remote_write.lgtm`'s endpoint to `http://otel-lgtm:9090/api/v1/write`
+(the bundled docker-compose Prometheus) and `grafana/provisioning/datasources/
+datasources.yaml` points Grafana at `http://localhost:9090` — neither matches
+the live system, which is a separate Kubernetes-hosted VictoriaMetrics +
+kube-prometheus-stack + Loki deployment (`cluster="homelab-k8s"`,
+`prometheus="monitoring/kube-prometheus-stack-prometheus"`, Alloy running as a
+pod at `10.244.0.24:12345`, not a docker-compose container). See the new note
+under §0.2 below — this repo's docker-compose stack is a local/offline dev
+path, not what production runs, and the `ROUTER_TARGETS` mechanism is
+confirmed working only by its effect (two distinct `router` labels present),
+not by inspecting the production Alloy config, which lives outside this repo.
+
 ### M3 — Clients dashboard
 
 **Files:** `build_openwrt_clients_dashboard.py` (new),
@@ -1914,6 +2004,18 @@ reconnecting without throwing.
 
 **Blocked if:** M4 failed. Do not start.
 
+**Live audit result (2026-07-23) — done, previously unrecorded.** Like M2,
+this section had no completion note, but it is deployed and working on both
+routers: `node_scrape_collector_success{collector="topology"}` and
+`openwrt_topology_collector_available` are both `1` on `openwrt-main` and
+`openwrt-new`. Live series counts: `openwrt-main` has 26 `openwrt_topology_node`
+and 25 `openwrt_topology_edge` series; `openwrt-new` has 16 and 15. This is
+stronger, live-production confirmation of the M4 spike's conclusion, not just
+a repeat of it. Not yet done, confirmed by reading `openwrt/collectors/
+topology.lua`: no `secondarystat`, `thickness`, or `device` label is emitted
+(matches the plan's own "skip secondarystat in v1" call in §2.2) — see the
+Phase 2 gap discussion for whether these are worth adding now.
+
 ### M6 — nlbwmon per-client traffic
 
 **Files:** `openwrt/scripts/openwrt-monitor-client-traffic.sh` (new),
@@ -1948,6 +2050,36 @@ unreliable state instead of counters. No deliberate transfer was generated:
 with offload enabled it would not be a valid accounting test. Idle-only CPU
 measurement is recorded in §3.3.
 
+**Live audit finding (2026-07-23) — regression on `openwrt-main`, not a
+`[reasoned]` guess: root-caused by reading the deployed script.**
+`openwrt_client_traffic_collector_available` is currently `0` and
+`openwrt_client_bytes_total`/`_packets_total`/`_connections_total` have **zero**
+series on `openwrt-main` right now, while `openwrt-new` is healthy (`available
+= 1`; 10/10/5 series). `node_textfile_mtime_seconds{file=".../openwrt_client_
+traffic.prom"}` is fresh on *both* routers (last minute), so the cron job is
+running on both — this is not a deployment gap, it is the script actively
+choosing to fail closed on `openwrt-main` every run. Reading `openwrt/scripts/
+openwrt-monitor-client-traffic.sh`: `service_bucket()` (line ~59) matches
+`$layer7` against the fixed trimmed-protocol whitelist and returns non-zero for
+anything else; its caller does `service=$(service_bucket "$layer7") ||
+fail_closed` **inside the per-record loop**, and `fail_closed()` discards the
+*entire* scrape's output, not just the one unmapped record. If `nlbwmon` on
+`openwrt-main` classifies even one flow under a `layer7` name outside the ~10
+trimmed buckets — plausible, since `openwrt-main` carries far more traffic
+diversity (mwan3 dual-WAN, Tailscale, ~21 heterogeneous clients including
+several `unknown_*` IoT devices) than the near-idle `openwrt-new` AP — the
+whole router's traffic accounting silently zeroes, which is exactly the
+"plausible wrong value... a missing metric is safer" failure mode this plan
+says to avoid (the standing rules, and §0.3). This contradicts the 2026-07-22
+verification above, which was run against a state where this apparently was
+not yet happening; it is either a genuine regression since then or that
+verification did not exercise the unmapped-protocol path. **Proposed fix**
+(exporter-side, not yet applied — awaiting approval per this audit's workflow):
+change `service_bucket()`'s fallback so an unrecognized `layer7` value degrades
+that one record to `other` (or is skipped) instead of aborting the scrape;
+add a fixture in `tests/test_client_traffic.sh` covering an unmapped protocol
+name so this cannot regress silently again.
+
 ### M7 — Conntrack, IPv6, roaming, guest/trusted
 
 **Files:** `openwrt/collectors/client_inventory.lua` (extend),
@@ -1979,6 +2111,35 @@ does not carry MAC. Live M7 acceptance remains blocked until the helper is
 deployed and compared against a busy client's exact `conntrack -L | grep <ip>
 | wc -l` result under the reference router's enabled software/hardware offload.
 
+**Live audit result (2026-07-23) — deployed on both routers, permanently fails
+closed on both, root cause found by reading the deployed script (not a live
+shell session — no arbitrary command execution was available this session,
+only the fixed SSH-MCP diagnostics).** `openwrt_client_conntrack_collector_
+available` and `openwrt_wifi_assoc_events_collector_available` are both `0` on
+**both** `openwrt-main` and `openwrt-new`, identically, and
+`openwrt_client_conntrack_entries`/`openwrt_wifi_assoc_events_total` have zero
+series on both. `node_textfile_mtime_seconds{file=".../openwrt_client_
+conntrack.prom"}` is fresh on both (the cron job runs every minute as
+installed), so this is not a missing deployment — the script runs and
+deliberately writes the fail-closed `0,0` pair every time. Reading
+`openwrt/scripts/openwrt-monitor-client-conntrack.sh`: both metrics share one
+`fail_closed()` gate at the top of the script, tripped by
+`command -v "$CONNTRACK_BIN" >/dev/null 2>&1 || fail_closed` (line 73, `conntrack`
+CLI from the `conntrack-tools` package) before either `getHostHints` or
+`conntrack -L` is even attempted. Cross-checking `openwrt/setup.sh`'s `clients`
+profile block: it installs `rpcd-mod-luci`, `libubus-lua`, `libiwinfo-lua`,
+`libuci-lua` (client_inventory.lua's deps) and installs/schedules this script,
+but **never installs a `conntrack` package** for it. That the failure is
+identical on both routers (rather than differing, the way M6's does) is
+itself evidence for a missing-dependency explanation over a data-shape one.
+**Proposed fix** (router-config + repo-side, not yet applied — awaiting
+approval): confirm the exact package name in the 24.10/25.12 `mipsel_24kc`
+feed (expected `conntrack-tools`, providing the `conntrack` binary; verify
+per §9.3's existence-check convention before depending on it) and add it to
+`setup.sh`'s `clients` profile package list with the same `pkg_install_optional`
++ `WARNING:`-on-failure pattern every other optional package uses. Until this
+lands, M7 acceptance stays unmet on live hardware, not merely unverified.
+
 ### M8 — Alerting and retention
 
 **Files:** `grafana/provisioning/alerting/openwrt-alerts.yaml` (new),
@@ -1995,6 +2156,25 @@ does nothing.
 visible in the running Prometheus's `/api/v1/status/flags`; `docker compose up`
 still works offline.
 
+**Partial progress (2026-07-23):** `grafana/provisioning/alerting/openwrt-
+alerts.yaml` now provisions 5 of the 6 §5.1 rules (the guest→trusted rule is
+skipped -- it depends on a flow-attribution metric that only exists if M11
+ships, which it has not; shipping a rule against a metric that doesn't exist
+would itself be the no-op this plan forbids). **Not done:** the retention
+half (`PROM_RETENTION`/`PROM_RETENTION_SIZE`, `otel-lgtm/run-prometheus.sh`)
+was not implemented this session -- finding the correct in-image path to
+override needs inspecting the running `grafana/otel-lgtm` container, which
+this session did not do, and guessing an unverified file path into a
+production override was judged worse than leaving it undone. **Also newly
+relevant:** per the §0.2 correction above, this retention work only ever
+applies to the local/offline dev stack, since production runs a separate
+VictoriaMetrics deployment this repo does not control. The `datasourceUid` in
+the new alerting YAML matches only this repo's own local `datasources.yaml`
+(`uid: prometheus`) and would need updating to the real production datasource
+UID before it could fire there -- that UID is unknown to this repo (see the
+YAML file's own header comment). Not deployed to, or verified against, any
+running Grafana this session.
+
 ### M9 — Opt-in DNS attribution
 
 **Files:** `openwrt/setup.sh` (new `DNS_QUERY_LOGGING` env var, default off),
@@ -2007,6 +2187,16 @@ appear as absent from the logs.
 
 **Acceptance:** disabled by default in a fresh install; when enabled, per-client
 query rate and top domains resolve from Loki; zero new Prometheus series.
+
+**Partial progress (2026-07-23):** `setup.sh` now accepts `DNS_QUERY_LOGGING`
+(default `0`), toggling `dhcp.@dnsmasq[0].logqueries` with a loud warning
+logged when enabling it, per §4.1's privacy requirement. **Not done:** the
+Clients dashboard panels (per-client query rate, top domains, DoH/DoT-absent
+detection) were not added this session -- this needs LogQL patterns verified
+against real dnsmasq query-log lines, which requires enabling the feature on
+a live router first (an active, outward-facing router-config change this
+session did not make without a more specific approval than already given).
+Not deployed to either router.
 
 ### M10 — softflowd measurement spike → see §12.2
 

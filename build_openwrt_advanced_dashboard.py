@@ -242,6 +242,10 @@ def validate_dashboard(dashboard: dict[str, Any]) -> None:
         assert key == f"panel-{panel_spec['id']}"
         if panel_spec["vizConfig"]["group"] not in {"text", "logs"}:
             assert panel_spec["vizConfig"]["spec"]["fieldConfig"]["defaults"].get("unit") != "short"
+        # noValue belongs in fieldConfig.defaults; under options it is silently
+        # ignored by Grafana. Regression check for the 2026-07-23 fix -- see
+        # docs/client-topology-and-netflow-plan.md gap #4.
+        assert "noValue" not in panel_spec["vizConfig"]["spec"]["options"], f"noValue in panel options: {key}"
     assert len(ids) == len(set(ids))
     for tab in spec["layout"]["spec"]["tabs"]:
         items = tab["spec"]["layout"]["spec"]["rows"][0]["spec"]["layout"]["spec"]["items"]

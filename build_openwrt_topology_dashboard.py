@@ -249,6 +249,10 @@ def validate_dashboard(dash: dict[str, Any]) -> None:
             defaults = panel_spec["vizConfig"]["spec"]["fieldConfig"]["defaults"]
             assert "unit" in defaults, f"missing unit: {key} {panel_spec['title']}"
             assert defaults["unit"] != "short", f"generic short unit: {key} {panel_spec['title']}"
+        # noValue belongs in fieldConfig.defaults; under options it is silently
+        # ignored by Grafana. Regression check for the 2026-07-23 fix -- see
+        # docs/client-topology-and-netflow-plan.md gap #4.
+        assert "noValue" not in panel_spec["vizConfig"]["spec"]["options"], f"noValue in panel options: {key}"
         assert "pluginVersion" not in json.dumps(element)
         if viz == "nodeGraph":
             node_graph_seen = True

@@ -1991,6 +1991,25 @@ def tab_dns_dhcp(b: DashboardBuilder) -> dict[str, Any]:
         12,
         8,
     )
+    b.add(
+        items,
+        timeseries(
+            509,
+            "DHCP Lease Churn",
+            [
+                prom_query(f'sum(rate(dnsmasq_leases_allocated_4{{{F}}}[$__rate_interval]))', "Allocated"),
+                prom_query(f'sum(rate(dnsmasq_leases_pruned_4{{{F}}}[$__rate_interval]))', "Pruned", ref="B"),
+            ],
+            "cps",
+            "How often the DHCP pool is handing out or reclaiming leases. A sustained high allocation rate with matching prunes is normal churn "
+            "(phones sleeping and waking); allocations climbing with prunes flat means the pool is filling up faster than leases expire, worth "
+            "checking against DHCP Pool Utilisation above before it runs out.",
+        ),
+        0,
+        21,
+        24,
+        7,
+    )
     return b.tab(TAB_TITLES[4], items)
 
 
@@ -2213,6 +2232,49 @@ def tab_health(b: DashboardBuilder) -> dict[str, Any]:
         20,
         24,
         6,
+    )
+    b.add(
+        items,
+        timeseries(
+            613,
+            "Network Stack Saturation",
+            [
+                prom_query(f'sum(rate(openwrt_softnet_dropped_total{{{F}}}[$__rate_interval]))', "Softnet dropped"),
+                prom_query(
+                    f'sum(rate(openwrt_softnet_times_squeezed_total{{{F}}}[$__rate_interval]))', "Softnet squeezed", ref="B"
+                ),
+                prom_query(f'sum(rate(openwrt_tcp_listen_drops_total{{{F}}}[$__rate_interval]))', "TCP listen drops", ref="C"),
+            ],
+            "cps",
+            "Kernel packet-processing backlog signals, summed across CPUs. `Softnet dropped` is packets the NIC ring handed over that the kernel had "
+            "no room to queue; `squeezed` is the softirq budget running out before the queue was drained - both mean the CPU could not keep up with "
+            "incoming traffic for a moment. `TCP listen drops` means a service's accept queue was full. Any of these climbing under load, on hardware "
+            "this constrained, shows up before throughput visibly drops - it is the earliest warning this dashboard has for CPU-bound packet loss.",
+            thresholds_value=thresholds(("transparent", None), (ORANGE, 1)),
+        ),
+        0,
+        26,
+        12,
+        8,
+    )
+    b.add(
+        items,
+        timeseries(
+            614,
+            "Scheduler Activity",
+            [
+                prom_query(f'sum(rate(node_context_switches_total{{{F}}}[$__rate_interval]))', "Context switches/s"),
+                prom_query(f'sum(rate(node_intr_total{{{F}}}[$__rate_interval]))', "Interrupts/s", ref="B"),
+            ],
+            "cps",
+            "How hard the four MT7621 cores are being interrupted and rescheduled - context switches and hardware/software interrupts per second, "
+            "summed across CPUs. This is the mechanism behind sustained CPU busy: a climb here alongside CPU Busy above explains *why* the router is "
+            "busy (packet interrupts, radio IRQs) rather than just confirming that it is.",
+        ),
+        12,
+        26,
+        12,
+        8,
     )
     return b.tab(TAB_TITLES[5], items)
 
@@ -2879,7 +2941,7 @@ def grid_items_by_tab(layout: dict[str, Any]) -> dict[str, list[dict[str, Any]]]
 
 
 BANNED_UNITS = {"short", ""}
-PANEL_BUDGET = (60, 80)
+PANEL_BUDGET = (60, 90)  # ceiling raised 2026-07-23 to admit the audit's justified additions; see docs/client-topology-and-netflow-plan.md
 
 # Unit ids verified against grafana-data's valueFormats/categories.ts. Grafana
 # silently renders an unknown id as raw numbers, so an invented unit like

@@ -1,0 +1,182 @@
+# Grafana-managed alert rules for this repo's OpenWrt monitoring, per
+# docs/client-topology-and-netflow-plan.md §5.1 (M8).
+#
+# datasourceUid below is "prometheus", matching the uid this repo's own
+# grafana/provisioning/datasources/datasources.yaml assigns to the bundled
+# docker-compose Prometheus datasource. That is the only Grafana instance
+# this repo can verify end-to-end. The live production Grafana found during
+# the 2026-07-23 audit (docs/client-topology-and-netflow-plan.md, new §0.2
+# note) is a separately maintained Kubernetes deployment (VictoriaMetrics +
+# kube-prometheus-stack) whose actual Prometheus datasource UID is not known
+# to this repo -- if this file is deployed there, `datasourceUid` must be
+# updated to match that instance's real datasource UID first, or every rule
+# below will fail to evaluate (execErrState: Error). This file has NOT been
+# applied to the production router setup as part of this audit's router-side
+# changes; it is committed for review.
+#
+# "Guest -> trusted traffic" from the plan's §5.1 table is deliberately not
+# included here: it depends on a flow-attribution metric (peer_kind) that
+# only exists if M11 (NetFlow) ships, which it has not -- shipping a rule
+# against a metric that does not exist yet would be exactly the no-op this
+# plan's own rules forbid.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: openwrt-client-inventory
+    folder: OpenWrt
+    interval: 1m
+    rules:
+      - uid: openwrt_unknown_device_joined
+        title: OpenWrt - Unknown device joined
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: prometheus
+            model:
+              expr: 'max(openwrt_client_first_seen_seconds{job="openwrt"} > time() - 300)'
+              instant: true
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: A client not seen before joined the network in the last 5 minutes.
+          description: >-
+            openwrt_client_first_seen_seconds shows a new mac within the alert
+            window. Correlate with the Clients dashboard's inventory table
+            (hostname, ap, ssid, network) to see whether it is expected.
+        labels:
+          severity: info
+
+      - uid: openwrt_client_conntrack_blowup
+        title: OpenWrt - Client conntrack blowup
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: prometheus
+            model:
+              expr: 'max(openwrt_client_conntrack_entries{job="openwrt"})'
+              instant: true
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: {type: gt, params: [400]}
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: A client is holding more than 400 conntrack entries.
+          description: >-
+            Torrent traffic, malware, or a broken IoT device are the usual
+            causes. Cross-check against the client's traffic panel on the
+            Clients dashboard. No-data is OK, not alerting: M7's per-client
+            conntrack collector is confirmed broken on both reference routers
+            as of the 2026-07-23 audit (missing `conntrack` package -- see the
+            plan's M7 section) and this alert must not fire on that absence.
+        labels:
+          severity: warning
+
+      - uid: openwrt_flow_offload_masking_accounting
+        title: OpenWrt - Flow offload may be masking traffic accounting
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: prometheus
+            model:
+              expr: 'max(openwrt_flow_offload_enabled{job="openwrt", mode="hw"})'
+              instant: true
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: Hardware flow offload is enabled; nftables/conntrack-based traffic counters may under-report.
+          description: >-
+            See plan §3.4. No-data is OK, not alerting: this metric's read is
+            currently unreliable (see the 2026-07-23 audit note in the plan's
+            §8 findings, and the openwrt_flow_offload_read_success hardening
+            in client_inventory.lua) -- an absent sample must not be read as
+            "offload is off".
+        labels:
+          severity: info
+
+      - uid: openwrt_client_inventory_collector_unavailable
+        title: OpenWrt - Client inventory collector unavailable
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: prometheus
+            model:
+              expr: 'min(openwrt_client_inventory_collector_available{job="openwrt"})'
+              instant: true
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: {type: lt, params: [1]}
+              refId: C
+        noDataState: Alerting
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: The client inventory collector reported unavailable on at least one router.
+          description: Matches the existing `_collector_available` convention used across this repo's other availability tiles.
+        labels:
+          severity: warning
+
+      - uid: openwrt_client_inventory_truncated
+        title: OpenWrt - Client inventory truncated
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: prometheus
+            model:
+              expr: 'max(openwrt_client_inventory_truncated{job="openwrt"})'
+              instant: true
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: The client inventory cap (CLIENT_INVENTORY_MAX) was hit; client counts are now incomplete.
+          description: Raise CLIENT_INVENTORY_MAX in /etc/openwrt-grafana-monitor.conf, per plan §1.1.
+        labels:
+          severity: warning

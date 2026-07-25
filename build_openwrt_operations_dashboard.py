@@ -285,6 +285,12 @@ def stat(
         "thresholds": THRESHOLDS[thresholds_key],
         "mappings": mappings or [],
         "color": {"mode": "thresholds"},
+        # noValue is a fieldConfig.defaults property, not a panel option --
+        # under `options` Grafana silently ignores it and every custom
+        # empty-state message goes unused. See docs/client-topology-and-
+        # netflow-plan.md and skills/grafana-dashboards references/fourth-
+        # pass-field-notes.md; Mission Control already has this fixed.
+        "noValue": no_value,
     }
     if decimals is not None:
         defaults["decimals"] = decimals
@@ -303,7 +309,6 @@ def stat(
             "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
             "textMode": "auto",
             "wideLayout": True,
-            "noValue": no_value,
         },
         field_defaults=defaults,
     )
@@ -332,9 +337,8 @@ def loki_stat(
             "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
             "textMode": "auto",
             "wideLayout": True,
-            "noValue": "0",
         },
-        field_defaults={"thresholds": THRESHOLDS[thresholds_key], "mappings": mappings or []},
+        field_defaults={"thresholds": THRESHOLDS[thresholds_key], "mappings": mappings or [], "noValue": "0"},
     )
 
 
@@ -1059,6 +1063,10 @@ def validate_dashboard(dash: dict[str, Any]) -> None:
             defaults = panel_spec["vizConfig"]["spec"]["fieldConfig"]["defaults"]
             assert "unit" in defaults, f"missing unit: {key} {panel_spec['title']}"
             assert defaults["unit"] != "short", f"generic short unit: {key} {panel_spec['title']}"
+        # noValue belongs in fieldConfig.defaults; under options it is silently
+        # ignored by Grafana. Regression check for the 2026-07-23 fix -- see
+        # docs/client-topology-and-netflow-plan.md gap #4.
+        assert "noValue" not in panel_spec["vizConfig"]["spec"]["options"], f"noValue in panel options: {key}"
         assert "pluginVersion" not in json.dumps(element)
     assert len(panel_ids) == len(set(panel_ids)), "duplicate panel ids"
 

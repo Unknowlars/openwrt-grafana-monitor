@@ -197,8 +197,7 @@
                   "values": false
                 },
                 "textMode": "auto",
-                "wideLayout": true,
-                "noValue": "Unavailable"
+                "wideLayout": true
               },
               "fieldConfig": {
                 "defaults": {
@@ -251,7 +250,8 @@
                   },
                   "color": {
                     "mode": "thresholds"
-                  }
+                  },
+                  "noValue": "Unavailable"
                 },
                 "overrides": []
               }
@@ -312,8 +312,7 @@
                   "values": false
                 },
                 "textMode": "auto",
-                "wideLayout": true,
-                "noValue": "Unavailable"
+                "wideLayout": true
               },
               "fieldConfig": {
                 "defaults": {
@@ -330,7 +329,8 @@
                   },
                   "color": {
                     "mode": "thresholds"
-                  }
+                  },
+                  "noValue": "Unavailable"
                 },
                 "overrides": []
               }
@@ -391,8 +391,7 @@
                   "values": false
                 },
                 "textMode": "auto",
-                "wideLayout": true,
-                "noValue": "Unavailable"
+                "wideLayout": true
               },
               "fieldConfig": {
                 "defaults": {
@@ -409,7 +408,8 @@
                   },
                   "color": {
                     "mode": "thresholds"
-                  }
+                  },
+                  "noValue": "Unavailable"
                 },
                 "overrides": []
               }
@@ -470,8 +470,7 @@
                   "values": false
                 },
                 "textMode": "auto",
-                "wideLayout": true,
-                "noValue": "Unavailable"
+                "wideLayout": true
               },
               "fieldConfig": {
                 "defaults": {
@@ -488,7 +487,8 @@
                   },
                   "color": {
                     "mode": "thresholds"
-                  }
+                  },
+                  "noValue": "Unavailable"
                 },
                 "overrides": []
               }
