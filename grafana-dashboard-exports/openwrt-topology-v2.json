@@ -323,7 +323,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -402,7 +402,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -481,7 +481,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -560,7 +560,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -639,7 +639,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -801,7 +801,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -943,7 +943,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -1407,7 +1407,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -1532,7 +1532,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -1657,7 +1657,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },

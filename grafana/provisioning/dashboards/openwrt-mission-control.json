@@ -4626,7 +4626,7 @@
                     ]
                   },
                   "color": {
-                    "mode": "continuous-blues"
+                    "mode": "thresholds"
                   },
                   "min": 0
                 },
@@ -4717,7 +4717,7 @@
                     ]
                   },
                   "color": {
-                    "mode": "continuous-blues"
+                    "mode": "thresholds"
                   },
                   "min": 0
                 },
@@ -6118,7 +6118,7 @@
                     ]
                   },
                   "color": {
-                    "mode": "continuous-blues"
+                    "mode": "thresholds"
                   },
                   "min": 0,
                   "decimals": 0

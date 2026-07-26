@@ -64,7 +64,14 @@ THRESHOLDS = {
     # green through one full slow cycle plus scrape jitter, yellow into the
     # second cycle, red only once a slow helper has clearly missed a run.
     "freshness": thresholds(("green", 0), ("yellow", 660), ("red", 900)),
-    "neutral": thresholds(("blue", 0)),
+    # Base step is None (-inf), not 0. The Base step means "everything below
+    # the next step", so a first step of 0 leaves negative values matching no
+    # step at all and rendering uncoloured -- which the dBm signal rankings
+    # ("Weakest Clients by Signal") hit on every single bar. This was latent
+    # while bar gauges used a continuous-* scheme, because those ignore
+    # thresholds entirely; it became visible when rankings moved to
+    # thresholds colouring. See SKILL.md golden rule 22.
+    "neutral": thresholds(("blue", None)),
     "unavailable": thresholds(("gray", 0), ("blue", 1)),
 }
 
@@ -354,7 +361,18 @@ def timeseries(
     overrides: list[dict[str, Any]] | None = None,
     thresholds_value: dict[str, Any] | None = None,
     legend_calcs: list[str] | None = None,
+    stack_mode: str = "normal",
+    transformations: list[dict[str, Any]] | None = None,
 ) -> tuple[str, dict[str, Any]]:
+    """Trend lines, optionally stacked.
+
+    `stack_mode` only applies when `stacked` is True. Use `"percent"` for a
+    share-of-total panel -- and note that percent stacking normalises the
+    series itself, so the unit must be `percentunit` and the query must return
+    the raw quantity, not a pre-computed percentage. Pairing `"normal"`
+    stacking with a `percentunit` unit renders raw values multiplied by 100
+    (bytes become "21215522200%"), which is a silent and very visible bug.
+    """
     defaults = {
         "color": {"mode": "palette-classic-by-name"},
         "custom": {
@@ -366,7 +384,7 @@ def timeseries(
             "showPoints": "never",
             "spanNulls": False,
             "axisSoftMin": 0,
-            "stacking": {"group": "A", "mode": "normal" if stacked else "none"},
+            "stacking": {"group": "A", "mode": stack_mode if stacked else "none"},
             "thresholdsStyle": {"mode": "dashed+area" if thresholds_value else "off"},
             "scaleDistribution": {"type": "linear"},
             "hideFrom": {"legend": False, "tooltip": False, "viz": False},
@@ -391,6 +409,7 @@ def timeseries(
         },
         field_defaults=defaults,
         overrides=(overrides or []) + COMMON_OVERRIDES,
+        transformations=transformations,
     )
 
 
@@ -403,9 +422,40 @@ def bargauge(
     thresholds_key: str = "neutral",
     mappings: list[dict[str, Any]] | None = None,
     max_value: float | None = None,
-    color_mode: str = "continuous-blues",
+    color_mode: str = "thresholds",
     transformations: list[dict[str, Any]] | None = None,
+    overrides: list[dict[str, Any]] | None = None,
+    values: bool = False,
 ) -> tuple[str, dict[str, Any]]:
+    """Top-N ranking bars.
+
+    `color_mode` defaults to "thresholds", which with the usual single-step
+    "neutral" palette paints every bar the same readable accent. It is
+    deliberately NOT a `continuous-*` scheme: those map small values to the
+    dark end of the ramp, so on Grafana's dark theme the tail of a ranking
+    goes dark-blue-on-dark-grey, and because `valueMode` is "color" the
+    numbers disappear along with the bars. Verified on screen 2026-07-26 --
+    rows 6-12 of a 12-row top-N had no legible value at all.
+
+    Use "palette-classic" instead when the rows are identities worth telling
+    apart at a glance; it is equally readable but hands some rows red and
+    green, which can read as severity on data that has none.
+
+    `values` decides how a frame becomes bars, and getting it wrong renders an
+    empty panel with no error anywhere:
+
+      - `False` (default) reduces each numeric FIELD to one bar. Correct for
+        Prometheus time-series queries, where each series is its own field and
+        `legendFormat` supplies the name.
+      - `True` makes each ROW its own bar, named by the frame's string column.
+        Required for SQL table results shaped as (label, value) -- with the
+        default the panel finds one numeric field, reduces the whole column to
+        a single number, and draws nothing usable.
+
+    Field-verified against Grafana 13 on 2026-07-26: identical ClickHouse
+    queries render 15 named bars with `values=True` and an empty panel with
+    `values=False`.
+    """
     defaults: dict[str, Any] = {
         "color": {"mode": color_mode},
         "mappings": mappings or [],
@@ -431,10 +481,11 @@ def bargauge(
             "minVizHeight": 16,
             "maxVizHeight": 300,
             "minVizWidth": 8,
-            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": values},
             "legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": False},
         },
         field_defaults=defaults,
+        overrides=overrides or [],
         transformations=transformations,
     )
 
@@ -512,7 +563,17 @@ def piechart(
     pie_type: str = "donut",
     transformations: list[dict[str, Any]] | None = None,
     overrides: list[dict[str, Any]] | None = None,
+    values: bool = False,
 ) -> tuple[str, dict[str, Any]]:
+    """Share-of-total donut or pie.
+
+    `values` behaves exactly as it does on `bargauge`, and gets it wrong the
+    same way: a SQL table frame shaped as (label, value) needs `True` so each
+    ROW becomes a slice named by the label column. With the default the panel
+    reduces the one numeric column to a single number and renders a donut
+    with a single 100% slice called after the value column -- which looks
+    like a working chart, not like a bug.
+    """
     return panel(
         pid,
         title,
@@ -524,11 +585,129 @@ def piechart(
             "pieType": pie_type,
             "displayLabels": ["percent"],
             "legend": {"displayMode": "table", "placement": "right", "showLegend": True, "values": ["value", "percent"]},
-            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": values},
             "tooltip": {"mode": "single", "sort": "desc", "hideZeros": True},
         },
         field_defaults={"color": {"mode": "palette-classic"}},
         overrides=overrides or [],
+        transformations=transformations,
+    )
+
+
+def state_timeline(
+    pid: int,
+    title: str,
+    queries: list[dict[str, Any]],
+    unit: str,
+    desc: str,
+    mappings: list[dict[str, Any]] | None = None,
+    overrides: list[dict[str, Any]] | None = None,
+    transformations: list[dict[str, Any]] | None = None,
+    color_mode: str = "thresholds",
+    thresholds_key: str = "neutral",
+    show_value: str = "auto",
+    row_height: float = 0.8,
+) -> tuple[str, dict[str, Any]]:
+    """Coloured state bands over time -- how long each state lasted.
+
+    Value mappings go in fieldConfig.defaults, never in a `byType` override:
+    that matcher silently fails to apply on state timelines and the panel
+    renders raw `-Inf - +Inf` bracket text instead of the state names. See
+    skills/grafana-dashboards/references/fourth-pass-field-notes.md item 1.
+
+    Use this rather than `status-history` when the question is "how long was
+    it in this state"; status-history draws every individual sample instead
+    and is the right panel only when the sample cadence itself matters.
+    """
+    return panel(
+        pid,
+        title,
+        "state-timeline",
+        queries,
+        unit,
+        desc,
+        options={
+            "alignValue": "left",
+            "mergeValues": True,
+            "rowHeight": row_height,
+            "showValue": show_value,
+            "perPage": 20,
+            "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
+            "tooltip": {"hideZeros": False, "mode": "single", "sort": "none"},
+        },
+        field_defaults={
+            "color": {"mode": color_mode},
+            "custom": {
+                "fillOpacity": 70,
+                "lineWidth": 0,
+                "spanNulls": False,
+                "hideFrom": {"legend": False, "tooltip": False, "viz": False},
+            },
+            "mappings": mappings or [],
+            "thresholds": THRESHOLDS[thresholds_key],
+        },
+        overrides=overrides or [],
+        transformations=transformations,
+    )
+
+
+def heatmap(
+    pid: int,
+    title: str,
+    queries: list[dict[str, Any]],
+    unit: str,
+    desc: str,
+    scheme: str = "Turbo",
+    calculate: bool = False,
+    y_axis_unit: str = "none",
+    transformations: list[dict[str, Any]] | None = None,
+    legend: bool = True,
+) -> tuple[str, dict[str, Any]]:
+    """Distribution over time as coloured cells.
+
+    `calculate=False` means the data arrives already bucketed -- one numeric
+    field per bucket, the field name being the bucket. `calculate=True` lets
+    the panel bucket a raw value field itself. Pre-bucketed is preferred when
+    the datasource already has the buckets, because the panel's own bucketing
+    reduces to whatever `maxDataPoints` allowed through.
+
+    A heatmap answers "what did the distribution look like over time"; a
+    histogram answers "what does it look like now". They are not
+    interchangeable -- see the decision table in references/panel-types.md.
+    """
+    return panel(
+        pid,
+        title,
+        "heatmap",
+        queries,
+        unit,
+        desc,
+        options={
+            "calculate": calculate,
+            "cellGap": 1,
+            "cellValues": {"unit": unit},
+            "color": {
+                "mode": "scheme",
+                "scheme": scheme,
+                "fill": BLUE,
+                "exponent": 0.5,
+                "steps": 64,
+                "reverse": False,
+            },
+            "exemplars": {"color": "rgba(255,0,255,0.7)"},
+            "filterValues": {"le": 1e-09},
+            "legend": {"show": legend},
+            "rowsFrame": {"layout": "auto"},
+            "showValue": "never",
+            "tooltip": {"mode": "single", "showColorScale": False, "yHistogram": False},
+            "yAxis": {"axisPlacement": "left", "reverse": False, "unit": y_axis_unit},
+        },
+        field_defaults={
+            "custom": {
+                "hideFrom": {"legend": False, "tooltip": False, "viz": False},
+                "scaleDistribution": {"type": "linear"},
+            },
+        },
         transformations=transformations,
     )
 
@@ -752,9 +931,9 @@ def build_dashboard() -> dict[str, Any]:
     b.add(wifi, timeseries(202, "AP Signal and Noise", [prom_query(f'wifi_network_signal_dbm{{{PROM_FILTER}}}', "signal {{ssid}} {{ifname}}", "A"), prom_query(f'wifi_network_noise_dbm{{{PROM_FILTER}}}', "noise {{ssid}} {{ifname}}", "B")], "dBm", "AP signal/noise from optional WiFi collector. Less negative signal is better.", overrides=[regexp_color_override("/signal/i", GREEN), regexp_color_override("/noise/i", GRAY)]), 0, 11, 8, 7)
     b.add(wifi, timeseries(203, "AP Quality", [prom_query(f'wifi_network_quality{{{PROM_FILTER}}}', "{{ssid}} {{ifname}}", "A")], "percent", "AP quality percentage from optional WiFi collector.", thresholds_value=thresholds(("red", 0), ("yellow", 70), ("green", 85))), 8, 11, 8, 7)
     b.add(wifi, timeseries(204, "AP Bitrate", [prom_query(f'wifi_network_bitrate{{{PROM_FILTER}}} * 1000', "{{ssid}} {{ifname}}", "A")], "bps", "AP PHY bitrate. This is link capability, not measured traffic throughput.", line_interpolation="stepAfter"), 16, 11, 8, 7)
-    b.add(wifi, bargauge(205, "Clients by AP", [prom_query(WIFI_CLIENT_COUNT, "{{vif}}", "A")], "none", "Neutral ranking of client counts per AP. Higher is not automatically bad.", thresholds_key="neutral", color_mode="continuous-blues"), 0, 18, 8, 7)
-    b.add(wifi, bargauge(206, "Weakest Clients by Signal", [prom_query(f'bottomk(10, {WIFI_SIGNAL})', "{{station}} {{vif}}", "A")], "dBm", "Bounded bottom-10 WiFi client signal ranking. Less negative values are better.", thresholds_key="neutral", color_mode="continuous-blues"), 8, 18, 8, 7)
-    b.add(wifi, bargauge(207, "Top Clients by Rate", [prom_query(f'topk(10, sum by(station, vif) (({WIFI_RX_BPS}) + ({WIFI_TX_BPS})))', "{{station}} {{vif}}", "A")], "bps", "Actual throughput from per-station byte counters when the exporter exposes them (hostapd_stations or wifi_station byte totals). When it does not, this falls back to the negotiated PHY link rate from iw station dump, which reflects link capability, not bytes moved, so an idle client on a fast link can rank high. This exporter build exposes only the link-rate fallback.", thresholds_key="neutral", color_mode="continuous-blues"), 16, 18, 8, 7)
+    b.add(wifi, bargauge(205, "Clients by AP", [prom_query(WIFI_CLIENT_COUNT, "{{vif}}", "A")], "none", "Neutral ranking of client counts per AP. Higher is not automatically bad.", thresholds_key="neutral"), 0, 18, 8, 7)
+    b.add(wifi, bargauge(206, "Weakest Clients by Signal", [prom_query(f'bottomk(10, {WIFI_SIGNAL})', "{{station}} {{vif}}", "A")], "dBm", "Bounded bottom-10 WiFi client signal ranking. Less negative values are better.", thresholds_key="neutral"), 8, 18, 8, 7)
+    b.add(wifi, bargauge(207, "Top Clients by Rate", [prom_query(f'topk(10, sum by(station, vif) (({WIFI_RX_BPS}) + ({WIFI_TX_BPS})))', "{{station}} {{vif}}", "A")], "bps", "Actual throughput from per-station byte counters when the exporter exposes them (hostapd_stations or wifi_station byte totals). When it does not, this falls back to the negotiated PHY link rate from iw station dump, which reflects link capability, not bytes moved, so an idle client on a fast link can rank high. This exporter build exposes only the link-rate fallback.", thresholds_key="neutral"), 16, 18, 8, 7)
     b.add(wifi, table(208, "Selected Client Quality Details", [prom_query(WIFI_SIGNAL, "", "A", fmt="table", instant=True), prom_query(WIFI_CONNECTED, "", "B", fmt="table", instant=True), prom_query(WIFI_INACTIVE, "", "C", fmt="table", instant=True)], "Bounded operational table for connected WiFi stations. Collector plumbing fields are hidden.", transformations=[tf("merge"), organize(exclude=["Time", "__name__", "cluster", "job", "router", "endpoint", "instance", "namespace", "prometheus", "prometheus_replica", "service", "mac", "ifname"], rename={"station": "Station", "ssid": "SSID", "vif": "AP", "frequency": "MHz", "channel": "Channel", "Value #A": "Signal dBm", "Value #B": "Connected Seconds", "Value #C": "Inactive Seconds"}), sort_by("Signal dBm", desc=False), limit(25)], sort_col="Signal dBm", sort_desc=False), 0, 25, 24, 10)
     tabs.append(b.tab("WiFi & Clients", wifi))
 
@@ -766,7 +945,7 @@ def build_dashboard() -> dict[str, Any]:
     b.add(lan, stat(304, "Conntrack Used", f'max(node_nf_conntrack_entries{{{PROM_FILTER}}} / node_nf_conntrack_entries_limit{{{PROM_FILTER}}}) or vector(0)', "percentunit", "NAT/conntrack table utilization.", thresholds_key="capacity", decimals=1), 18, 3, 6, 4)
     b.add(lan, timeseries(305, "LAN Throughput", [prom_query(f'rate(node_network_receive_bytes_total{{{PROM_FILTER}, device="$lan_interface"}}[$__rate_interval])', "LAN RX", "A"), prom_query(f'rate(node_network_transmit_bytes_total{{{PROM_FILTER}, device="$lan_interface"}}[$__rate_interval])', "LAN TX", "B")], "Bps", "Measured LAN bridge throughput.", overrides=[color_override("LAN RX", GREEN), color_override("LAN TX", BLUE)]), 0, 7, 12, 8)
     b.add(lan, timeseries(306, "Online vs Offline Devices", [prom_query(f'sum(router_device_up{{{PROM_FILTER}}}) or vector(0)', "Online", "A"), prom_query(f'sum(1 - router_device_up{{{PROM_FILTER}}}) or vector(0)', "Offline", "B")], "none", "Device count trend with explicit zero-preserving offline count.", line_interpolation="stepAfter"), 12, 7, 12, 8)
-    b.add(lan, bargauge(307, "Top Devices by Traffic Rate", [prom_query(f'topk(10, {TOTAL_RATE})', "{{device}}", "A")], "Bps", "Top 10 LAN clients by current combined upload+download rate, from the traffic profile's nftables counters. Empty rather than wrong when the traffic profile is not installed — see Client Insights for a full breakdown.", thresholds_key="neutral", color_mode="continuous-blues"), 0, 15, 8, 8)
+    b.add(lan, bargauge(307, "Top Devices by Traffic Rate", [prom_query(f'topk(10, {TOTAL_RATE})', "{{device}}", "A")], "Bps", "Top 10 LAN clients by current combined upload+download rate, from the traffic profile's nftables counters. Empty rather than wrong when the traffic profile is not installed — see Client Insights for a full breakdown.", thresholds_key="neutral"), 0, 15, 8, 8)
     b.add(lan, table(308, "Network Interface State", [prom_query(f'node_network_info{{{PROM_FILTER}}}', "", "A", fmt="table", instant=True)], "Current interface facts with MAC/broadcast and scrape plumbing hidden by default.", transformations=[organize(exclude=["Time", "__name__", "Value", "address", "broadcast", "cluster", "endpoint", "instance", "job", "namespace", "prometheus", "prometheus_replica", "router", "service"], rename={"device": "Interface", "operstate": "State", "duplex": "Duplex"}, index={"Interface": 0, "State": 1, "Duplex": 2})], overrides=[{"matcher": {"id": "byName", "options": "State"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-background"}}, {"id": "mappings", "value": [{"type": "value", "options": {"up": {"color": GREEN, "text": "up", "index": 0}, "down": {"color": RED, "text": "down", "index": 1}, "unknown": {"color": GRAY, "text": "unknown", "index": 2}, "lowerlayerdown": {"color": GRAY, "text": "no cable", "index": 3}}}]}]}], sort_col="Interface", sort_desc=False), 8, 15, 16, 8)
     b.add(lan, table(309, "All Devices", [prom_query(f'router_device_up{{{PROM_FILTER}}}', "", "A", fmt="table", instant=True)], "All known devices with online state, hostname/IP/MAC, and no collector plumbing.", transformations=clean_table_transforms({"device": "Hostname", "status": "Status", "mac": "MAC", "ip": "IP", "Value": "Online"}, ["Hostname", "Status", "IP", "MAC", "Online"]), overrides=[{"matcher": {"id": "byName", "options": "Online"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-background"}}, {"id": "mappings", "value": DEVICE_STATE_MAPPINGS}]}], sort_col="Online", sort_desc=True), 0, 23, 24, 10)
     b.add(lan, table(310, "DHCP Lease Expiry", [prom_query(f'(dhcp_lease{{{PROM_FILTER}}} > 0) * 1000', "", "A", fmt="table", instant=True), prom_query(f'clamp_min((dhcp_lease{{{PROM_FILTER}}} > 0) - time(), 0)', "", "B", fmt="table", instant=True)], "Expiring DHCP leases only. Static/infinite leases exported as 0 are omitted so they do not render as impossible negative durations.", transformations=[tf("merge"), organize(exclude=["Time", "__name__", "cluster", "job", "router", "endpoint", "instance", "namespace", "prometheus", "prometheus_replica", "service", "dnsmasq", "Value"], rename={"hostname": "Hostname", "mac": "MAC", "ip": "IP", "Value #A": "Lease Expires", "Value #B": "Remaining Seconds"}), sort_by("Remaining Seconds", desc=False)], overrides=[{"matcher": {"id": "byName", "options": "Lease Expires"}, "properties": [{"id": "unit", "value": "dateTimeAsIso"}]}, {"matcher": {"id": "byName", "options": "Remaining Seconds"}, "properties": [{"id": "unit", "value": "s"}]}], sort_col="Remaining Seconds", sort_desc=False), 0, 33, 24, 10)
@@ -778,8 +957,8 @@ def build_dashboard() -> dict[str, Any]:
     b.add(clients, stat(802, "Total Download Rate", f'({DL.replace("sum by(device) ", "sum ")}) or vector(0)', "Bps", "Aggregate download rate across all tracked clients right now.", thresholds_key="neutral", graph=True, color_mode="value"), 6, 3, 6, 4)
     b.add(clients, stat(803, "Total Upload Rate", f'({UL.replace("sum by(device) ", "sum ")}) or vector(0)', "Bps", "Aggregate upload rate across all tracked clients right now.", thresholds_key="neutral", graph=True, color_mode="value"), 12, 3, 6, 4)
     b.add(clients, stat(804, "WiFi Clients", f'sum(wifi_stations{{{PROM_FILTER}}}) or vector(0)', "none", "Associated WiFi stations across all radios.", thresholds_key="neutral", graph=True, color_mode="value"), 18, 3, 6, 4)
-    b.add(clients, bargauge(805, "Top Clients by Download", [prom_query(f'topk(10, {DL})', "{{device}}", "A")], "Bps", "Bounded top-10 clients by current download rate. Descriptive ranking, not a health score.", thresholds_key="neutral", color_mode="continuous-blues", transformations=[limit(10)]), 0, 7, 12, 9)
-    b.add(clients, bargauge(806, "Top Clients by Upload", [prom_query(f'topk(10, {UL})', "{{device}}", "A")], "Bps", "Bounded top-10 clients by current upload rate. Useful for spotting a host pushing data out.", thresholds_key="neutral", color_mode="continuous-blues", transformations=[limit(10)]), 12, 7, 12, 9)
+    b.add(clients, bargauge(805, "Top Clients by Download", [prom_query(f'topk(10, {DL})', "{{device}}", "A")], "Bps", "Bounded top-10 clients by current download rate. Descriptive ranking, not a health score.", thresholds_key="neutral", transformations=[limit(10)]), 0, 7, 12, 9)
+    b.add(clients, bargauge(806, "Top Clients by Upload", [prom_query(f'topk(10, {UL})', "{{device}}", "A")], "Bps", "Bounded top-10 clients by current upload rate. Useful for spotting a host pushing data out.", thresholds_key="neutral", transformations=[limit(10)]), 12, 7, 12, 9)
     b.add(clients, timeseries(807, "Download by Client Over Time", [prom_query(f'topk(8, {DL})', "{{device}}", "A")], "Bps", "Top clients' download rate as a stacked area, so you can see who was busy and when.", stacked=True, fill=35), 0, 16, 12, 8)
     b.add(clients, piechart(808, "Download Share by Client", [prom_query(f'topk(8, {DL})', "{{device}}", "A")], "Bps", "Share of current download traffic per client. A single dominant slice is the household's heaviest user right now."), 12, 16, 12, 8)
     b.add(clients, table(809, "Client Activity", [prom_query(DL, "", "A", fmt="table", instant=True), prom_query(UL, "", "B", fmt="table", instant=True), prom_query(f'openwrt_device_info{{{PROM_FILTER}}}', "", "C", fmt="table", instant=True)], "One row per client, merging download and upload rates with identity from separate queries and a derived Total column. This is a joinByField + calculateField merge, not three separate panels. Clients with no current traffic still appear via the identity query.", transformations=[tf("joinByField", {"byField": "device", "mode": "outer"}), calculate("Total", "Value #A", "Value #B", "+"), organize(exclude=["Time", "__name__", "Value #C", "interface", "mac", "cluster", "job", "router", "endpoint", "instance", "namespace", "prometheus", "prometheus_replica", "service"], rename={"device": "Client", "ip": "IP", "Value #A": "Download", "Value #B": "Upload"}, index={"Client": 0, "IP": 1, "Download": 2, "Upload": 3, "Total": 4}), sort_by("Total", desc=True), limit(50)], overrides=[{"matcher": {"id": "byRegexp", "options": "/Download|Upload|Total/"}, "properties": [{"id": "unit", "value": "Bps"}, {"id": "custom.cellOptions", "value": {"type": "gauge", "mode": "gradient"}}, {"id": "min", "value": 0}]}], sort_col="Total", sort_desc=True), 0, 24, 24, 11)
@@ -789,7 +968,7 @@ def build_dashboard() -> dict[str, Any]:
     # bounded replacement for "who did each client talk to" yet; that is
     # deferred to the plan's traffic-attribution phase (nlbwmon/NetFlow),
     # which buckets remote peers before they ever reach Prometheus.
-    b.add(clients, bargauge(811, "WiFi Clients by Packet Rate", [prom_query(f'topk(10, sum by(mac) (rate(wifi_station_receive_packets_total{{{PROM_FILTER}}}[$__rate_interval]) + rate(wifi_station_transmit_packets_total{{{PROM_FILTER}}}[$__rate_interval])))', "{{mac}}", "A")], "pps", "Top WiFi stations by real packet rate from station packet counters (not PHY link rate). Keyed by MAC because the exporter's WiFi MAC casing does not match the DHCP lease map.", thresholds_key="neutral", color_mode="continuous-blues", transformations=[limit(10)]), 0, 35, 24, 8)
+    b.add(clients, bargauge(811, "WiFi Clients by Packet Rate", [prom_query(f'topk(10, sum by(mac) (rate(wifi_station_receive_packets_total{{{PROM_FILTER}}}[$__rate_interval]) + rate(wifi_station_transmit_packets_total{{{PROM_FILTER}}}[$__rate_interval])))', "{{mac}}", "A")], "pps", "Top WiFi stations by real packet rate from station packet counters (not PHY link rate). Keyed by MAC because the exporter's WiFi MAC casing does not match the DHCP lease map.", thresholds_key="neutral", transformations=[limit(10)]), 0, 35, 24, 8)
     b.add(clients, table(812, "WiFi Client Detail", [prom_query(f'wifi_station_signal_dbm{{{PROM_FILTER}}}', "", "A", fmt="table", instant=True), prom_query(f'wifi_station_receive_kilobits_per_second{{{PROM_FILTER}}} * 1000', "", "B", fmt="table", instant=True), prom_query(f'wifi_station_transmit_kilobits_per_second{{{PROM_FILTER}}} * 1000', "", "C", fmt="table", instant=True), prom_query(f'label_replace(openwrt_wifi_station_connected_seconds{{{PROM_FILTER}}}, "mac", "$1", "station", "(.*)")', "", "D", fmt="table", instant=True)], "Per-station WiFi quality: signal, negotiated RX/TX link rate, and session age. The connected-seconds series is label_replaced from station to mac so it joins the signal and rate queries.", transformations=[tf("joinByField", {"byField": "mac", "mode": "outer"}), organize(exclude=["Time", "__name__", "vif", "cluster", "job", "router", "endpoint", "instance", "namespace", "prometheus", "prometheus_replica", "service"], rename={"mac": "Station MAC", "ifname": "Radio", "Value #A": "Signal dBm", "Value #B": "RX Link", "Value #C": "TX Link", "Value #D": "Connected"}, index={"Station MAC": 0, "Radio": 1, "Signal dBm": 2, "RX Link": 3, "TX Link": 4, "Connected": 5}), sort_by("Signal dBm", desc=False)], overrides=[{"matcher": {"id": "byRegexp", "options": "/RX Link|TX Link/"}, "properties": [{"id": "unit", "value": "bps"}]}, {"matcher": {"id": "byName", "options": "Connected"}, "properties": [{"id": "unit", "value": "s"}]}, {"matcher": {"id": "byName", "options": "Signal dBm"}, "properties": [{"id": "unit", "value": "dBm"}, {"id": "custom.cellOptions", "value": {"type": "color-background"}}, {"id": "thresholds", "value": thresholds(("red", -90), ("yellow", -70), ("green", -60))}]}], sort_col="Signal dBm", sort_desc=False), 0, 43, 24, 9)
     tabs.append(b.tab("Client Insights", clients))
 

@@ -485,7 +485,12 @@ def bargauge(
     mappings: list[dict[str, Any]] | None = None,
     min_value: float | None = 0,
     max_value: float | None = None,
-    color_mode: str = "continuous-blues",
+    # Not a continuous-* scheme: those map small values to the dark end of
+    # the ramp, so on the dark theme the tail of a ranking goes dark-blue-on-
+    # dark-grey and, because valueMode is "color", takes the numbers with it.
+    # "thresholds" with the neutral single-step palette is the same blue,
+    # uniformly and readably. Verified on screen 2026-07-26.
+    color_mode: str = "thresholds",
     transformations: list[dict[str, Any]] | None = None,
     decimals: int | None = None,
 ) -> tuple[str, dict[str, Any]]:
@@ -1665,7 +1670,6 @@ def tab_lan(b: DashboardBuilder) -> dict[str, Any]:
             "Bps",
             "Ten busiest clients by download rate. Coloured on a neutral blue scale on purpose: being the biggest downloader is not a fault, "
             "so a red bar here would be misleading.",
-            color_mode="continuous-blues",
         ),
         0,
         5,
@@ -1681,7 +1685,6 @@ def tab_lan(b: DashboardBuilder) -> dict[str, Any]:
             "Bps",
             "Ten busiest clients by upload rate. Sustained heavy upload from one client is the usual cause of poor latency for everyone else on an asymmetric line - "
             "check the WAN tab's jitter panel at the same time.",
-            color_mode="continuous-blues",
         ),
         12,
         5,
@@ -1922,7 +1925,6 @@ def tab_dns_dhcp(b: DashboardBuilder) -> dict[str, Any]:
             "none",
             "The raw numbers behind the utilisation gauge: leases currently held, statically reserved hosts, and the total configured pool size. "
             "Running out of pool shows up as clients that associate to WiFi but never get an address.",
-            color_mode="continuous-blues",
             decimals=0,
         ),
         15,

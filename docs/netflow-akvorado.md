@@ -126,22 +126,42 @@ or on the router: `cat /sys/class/net/br-lan/ifindex`.
 The **Capture Interfaces and ifIndex** table on the dashboard shows it next to
 the exporter state for exactly this comparison.
 
-### 4. GeoIP is not configured by default
+### 4. GeoIP enrichment is optional, and partial even when it works
 
-`geoip: {optional: true}` with no database present, so `SrcAS`/`DstAS`,
+`geoip: {optional: true}`. With no database present, `SrcAS`/`DstAS`,
 `SrcCountry`/`DstCountry` and the `Geo*` columns stay empty. The compose file
 still mounts `akvorado/geoip/` at `/usr/share/GeoIP`: Akvorado watches that
 directory at startup even when the databases are optional, so the directory
 must exist. Enabling enrichment needs a MaxMind account or an IPinfo token,
 which is a per-operator decision.
 
-The **External** tab shows AS and country *resolution percentages* so an empty
-chart there can be told apart from a broken one. To enable, add a geoip-updater
-container or manually place MaxMind/IPinfo databases into `akvorado/geoip/`.
-The default config expects the standard MaxMind names:
-`GeoLite2-ASN.mmdb`, `GeoLite2-City.mmdb`, and `GeoLite2-Country.mmdb`.
-If you use short local aliases such as `asn.mmdb` or `country.mmdb`, either
-rename them or add those paths to `akvorado/akvorado.yaml`.
+To enable, add a geoip-updater container or manually place MaxMind/IPinfo
+databases into `akvorado/geoip/`. The default config expects the standard
+MaxMind names: `GeoLite2-ASN.mmdb`, `GeoLite2-City.mmdb`, and
+`GeoLite2-Country.mmdb`. If you use short local aliases such as `asn.mmdb` or
+`country.mmdb`, either rename them or add those paths to
+`akvorado/akvorado.yaml`.
+
+**On the homelab cluster, ASN and Country are live.** Roughly 40% of flows
+resolve to a destination AS and 30% to a destination country. That is not a
+fault and the dashboard says so explicitly: the remainder is overwhelmingly
+LAN-to-LAN traffic, and a private address has no AS or country by definition.
+The **External** tab's resolution tiles are therefore scoped to
+boundary-crossing flows, so they answer "of the traffic that actually left,
+how much did we identify" rather than "how much of the enrichment is broken".
+
+**City-level enrichment is deliberately not enabled.** Loading
+`GeoLite2-City.mmdb` alongside Country OOM-kills the orchestrator at its
+current memory limit, so `SrcGeoCity`/`DstGeoCity`/`Src|DstGeoState` are 0%
+populated by choice. No dashboard panel reads them, and
+`tests/test_netflow_config.py` fails the build if one starts to — an empty
+panel is indistinguishable from a broken pipeline, which is the failure this
+whole design exists to prevent.
+
+Two more columns are structurally empty here and equally off-limits:
+`DstASPath`/`Dst1st|2nd|3rdAS`/`Dst*Communities` need a BGP peering source
+this deployment does not have, and the `Exporter*`/`*Net{Site,Region,Tenant}`
+fields are carrier multi-tenancy metadata.
 
 Without GeoIP you still get useful labels: `clickhouse.networks` in
 `akvorado.yaml` names your own prefixes, and `clickhouse.asns` can override AS
@@ -220,6 +240,25 @@ carrier defaults:
 Consolidated tables drop `SrcAddr`/`DstAddr`/`SrcPort`/`DstPort`, so every
 per-host and per-port panel only works inside the 7-day raw window. Widening
 `interval: 0` scales disk roughly linearly.
+
+### 9. softflowd does not export ICMP type or code
+
+ClickHouse ships an `icmp` dictionary mapping `(proto, type, code)` to names
+like `echo-request` and `destination-unreachable`, and Akvorado's schema
+carries ICMP type/code packed into `DstPort` — upstream's convention is
+`type * 256 + code`.
+
+softflowd never populates it. `DstPort` is a constant `0` on every `Proto=1`
+and `Proto=58` flow in this deployment, so the dictionary would decode all of
+them as whatever `(1, 0, 0)` maps to (`echo-reply`) regardless of what the
+packets actually were. That is worse than showing nothing: it is a confident
+wrong answer.
+
+The Security Signals tab therefore shows ICMP and ICMPv6 **volume** over time
+and states in the panel description why there is no type breakdown. ICMPv6
+volume is high and steady on any IPv6 LAN — neighbour discovery and router
+advertisement are both ICMPv6 — so a sustained ICMPv4 climb is the more
+interesting of the two.
 
 ---
 
@@ -316,16 +355,31 @@ curl -s http://127.0.0.1:8081/api/v0/outlet/metrics | grep -i error
 Then open **OpenWrt - NetFlow** in Grafana and check the Pipeline Health tab
 first: exporter running, flow data complete, no capture drops, no forced expiry.
 The dashboard is generated from `build_openwrt_netflow_dashboard.py` and has
-four tabs:
+six tabs:
 
-- **Flow Overview**: hero totals, bitrate, local talkers, external peers, and
-  top conversations.
-- **Applications**: source/destination ports, service-class buckets, packet
-  size, TCP flags, and local service ports.
-- **External**: source/destination AS, source/destination country, AS/country
-  matrices, and city enrichment when the mounted database provides it.
+- **Flow Overview**: hero band (flows, traffic, peak bitrate, external share,
+  IPv6 flow share, local hosts), peak link utilization, throughput by
+  direction in both absolute and percent-stacked form, top local talkers,
+  top external destinations, and top conversations.
+- **Applications**: source/destination ports, protocol mix, service-class
+  buckets as a donut and stacked over time, a packet-size-over-time heatmap,
+  decoded TCP flow outcomes, and local service ports.
+- **External**: AS and country resolution tiles, top source/destination AS and
+  country, a world map of destination countries, a node graph of local hosts
+  to the networks they talk to, and AS/country conversation matrices.
+- **Security Signals**: reset rate, unanswered connection attempts, fan-out
+  per local host, inbound traffic to local hosts, and ICMP volume. Shapes
+  worth explaining, framed as such — not alerts.
 - **Pipeline Health**: softflowd, Akvorado, ifIndex, drop, and flow-table
-  integrity checks.
+  integrity checks, plus an availability state timeline over the selected
+  range and a direction cross-check against Akvorado's own `FlowDirection`.
+- **Pipeline Internals**: Kafka consumer lag, ClickHouse insert latency and
+  batch size, decoder throughput by record type, metadata cache hit ratio,
+  and outlet worker load.
+
+Pipeline Health answers "can I trust these numbers"; Pipeline Internals
+answers "where in the collector is it struggling", and is only worth opening
+once the first tab looks wrong.
 
 Once GeoIP files are mounted, these ClickHouse checks prove the same fields the
 External and Applications tabs need:
@@ -401,7 +455,9 @@ appends its schema version to the configured topic name.
 | Byte counts ~100× too low | `sampling_rate` and `default-sampling-rate` are out of step. |
 | Totals lower than `node_network_*` counters | Hardware flow offload. Expected — see limit 1. |
 | Export failures climbing | UDP to the inlet failing. Check firewall between router and monitoring host on `NETFLOW_PORT`. |
-| AS/country panels empty | GeoIP not configured, files use names not listed in `akvorado/akvorado.yaml`, or Akvorado was not restarted after adding them. See limit 4. |
+| AS/country panels empty | GeoIP not configured, files use names not listed in `akvorado/akvorado.yaml`, or Akvorado was not restarted after adding them. See limit 4. Check the External tab's resolution tiles first: a low percentage with a populated map is normal (LAN-to-LAN traffic has no AS), 0% is a real fault. |
+| Kafka consumer lag climbing, flows arriving late | The outlet cannot keep up with the inlet. Nothing is lost while Kafka still holds it, but recent panels read low. See the Pipeline Internals tab; check insert latency and outlet worker load to tell a slow ClickHouse from a slow outlet. |
+| Only templates on the decoder panel, `DataFlowSet` flat at zero | softflowd is sending schema but capturing no packets. Same root cause as the `OptionsTemplateFlowSet` row above; check the capture interface and pcap filter. |
 | Orchestrator logs `cannot watch database directory` | The `akvorado/geoip/` mount point is missing. It should exist even when empty. |
 | Top Local Talkers empty, or every source is one address | Capturing on WAN instead of the LAN bridge, so sources are post-SNAT. See limit 7. |
 | Everything in one direction bucket | Your LAN prefix is missing from `clickhouse.networks` in `akvorado.yaml`. |

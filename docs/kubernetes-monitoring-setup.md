@@ -68,7 +68,7 @@ This guide uses these example values. Replace them with your own.
 | Router name labels | `openwrt-main`, `openwrt-ap` | Label used in Prometheus, Loki, Akvorado, and Grafana |
 | Kubernetes namespace | `monitoring` | Where your monitoring stack runs |
 | Syslog LoadBalancer IP | `192.168.0.221` | LAN IP where the router sends logs |
-| NetFlow collector IP | `192.168.0.222` | LAN IP where the router sends flows, if used |
+| NetFlow collector IP | `192.168.0.224` | LAN IP where the router sends flows, if used |
 | Prometheus datasource UID | `prometheus` | Grafana datasource UID for metrics |
 | Loki datasource UID | `loki` | Grafana datasource UID for logs |
 
@@ -744,50 +744,170 @@ Per-flow visibility (who talked to whom, on which port). Read
 section, because on hardware with flow offload the data is structurally
 incomplete.
 
-**This repository ships no Kubernetes manifests for Akvorado.** It is a
-multi-service stack — inlet, outlet, orchestrator, console, Kafka, ClickHouse,
-Redis — and running it well on Kubernetes means bringing your own Kafka and
-ClickHouse operators. Two honest options:
+The Kubernetes deployment that made this work used:
 
-### Option A - Run the Compose profile on a separate host (recommended)
+- Akvorado `2.4.1`
+- a single-node Kafka KRaft StatefulSet
+- a single-node ClickHouse StatefulSet
+- Valkey or Redis for Akvorado console cache
+- Akvorado orchestrator, inlet, outlet, and console Deployments
+- a MetalLB `LoadBalancer` Service for UDP `2055`
+- a PVC mounted at `/usr/share/GeoIP` for MaxMind databases
+- a Grafana ClickHouse datasource for the `OpenWrt - NetFlow` dashboard
 
-Keep Kubernetes for metrics and logs, and run the NetFlow stack as-is on any
-Docker host:
+The example below uses the same addresses as the rest of this guide:
 
-```sh
-cp akvorado/exporters.yaml.example akvorado/exporters.yaml   # then edit it
-docker compose --profile netflow up -d
-```
+| Name | Example |
+| --- | --- |
+| Main router | `192.168.0.1` |
+| Syslog LoadBalancer | `192.168.0.221` |
+| Akvorado NetFlow LoadBalancer | `192.168.0.224` |
+| Akvorado namespace | `monitoring` |
+| Akvorado inlet Service | `akvorado-inlet-netflow` |
+| Akvorado ClickHouse Service | `akvorado-clickhouse.monitoring.svc.cluster.local:9000` |
 
-For MaxMind GeoIP enrichment, place the databases in `akvorado/geoip/` using
-the filenames the repo config expects:
+### Kubernetes Akvorado shape
+
+This repository still does not ship reusable Kubernetes manifests for Akvorado,
+but the working deployment used this shape:
 
 ```text
-akvorado/geoip/GeoLite2-ASN.mmdb
-akvorado/geoip/GeoLite2-City.mmdb
-akvorado/geoip/GeoLite2-Country.mmdb
+OpenWrt softflowd
+  └─ UDP 2055 to 192.168.0.224
+       └─ Service/akvorado-inlet-netflow
+            └─ Deployment/akvorado-inlet
+                 └─ Kafka topic flows-v5
+                      └─ Deployment/akvorado-outlet
+                           └─ StatefulSet/akvorado-clickhouse
+                                └─ Grafana ClickHouse datasource
+
+Deployment/akvorado-orchestrator
+  ├─ serves config to inlet/outlet/console
+  ├─ creates Kafka topic and ClickHouse schema
+  ├─ serves ClickHouse dictionaries such as networks.csv
+  └─ mounts PVC/akvorado-geoip at /usr/share/GeoIP
 ```
 
-Point the router at that host instead of a MetalLB IP:
+Minimum Kubernetes resources:
 
-```sh
-ssh root@192.168.0.1 \
-  "OPENWRT_MONITOR_PROFILE=core,netflow NETFLOW_PORT=2055 \
-   sh /tmp/openwrt/setup.sh <docker-host-ip>"
-```
+- `Deployment/akvorado-orchestrator`
+- `Deployment/akvorado-inlet`
+- `Deployment/akvorado-outlet`
+- `Deployment/akvorado-console`
+- `StatefulSet/akvorado-kafka`
+- `StatefulSet/akvorado-clickhouse`
+- `Deployment/akvorado-valkey` or Redis equivalent
+- `Service/akvorado-inlet-netflow`, type `LoadBalancer`, UDP `2055`
+- internal ClusterIP Services for orchestrator, inlet, outlet, console, Kafka,
+  ClickHouse, and Redis/Valkey
+- PVCs for ClickHouse, Kafka, outlet runtime state, console state, and GeoIP
 
-For a second AP that also exports NetFlow, run the same command against the AP
-and add another exporter entry in `akvorado/exporters.yaml`. The exporter
-`name:` must match the Prometheus/Grafana router label, and the ifIndex must be
-the real bridge ifIndex from that device:
-
-```sh
-ssh root@192.168.0.2 "cat /sys/class/net/br-lan/ifindex"
-```
+The inlet LoadBalancer should preserve the router source address because
+Akvorado exporter metadata matches on exporter IP. In MetalLB/Cilium clusters,
+set:
 
 ```yaml
-    192.168.0.2/32:
-      name: openwrt-ap
+apiVersion: v1
+kind: Service
+metadata:
+  name: akvorado-inlet-netflow
+  namespace: monitoring
+  annotations:
+    metallb.io/loadBalancerIPs: 192.168.0.224
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  ports:
+    - name: netflow
+      port: 2055
+      targetPort: netflow
+      protocol: UDP
+  selector:
+    app.kubernetes.io/name: akvorado-inlet
+```
+
+If you run NetworkPolicies, allow UDP `2055` from the router IP to the inlet,
+and allow internal monitoring namespace traffic between Akvorado, Kafka,
+ClickHouse, Valkey/Redis, Prometheus, and Grafana.
+
+### Akvorado config for Kubernetes
+
+Start from `akvorado/akvorado.yaml` and adapt endpoints to Kubernetes Service
+DNS names:
+
+```yaml
+kafka:
+  topic: flows
+  brokers:
+    - akvorado-kafka.monitoring.svc.cluster.local:9092
+
+geoip:
+  optional: true
+  asn-database:
+    - /usr/share/GeoIP/GeoLite2-ASN.mmdb
+  geo-database:
+    - /usr/share/GeoIP/GeoLite2-Country.mmdb
+
+clickhousedb:
+  servers:
+    - akvorado-clickhouse.monitoring.svc.cluster.local:9000
+
+clickhouse:
+  orchestrator-url: http://akvorado-orchestrator.monitoring.svc.cluster.local:8080
+
+inlet:
+  flow:
+    inputs:
+      - type: udp
+        decoder: netflow
+        listen: :2055
+
+outlet:
+  metadata:
+    providers:
+      !include "exporters.yaml"
+```
+
+Mount that file as `/etc/akvorado/akvorado.yaml`, and mount `exporters.yaml`
+beside it. The orchestrator will not start if the include is missing.
+
+The home-router deployment used `GeoLite2-ASN.mmdb` and
+`GeoLite2-Country.mmdb`. Keep `GeoLite2-City.mmdb` staged but disabled until
+you test memory. Loading City and Country together caused orchestrator OOMKills
+while ClickHouse requested the `networks.csv` dictionary, even with a `2Gi`
+limit.
+
+Recommended orchestrator resources for Country/ASN enrichment:
+
+```yaml
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 2Gi
+```
+
+If you enable City enrichment, test it deliberately. Watch orchestrator memory,
+restart count, and `networks.csv` status before calling it stable.
+
+### Exporter metadata and ifIndex
+
+Akvorado drops flows when the exporter IP or interface index does not match
+`exporters.yaml`. The working main-router setup used `br-lan` ifIndex `8`:
+
+```sh
+ssh root@192.168.0.1 "cat /sys/class/net/br-lan/ifindex"
+```
+
+Example:
+
+```yaml
+- provider: static
+  exporters:
+    192.168.0.1/32:
+      name: openwrt-main
       ifindexes:
         8:
           name: br-lan
@@ -795,36 +915,197 @@ ssh root@192.168.0.2 "cat /sys/class/net/br-lan/ifindex"
           speed: 1000
 ```
 
-Use the value printed by `cat /sys/class/net/br-lan/ifindex`, not the example
-`8`, then restart the Akvorado roles.
+Use the value printed by your router, not the example. After changing
+`exporters.yaml`, roll `akvorado-outlet` so it refetches metadata from the
+orchestrator. If outlet still reports `metadata missing`, clear or rotate its
+metadata cache file before restarting it.
 
-To query the flows from your cluster Grafana, add a ClickHouse datasource
-pointing at that host. This requires exposing ClickHouse beyond loopback, which
-`docker-compose.yml` deliberately does not do — it binds `8123` to `127.0.0.1`.
-If you change that binding, restrict it: ClickHouse in this stack has no
-authentication configured (`CLICKHOUSE_SKIP_USER_SETUP=1`), so anything that can
-reach the port can read every flow record. Bind it to the specific interface
-your cluster reaches, and firewall it to the cluster nodes.
+You can confirm the router-side observed value after the `netflow` profile is
+installed:
 
-You will also need the `grafana-clickhouse-datasource` plugin installed in your
-cluster Grafana — for `kube-prometheus-stack` that is `grafana.plugins` in your
-Helm values, not the `GF_PLUGINS_PREINSTALL` variable the Compose stack uses.
+```promql
+openwrt_netflow_ifindex{job="openwrt", router="openwrt-main", interface="br-lan"}
+```
 
-### Option B - Run Akvorado in Kubernetes
+### Populate MaxMind GeoIP in Kubernetes
 
-Real work, and out of scope for this repo, but the shape is:
+Do not put MaxMind `.mmdb` files in ConfigMaps or Secrets. Use a PVC mounted at
+`/usr/share/GeoIP` in the orchestrator. The files are licensed generated data
+and are too large for a normal ConfigMap.
 
-- Kafka via an operator such as Strimzi.
-- ClickHouse via the Altinity operator, with a persistent volume.
-- The four Akvorado services as Deployments, all pointed at the orchestrator's
-  in-cluster URL. `akvorado/akvorado.yaml` from this repo is the config; mount
-  it as a ConfigMap and mount `exporters.yaml` alongside it, since the
-  orchestrator `!include`s it and will not start without it.
-- A `LoadBalancer` Service on UDP `2055` for the inlet — the same MetalLB
-  pattern as the syslog receiver in Step 6, with its own reserved IP.
-- ClickHouse must be able to reach the orchestrator over HTTP; it pulls
-  dictionaries and GeoIP data from it. That is what `clickhouse.orchestrator-url`
-  is for, and it needs to be an in-cluster address.
+For a first manual population, stage the files locally and copy them through a
+temporary pod that mounts the PVC:
+
+```sh
+kubectl -n monitoring run akvorado-geoip-copy \
+  --image=docker.io/library/busybox:1.37.0 \
+  --restart=Never \
+  --overrides='{"spec":{"volumes":[{"name":"geoip","persistentVolumeClaim":{"claimName":"akvorado-geoip"}}],"containers":[{"name":"akvorado-geoip-copy","image":"docker.io/library/busybox:1.37.0","command":["sh","-c","sleep 3600"],"volumeMounts":[{"name":"geoip","mountPath":"/geoip"}]}]}}'
+
+kubectl -n monitoring wait --for=condition=Ready pod/akvorado-geoip-copy --timeout=120s
+
+kubectl -n monitoring cp akvorado/geoip/GeoLite2-ASN.mmdb \
+  akvorado-geoip-copy:/geoip/GeoLite2-ASN.mmdb
+kubectl -n monitoring cp akvorado/geoip/GeoLite2-Country.mmdb \
+  akvorado-geoip-copy:/geoip/GeoLite2-Country.mmdb
+
+kubectl -n monitoring exec akvorado-geoip-copy -- ls -lh /geoip
+kubectl -n monitoring delete pod akvorado-geoip-copy
+kubectl -n monitoring delete pod -l app.kubernetes.io/name=akvorado-orchestrator
+```
+
+Keep `--overrides` before any `--command -- ...` arguments if you adapt the
+helper pod. Arguments after `--` are passed to the container, so a misplaced
+`--overrides` creates a pod without `/geoip`, and `kubectl cp` fails with:
+
+```text
+tar: can't change directory to '/geoip': No such file or directory
+```
+
+For production, replace the manual copy with a CronJob that runs `geoipupdate`
+into the PVC and restarts orchestrator after a successful update.
+
+### Router command for Kubernetes NetFlow
+
+The current setup script uses its positional host argument for both syslog and
+NetFlow. In Kubernetes, syslog and NetFlow usually have different LoadBalancer
+IPs. The safe sequence is:
+
+1. Run setup against the Akvorado NetFlow IP.
+2. Immediately restore syslog to the Alloy syslog IP.
+
+Main router example:
+
+```sh
+scp -O -r openwrt root@192.168.0.1:/tmp/
+ssh root@192.168.0.1 \
+  "OPENWRT_MONITOR_PROFILE=core,traffic,wifi_mesh,dpi,clients,netflow sh /tmp/openwrt/setup.sh 192.168.0.224"
+
+ssh root@192.168.0.1 \
+  "uci set system.@system[0].log_ip=192.168.0.221; \
+   uci set system.@system[0].log_port=514; \
+   uci set system.@system[0].log_proto=udp; \
+   uci commit system; \
+   /etc/init.d/log restart"
+```
+
+Then check router-side NetFlow:
+
+```sh
+ssh root@192.168.0.1 "uci show softflowd"
+ssh root@192.168.0.1 "/etc/init.d/softflowd status"
+```
+
+Expected important values:
+
+```text
+softflowd.@softflowd[0].enabled='1'
+softflowd.@softflowd[0].interface='br-lan'
+softflowd.@softflowd[0].host_port='192.168.0.224:2055'
+softflowd.@softflowd[0].export_version='9'
+```
+
+Do not enable the `netflow` profile on a downstream AP unless it is actually
+routing traffic or you deliberately want AP-local flows. If the gateway already
+exports NetFlow, enabling it on an AP can double-count traffic.
+
+### Kubernetes verification
+
+Check Akvorado pods, Services, and PVCs:
+
+```sh
+kubectl -n monitoring get pods,svc,pvc -l app.kubernetes.io/part-of=akvorado
+kubectl -n monitoring get svc akvorado-inlet-netflow
+```
+
+The NetFlow Service should show the reserved LoadBalancer IP:
+
+```text
+akvorado-inlet-netflow   LoadBalancer   ...   192.168.0.224   2055:.../UDP
+```
+
+Check orchestrator startup and GeoIP:
+
+```sh
+kubectl -n monitoring logs deploy/akvorado-orchestrator --since=10m | \
+  grep -Ei 'geoip|geo database|asn database|mmdb|oom|killed|networks.csv|status":503|cannot open'
+```
+
+Good signs:
+
+- no `cannot open geo database`
+- no `cannot open asn database`
+- no `OOMKilled` restart in `kubectl describe pod`
+- `networks.csv` requests return status `200`, not `503`
+
+Check rows in ClickHouse:
+
+```sh
+kubectl -n monitoring exec statefulset/akvorado-clickhouse -- \
+  clickhouse-client --query \
+  "SELECT count(), countIf(SrcCountry != ''), countIf(DstCountry != ''), countIf(SrcAS > 0), countIf(DstAS > 0) FROM flows WHERE TimeReceived > now() - INTERVAL 10 MINUTE"
+```
+
+Only new rows are enriched. Existing rows are not backfilled after you add
+GeoIP.
+
+Sample recent enriched rows:
+
+```sh
+kubectl -n monitoring exec statefulset/akvorado-clickhouse -- \
+  clickhouse-client --query \
+  "SELECT IPv6NumToString(SrcAddr), IPv6NumToString(DstAddr), SrcAS, DstAS, SrcCountry, DstCountry FROM flows WHERE TimeReceived > now() - INTERVAL 10 MINUTE AND (SrcCountry != '' OR DstCountry != '' OR SrcAS > 0 OR DstAS > 0) LIMIT 20 FORMAT TSV"
+```
+
+Check Akvorado pipeline health metrics in Prometheus:
+
+```promql
+rate(akvorado_inlet_flow_input_udp_packets_total[5m])
+rate(akvorado_outlet_core_forwarded_flows_total[5m])
+sum by (error) (increase({__name__=~"akvorado_outlet_core_.*errors_total"}[15m]))
+openwrt_netflow_exporter_up{job="openwrt", router="openwrt-main"}
+openwrt_netflow_ifindex{job="openwrt", router="openwrt-main"}
+```
+
+### Grafana ClickHouse datasource
+
+Install the `grafana-clickhouse-datasource` plugin in your cluster Grafana and
+add a datasource pointing at ClickHouse.
+
+For an in-cluster ClickHouse Service:
+
+| Setting | Example |
+| --- | --- |
+| Protocol | native |
+| Server address | `akvorado-clickhouse.monitoring.svc.cluster.local` |
+| Native port | `9000` |
+| Database | `default` |
+
+For `kube-prometheus-stack`, install the plugin through `grafana.plugins` in
+Helm values or your existing Grafana provisioning process.
+
+### Compose fallback
+
+If you do not want to run Kafka and ClickHouse in Kubernetes, keep Kubernetes
+for metrics/logs and run the NetFlow Compose profile on a Docker host:
+
+```sh
+cp akvorado/exporters.yaml.example akvorado/exporters.yaml   # then edit it
+docker compose --profile netflow up -d
+```
+
+For MaxMind GeoIP enrichment in Compose, place databases in `akvorado/geoip/`
+using the names expected by the config:
+
+```text
+akvorado/geoip/GeoLite2-ASN.mmdb
+akvorado/geoip/GeoLite2-Country.mmdb
+```
+
+If your cluster Grafana queries that external ClickHouse, expose ClickHouse
+carefully. The Compose stack binds `8123` to `127.0.0.1` by default, and
+ClickHouse has no authentication configured (`CLICKHOUSE_SKIP_USER_SETUP=1`).
+Anything that can reach the port can read every flow record.
 
 ### Scraping Akvorado's own metrics
 
@@ -910,6 +1191,55 @@ Check for PID-derived stream labels, which `labelmap` would have created:
 
 See the warning in Step 6.
 
+### NetFlow packets arrive but Akvorado stores no flows
+
+Check the router destination first:
+
+```sh
+ssh root@192.168.0.1 "uci show softflowd"
+```
+
+The `host_port` must be the Akvorado inlet, not the syslog receiver:
+
+```text
+softflowd.@softflowd[0].host_port='192.168.0.224:2055'
+```
+
+Then check the exporter metadata. If `br-lan` ifIndex changed but
+`exporters.yaml` still has the old number, outlet drops flows with
+`metadata missing`:
+
+```sh
+ssh root@192.168.0.1 "cat /sys/class/net/br-lan/ifindex"
+kubectl -n monitoring logs deploy/akvorado-outlet --since=10m
+```
+
+After fixing `exporters.yaml`, restart `akvorado-outlet`. If it still drops
+flows, rotate or remove the outlet metadata cache and restart it again.
+
+### Akvorado GeoIP is empty
+
+Country and ASN enrichment only appears on rows written after GeoIP is enabled.
+Check recent rows, not historical rows:
+
+```sh
+kubectl -n monitoring exec statefulset/akvorado-clickhouse -- \
+  clickhouse-client --query \
+  "SELECT count(), countIf(SrcCountry != ''), countIf(DstCountry != ''), countIf(SrcAS > 0), countIf(DstAS > 0) FROM flows WHERE TimeReceived > now() - INTERVAL 10 MINUTE"
+```
+
+If the counts stay zero:
+
+- confirm the MaxMind files exist on the `akvorado-geoip` PVC
+- confirm orchestrator mounts that PVC at `/usr/share/GeoIP`
+- check orchestrator logs for `cannot open geo database` or
+  `cannot open asn database`
+- check orchestrator restarts for `OOMKilled`
+- check that `networks.csv` returns status `200`, not `503`
+
+City-level GeoIP needs separate memory testing. Do not enable
+`GeoLite2-City.mmdb` just because it exists in the PVC.
+
 ### Dashboard panels show no data
 
 In Grafana Explore, test Prometheus first:
@@ -942,4 +1272,9 @@ datasource selection.
 - [ ] Confirm logs with `{job="openwrt-syslog"}`.
 - [ ] Import the dashboards you need.
 - [ ] Adjust dashboard variables to match your `router` label and interfaces.
-- [ ] Optional: set up NetFlow, and scrape Akvorado as `job="akvorado"`.
+- [ ] Optional: reserve a NetFlow LoadBalancer IP such as `192.168.0.224`.
+- [ ] Optional: deploy Akvorado, Kafka, ClickHouse, Valkey/Redis, and GeoIP PVCs.
+- [ ] Optional: verify `exporters.yaml` matches the router's real `br-lan` ifIndex.
+- [ ] Optional: run router setup against the NetFlow IP, then restore syslog.
+- [ ] Optional: confirm ClickHouse has recent rows with ASN/country enrichment.
+- [ ] Optional: scrape Akvorado as `job="akvorado"` for pipeline-health panels.

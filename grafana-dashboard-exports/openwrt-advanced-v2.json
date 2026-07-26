@@ -557,7 +557,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -637,7 +637,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -847,7 +847,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -1045,12 +1045,12 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
                   "color": {
-                    "mode": "continuous-blues"
+                    "mode": "thresholds"
                   },
                   "min": 0
                 },
@@ -1144,7 +1144,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -1361,7 +1361,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -1579,7 +1579,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -1666,7 +1666,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -1845,7 +1845,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -2039,7 +2039,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -2118,7 +2118,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -2349,7 +2349,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -2428,7 +2428,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -2507,7 +2507,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -2606,7 +2606,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -2805,7 +2805,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -3077,7 +3077,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -3183,7 +3183,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -3381,12 +3381,12 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
                   "color": {
-                    "mode": "continuous-blues"
+                    "mode": "thresholds"
                   },
                   "min": 0
                 },
@@ -3612,7 +3612,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -3691,7 +3691,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -3770,7 +3770,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -3868,12 +3868,12 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
                   "color": {
-                    "mode": "continuous-blues"
+                    "mode": "thresholds"
                   },
                   "min": 0
                 },
@@ -3966,12 +3966,12 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
                   "color": {
-                    "mode": "continuous-blues"
+                    "mode": "thresholds"
                   },
                   "min": 0
                 },
@@ -4103,7 +4103,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -4323,7 +4323,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -4595,7 +4595,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },
@@ -4674,7 +4674,7 @@
                     "steps": [
                       {
                         "color": "blue",
-                        "value": 0
+                        "value": null
                       }
                     ]
                   },

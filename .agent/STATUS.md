@@ -1,5 +1,30 @@
 # Current status
 
+## NetFlow dashboard v3 (2026-07-26) — built, validated, not committed
+
+`docs/netflow-dashboard-v3-plan.md` is implemented. `openwrt-netflow-v2` is now
+72 panels across 6 tabs (added Security Signals, Pipeline Internals). All
+checks pass; both generated copies are in sync and uncommitted.
+
+Two things a follow-up agent should know:
+
+- **The v3 plan's open question about empty bar gauges is resolved: it was a
+  real bug, not a screenshot artifact.** ClickHouse-backed `bargauge` and
+  `piechart` need `reduceOptions.values = true`. Four more render-only bugs
+  were found and fixed the same way (long-format timeseries, geomap gazetteer,
+  state-timeline legend) — see the 2026-07-26 CHANGELOG entry. All five are
+  now covered by tests in `tests/test_netflow_config.py`.
+- **Live rendering was verified against the docker-compose stack**, whose
+  ClickHouse stopped receiving flows at 2026-07-25 21:41 UTC. The k8s
+  `monitoring/akvorado-clickhouse` is the currently-fed instance. Queries were
+  verified against both; only the browser rendering used the stale copy. If
+  the docker stack is meant to still be receiving flows, that gap is worth
+  investigating separately — it is not something this work changed.
+
+Not done, deliberately: no internal-segment panel (operator declined widening
+`clickhouse.networks`), and no ICMP type/code decoding (softflowd does not
+export those fields — now documented as limit 9 in `docs/netflow-akvorado.md`).
+
 ## Remediation plan
 
 `docs/CODE-REVIEW-REMEDIATION-PLAN.md` is still the source of truth.

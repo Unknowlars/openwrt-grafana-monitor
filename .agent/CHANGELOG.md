@@ -1,5 +1,123 @@
 # Agent changelog
 
+## 2026-07-26 (later)
+
+- Changed: Every neutral ranking bar gauge in the repo moved from
+  `continuous-blues` to `thresholds` colouring — 31 panels across
+  operations (7), clients (7), advanced (4), mission-control (3) and
+  netflow (10). Both `bargauge()` builders (shared and mission-control's
+  local one) now default to `thresholds`; the 11 explicit
+  `color_mode="continuous-blues"` call sites were removed rather than
+  rewritten, so they inherit it.
+- Reason: Operator reported the bars were hard to read, and a side-by-side
+  render confirmed it. A continuous scheme maps the *smallest* values to the
+  dark end of its ramp, so on the dark theme everything past the top two or
+  three rows is dark blue on dark grey — and because `valueMode` is
+  `"color"`, the **values** disappear along with the bars. On a 12-row
+  top-N, rows 6-12 had no legible number at all. `thresholds` with the
+  single-step neutral palette is the same blue, uniform and readable, and
+  still implies nothing. `palette-classic` was the other candidate and is
+  equally readable, but hands some rows red and green, which reads as
+  severity on data that has none.
+- Validation: `sh tests/run_all.sh` ALL CHECKS PASSED; 27 tests. Generated
+  JSON drift audited per dashboard and is exactly two substitutions and
+  nothing else. Re-rendered live: every bar and every value legible top to
+  bottom. New test `test_ranking_bar_gauges_are_readable_and_neutral` fails
+  the build on any `continuous-*` bar gauge or graded thresholds on a
+  ranking.
+- Remaining risk: The four genuinely graded bar gauges (DHCP Pool
+  Utilization, mwan3 Uplink Score, Signal by Station, Filesystem Usage) were
+  already `thresholds` before this change and are untouched — verified by
+  counting colour modes before and after.
+
+- Changed: `THRESHOLDS["neutral"]` in `build_openwrt_operations_dashboard.py`
+  now uses a base step of `None` (-inf) instead of `0`, matching
+  mission-control's copy and SKILL.md golden rule 22. Accounts for 134 of the
+  regenerated-JSON changes across all five v2 dashboards.
+- Reason: A latent bug the colour change exposed. The Base step means
+  "everything below the next step", so a first step of `0` leaves negative
+  values matching no step and rendering uncoloured. Invisible while rankings
+  used a continuous scheme (those ignore thresholds entirely); it would have
+  rendered every bar of the dBm signal rankings uncoloured.
+- Validation: Confirmed on screen — "Weakest Clients by Signal" renders -76,
+  -48, -79 and -56 dBm coloured and readable. Drift audit shows every changed
+  threshold value is `0` -> `null` and no other value was touched.
+- Remaining risk: **Not fixed, pre-existing and adjacent.** `bargauge()`
+  hardcodes `"min": 0`, so the dBm rankings draw every bar full-width
+  regardless of value (-79 looks identical to -48). This predates today's
+  work and is on the operations/clients dashboards, not netflow, so it was
+  left alone; the fix is a `min_value` argument on the shared builder.
+
+- Changed: Corrected the `continuous-blues` recommendation in
+  `skills/grafana-dashboards/references/visual-design-wow.md` and added a
+  correction block to `docs/netflow-dashboard-v3-plan.md` §"Color identity",
+  which had instructed keeping it.
+- Reason: The skill was the source of the bad advice; leaving it would have
+  reintroduced the problem on the next dashboard.
+- Remaining risk: `skills/` is gitignored in this repo, so that correction
+  lives on disk but is not committed.
+
+## 2026-07-26
+
+- Changed: Rebuilt `openwrt-netflow-v2` per `docs/netflow-dashboard-v3-plan.md`
+  — 48 → 72 panels, 4 → 6 tabs (added **Security Signals** and **Pipeline
+  Internals**). New panel types: packet-size heatmap, availability state
+  timeline, destination-country geomap, local-host→AS node graph. TCP flag
+  bitmasks are now decoded into named outcomes; the dead "Top Geo Cities"
+  panel was removed (City DB is deliberately not loaded, so it was a permanent
+  no-data wall). Added `state_timeline()` and `heatmap()` to
+  `build_openwrt_operations_dashboard.py`, plus `values=` on `bargauge()`/
+  `piechart()`, `stack_mode=` and `transformations=` on `timeseries()`. The
+  operations dashboard output is byte-identical, so all shared-builder changes
+  are backward compatible.
+- Reason: Executes the v3 plan. Operator chose (in-session) a reframed security
+  tab, geomap **and** node graph, Pipeline Internals as its own tab, and no
+  internal-segment panel.
+- Validation: `sh tests/run_all.sh` ALL CHECKS PASSED; 26 tests in
+  `tests/test_netflow_config.py` (12 new dashboard-invariant tests). Live:
+  all 48 ClickHouse and 35 PromQL panel queries executed through Grafana's
+  `/api/ds/query` — 0 errors, 0 empty. All 6 tabs rendered headlessly against
+  a real Grafana 13 with 0 "No data" and 0 panel errors.
+- Remaining risk: Rendering was verified against the **docker-compose**
+  Grafana/ClickHouse, whose flow data stopped at 2026-07-25 21:41 UTC; the
+  live k8s ClickHouse (`monitoring/akvorado-clickhouse`) is a separate,
+  currently-fed instance. Queries were verified against both; only rendering
+  used the stale copy.
+
+- Changed: Fixed five rendering bugs that no static check could have caught,
+  each verified by screenshot against a live Grafana 13 and each now covered
+  by a regression test:
+  1. **ClickHouse bar gauges rendered empty** — `reduceOptions.values` must be
+     `true` for SQL (label, value) frames. This resolves the open question in
+     the v3 plan §1: the empty bar gauges in the pre-redesign screenshots were
+     a **real bug**, not a screenshot-timing artifact.
+  2. **Donuts collapsed to one 100% slice** — same `values` fix on `piechart`.
+  3. **ClickHouse long-format timeseries rendered as one mis-named series**
+     (a 3-way direction split drew a single line called "bps"). Fixed-label
+     panels now pivot in SQL; dynamic top-N panels use `partitionByValues`.
+  4. **Geomap rendered an empty basemap** — the `fieldLookup` transform fails
+     with "missing frame in gazetteer" (browser console only, no panel error).
+     The geomap's own layer `location: {mode: "lookup"}` is what works.
+  5. **State-timeline legend read "< 1"/"1+"** — threshold colouring discards
+     value mappings; the scheme must not be `thresholds`.
+- Reason: Every one of these renders as a plausible-looking or merely-empty
+  panel with no error, which is exactly the failure mode this dashboard exists
+  to make impossible.
+- Validation: Each fix was isolated with a purpose-built probe dashboard
+  comparing variants side by side, then confirmed on the real dashboard.
+- Remaining risk: None known; findings 4 and 5 are now recorded in
+  `skills/grafana-dashboards/references/transforms.md` and the generator's own
+  comments so they are not re-derived.
+
+- Changed: Updated `docs/netflow-akvorado.md` — the "GeoIP is not configured by
+  default" limit is rewritten (ASN/Country are live on this cluster; City is
+  deliberately off), the tab list is now the six that ship, a new limit 9
+  documents that softflowd never exports ICMP type/code, and three
+  troubleshooting rows were added.
+- Reason: The v3 plan flagged the GeoIP line as stale; the ICMP finding was
+  discovered while building and would otherwise be re-derived.
+- Validation: Cross-checked every claim against live ClickHouse queries.
+
 ## 2026-07-25
 
 - Changed: Synced `docs/kubernetes-monitoring-setup.md` with the live NetFlow
@@ -561,6 +679,23 @@
   nominally all-interfaces mapping to loopback-only — an operator who was
   reaching it remotely (they were not, since it never worked) would need the
   documented SSH tunnel. Batches B-E remain unimplemented.
+
+- Changed: Updated `docs/kubernetes-monitoring-setup.md` so the optional
+  Akvorado NetFlow section reflects the Kubernetes deployment that worked in the
+  Talos homelab: MetalLB UDP `2055` inlet, Kafka, ClickHouse, Valkey/Redis,
+  Akvorado roles, GeoIP PVC, Country/ASN MaxMind files, router ifIndex
+  metadata, and ClickHouse/Grafana verification.
+- Reason: The previous guide still treated Kubernetes Akvorado as out of scope
+  and recommended Compose first. The live Kubernetes rollout exposed several
+  reusable setup hazards: the setup script's single host argument affects both
+  syslog and NetFlow, stale ifIndex metadata drops flows, misplaced
+  `kubectl run --overrides` creates a helper pod without `/geoip`, and
+  City-level GeoIP can OOM orchestrator during ClickHouse dictionary requests.
+- Validation: Documentation-only change. `git diff --check` passed. Full
+  `tests/run_all.sh` was skipped because no router code, dashboard generator,
+  Compose config, or collector behavior changed.
+- Remaining risk: The doc describes a proven homelab manifest shape but this
+  repository still does not ship reusable Akvorado Kubernetes manifests.
 
 - Changed: Added `docs/CODE-REVIEW-REMEDIATION-PLAN.md`, a prescriptive fix plan
   and task list (`R1`-`R13`, `M1`-`M2`) from a second full-repo review, and

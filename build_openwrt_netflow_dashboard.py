@@ -19,6 +19,34 @@ Two consequences shape the SQL throughout:
 The dashboard is safe to provision when the netflow profile is not enabled:
 the ClickHouse datasource simply fails to connect and the panels show an error
 rather than a plausible zero.
+
+Six tabs, in the order an operator needs them:
+
+  - Flow Overview   what happened, and how much of it left the LAN
+  - Applications    which ports, protocols, and packet shapes carried it
+  - External        which networks and countries, as ranking, map, and graph
+  - Security Signals shapes occasionally worth explaining -- never verdicts
+  - Pipeline Health can these numbers be trusted at all (Prometheus)
+  - Pipeline Internals where in the collector it is struggling (Prometheus)
+
+Several fields that look useful are deliberately unused, each verified empty
+against the live cluster rather than assumed:
+
+  - SrcGeoCity/DstGeoCity are 0% populated. The City database is not loaded
+    on purpose -- City and Country together OOM the orchestrator at its
+    configured memory limit. There is no city panel; a v2 one was removed.
+  - DstASPath, Dst1st/2nd/3rdAS and the community columns need a BGP peering
+    source this deployment does not have. All 0%.
+  - ICMP type and code are not exported by softflowd: DstPort is a constant 0
+    on every ICMP flow. ClickHouse's `icmp` dictionary can decode
+    (proto, type, code) but has nothing here to decode, so the Security
+    Signals tab shows ICMP volume and says why it shows nothing more.
+  - ExporterRole/Site/Region/Tenant and the Src/DstNet* equivalents are
+    carrier multi-tenancy fields, empty in a single-router home deployment.
+
+Building panels on any of them would produce a permanent "no data" wall,
+which is indistinguishable from a broken pipeline -- the one failure this
+dashboard's whole design is meant to prevent.
 """
 
 from __future__ import annotations
@@ -32,23 +60,32 @@ from typing import Any
 from build_openwrt_operations_dashboard import (
     AVAILABILITY_MAPPINGS,
     BLUE,
+    GRAY,
     GREEN,
+    ORANGE,
+    PURPLE,
     RED,
     THRESHOLDS,
+    YELLOW,
     DashboardBuilder,
     bargauge,
+    color_override,
     data_group,
     datasource_var,
+    heatmap,
     limit,
     organize,
     panel,
     prom_query,
     piechart,
     query_var,
+    sort_by,
     stat,
     stable_json,
+    state_timeline,
     table,
     text,
+    thresholds,
     timeseries,
 )
 
@@ -95,6 +132,179 @@ CROSSES_BOUNDARY = "(SrcNetRole != 'internal' OR DstNetRole != 'internal')"
 # render as two NUL bytes (`\0\0`) unless stripped before grouping.
 SRC_COUNTRY = "replaceRegexpAll(toString(SrcCountry), '\\\\x00', '')"
 DST_COUNTRY = "replaceRegexpAll(toString(DstCountry), '\\\\x00', '')"
+
+# EType is the ethertype: 0x0800 IPv4, 0x86DD IPv6. Verified live -- both are
+# populated, roughly 91%/9% of flows.
+IPV6 = "EType = 34525"
+
+
+def ip_display(column: str) -> str:
+    """Render an address column the way an operator would write it.
+
+    SrcAddr/DstAddr are ClickHouse `IPv6`, so IPv4 addresses come back in
+    their v4-mapped form (`::ffff:192.168.0.1`). Stripping the prefix is
+    purely cosmetic but it is what makes a host column scannable, and it
+    leaves real IPv6 addresses untouched.
+    """
+    return f"replaceRegexpAll(IPv6NumToString({column}), '^::ffff:', '')"
+
+# TCPFlags is the cumulative OR of every packet's flags over the flow's
+# lifetime, not one packet's flags. That is what makes these combinations
+# readable as a flow outcome rather than as a packet type: a flow that carries
+# both SYN and FIN was set up and torn down inside the capture window.
+#
+# Bit values: FIN 1, SYN 2, RST 4, PSH 8, ACK 16, URG 32, ECE 64, CWR 128.
+#
+# Order matters. RST is tested before the FIN/SYN combinations because a flow
+# that was reset after a handshake is a reset, not a clean close, and the
+# unanswered-SYN test comes first because it is the one shape that is
+# interesting precisely when nothing else was ever set.
+#
+# Live distribution over 3h (2026-07-26): completed 26537, RST 13924, still
+# open 4660, data-only 3642, closed-without-handshake 1810, SYN-only 60.
+TCP_SHAPE = (
+    "multiIf("
+    "bitAnd(TCPFlags, 2) != 0 AND bitAnd(TCPFlags, 16) = 0, 'SYN, never answered', "
+    "bitAnd(TCPFlags, 4) != 0, 'RST - reset or refused', "
+    "bitAnd(TCPFlags, 1) != 0 AND bitAnd(TCPFlags, 2) != 0, 'Completed - opened and closed', "
+    "bitAnd(TCPFlags, 1) != 0, 'Closed - handshake not captured', "
+    "bitAnd(TCPFlags, 2) != 0, 'Open - handshake, still running', "
+    "bitAnd(TCPFlags, 16) != 0, 'Established - data only', "
+    "'Other')"
+)
+
+# Colour contract for the decoded TCP shapes. Green is only for the outcome
+# that is unambiguously fine; the two shapes that can mean a service refused
+# or never answered get the warning colours; long-lived and mid-capture flows
+# are neutral, because on a 60-second maxlife they are the normal case rather
+# than a fault.
+TCP_SHAPE_COLORS = [
+    color_override("Completed - opened and closed", GREEN),
+    color_override("RST - reset or refused", ORANGE),
+    color_override("SYN, never answered", RED),
+    color_override("Open - handshake, still running", BLUE),
+    color_override("Established - data only", PURPLE),
+    color_override("Closed - handshake not captured", GRAY),
+    color_override("Other", GRAY),
+]
+
+# Packet-size heatmap buckets, as Prometheus-style upper bounds so Grafana
+# reads the column names as bucket edges. Akvorado's own PacketSizeBucket
+# column is a LowCardinality(String) with labels like "768-1023", which sorts
+# lexically rather than numerically and cannot be read as a bucket bound;
+# PacketSize (the per-flow mean, verified populated: min 32, max 11240,
+# mean 121) is bucketed here instead so the axis is genuinely numeric.
+PACKET_SIZE_EDGES = [64, 128, 256, 512, 1024, 1500]
+
+# One colour per direction bucket, pinned so the absolute and percent-stacked
+# throughput panels read as the same three series rather than as two unrelated
+# charts with Grafana's palette assigned in whatever order the rows arrived.
+# These are identity colours, not severity: nothing here is a fault.
+DIRECTION_COLORS = [
+    color_override("outbound", BLUE),
+    color_override("inbound", PURPLE),
+    color_override("local", GRAY),
+]
+
+# Port-number buckets with human names. A convenience grouping, not DPI --
+# it is only as right as the assumption that a port implies a service, which
+# is exactly the assumption the Applications tab intro warns about. Shared by
+# the donut and its stacked-over-time companion so the two cannot drift.
+SERVICE_CLASS = (
+    "multiIf("
+    "DstPort IN (53, 853) OR SrcPort IN (53, 853), 'DNS / encrypted DNS', "
+    "DstPort IN (80, 443, 8080, 8443) OR SrcPort IN (80, 443, 8080, 8443), 'Web / QUIC', "
+    "DstPort IN (9100, 9090, 3000, 8081, 8123) OR SrcPort IN (9100, 9090, 3000, 8081, 8123), 'Monitoring stack', "
+    "DstPort IN (22, 2222) OR SrcPort IN (22, 2222), 'SSH / admin', "
+    "DstPort = 123 OR SrcPort = 123, 'NTP', "
+    "DstPort = 5353 OR SrcPort = 5353, 'mDNS', "
+    "DstPort = 1900 OR SrcPort = 1900, 'SSDP / discovery', "
+    "'Other')"
+)
+
+
+def pivot_columns(label_expr: str, names: list[str], agg: str) -> str:
+    """Turn a label expression into one numeric column per label value.
+
+    The grafana-clickhouse-datasource does NOT split a long-format result
+    (time, label, value) into one series per label. It returns a single series
+    named after the value column, so a three-way direction split renders as
+    one line called "bps" -- wrong, and wrong in a way that looks like a
+    working panel. Verified live against Grafana 13 on 2026-07-26.
+
+    Two fixes exist. For a dynamic label set, `partitionByValues` splits the
+    frame browser-side but names the series "<value column> <label>". For a
+    known, fixed label set, pivoting in SQL is better: the column name IS the
+    series name, so the names stay clean and `byName` colour overrides match
+    them. That is what this builds.
+
+    Pivoting on the computed label rather than on each label's own condition
+    is deliberate: expressions like SERVICE_CLASS and TCP_SHAPE are ordered
+    `multiIf`s where the first match wins, so re-deriving per-label
+    conditions would double-count rows that satisfy more than one branch.
+    Comparing against the label keeps the panel and its donut companion
+    exactly consistent by construction.
+    """
+    return ", ".join(
+        f"sumIf({agg}, {label_expr} = '{name}') AS \"{name}\"" for name in names
+    )
+
+
+# Splits the frame into one series per distinct label value, browser-side.
+# Needed for the top-N panels, where the label set is whatever the data
+# happened to contain and so cannot be pivoted in SQL. Series come out named
+# "<value column> <label>" (e.g. "bps 443"), which is why the fixed-set panels
+# use pivot_columns instead.
+def partition_by(field: str) -> dict[str, Any]:
+    return {
+        "kind": "partitionByValues",
+        "spec": {
+            "id": "partitionByValues",
+            "options": {"fields": [field], "keepFields": False},
+        },
+    }
+
+
+DIRECTIONS = ["outbound", "inbound", "local"]
+DIRECTION_EXPR = (
+    "multiIf(SrcNetRole = 'internal' AND DstNetRole = 'internal', 'local', "
+    "SrcNetRole = 'internal', 'outbound', 'inbound')"
+)
+
+SERVICE_CLASSES = [
+    "DNS / encrypted DNS",
+    "Web / QUIC",
+    "Monitoring stack",
+    "SSH / admin",
+    "NTP",
+    "mDNS",
+    "SSDP / discovery",
+    "Other",
+]
+
+TCP_SHAPES = [
+    "Completed - opened and closed",
+    "RST - reset or refused",
+    "SYN, never answered",
+    "Open - handshake, still running",
+    "Established - data only",
+    "Closed - handshake not captured",
+    "Other",
+]
+
+
+def packet_size_columns() -> str:
+    """One sumIf column per packet-size bucket, named by its upper bound."""
+    parts = []
+    previous = 0
+    for edge in PACKET_SIZE_EDGES:
+        lower = f"PacketSize >= {previous} AND " if previous else ""
+        parts.append(f'sumIf(Packets * SamplingRate, {lower}PacketSize < {edge}) AS "{edge}"')
+        previous = edge
+    parts.append(
+        f'sumIf(Packets * SamplingRate, PacketSize >= {PACKET_SIZE_EDGES[-1]}) AS "+Inf"'
+    )
+    return ", ".join(parts)
 
 
 def ch_query(sql: str, ref: str = "A", fmt: int = 1) -> dict[str, Any]:
@@ -156,6 +366,124 @@ def ch_stat(pid: int, title: str, sql: str, unit: str, desc: str) -> tuple[str, 
     )
 
 
+def ch_geomap(pid: int, title: str, sql: str, lookup_field: str, desc: str) -> tuple[str, dict[str, Any]]:
+    """World map of a two-letter country code column, sized by bytes.
+
+    ClickHouse has no coordinates -- only the ISO 3166-1 alpha-2 code that
+    MaxMind's Country database resolved. The marker layer's own `lookup`
+    location mode resolves those against Grafana's built-in countries
+    gazetteer, which is keyed on exactly that alpha-2 form.
+
+    Do NOT reach for the `fieldLookup` transformation here. It is the
+    documented way to attach coordinates to a frame, but on a geomap it
+    fails: the transform errors with "missing frame in gazetteer" (browser
+    console only) and the panel renders a bare basemap with **no panel-level
+    error at all**. All three transform-based variants were tried against a
+    live Grafana 13 on 2026-07-26 -- `gazetteer` as a path, as a label, and
+    paired with an explicit `coords` location -- and every one rendered an
+    empty map. The geomap's built-in lookup is the mechanism that works, and
+    it needs no transformation.
+
+    Kept local rather than shared: it is the only geographic data anywhere in
+    this repository, and the transform chain is specific to the FixedString(2)
+    country columns Akvorado writes.
+    """
+    return panel(
+        pid,
+        title,
+        "geomap",
+        [ch_query(sql, fmt=2)],
+        "bytes",
+        desc,
+        options={
+            "basemap": {"config": {}, "name": "Basemap", "type": "default"},
+            "controls": {
+                "mouseWheelZoom": False,
+                "showAttribution": True,
+                "showDebug": False,
+                "showMeasure": False,
+                "showScale": False,
+                "showZoom": True,
+            },
+            "layers": [
+                {
+                    "config": {
+                        "showLegend": True,
+                        "style": {
+                            "color": {"field": "bytes", "fixed": BLUE},
+                            "opacity": 0.6,
+                            "rotation": {"fixed": 0, "max": 360, "min": -360, "mode": "mod"},
+                            "size": {"field": "bytes", "fixed": 5, "max": 24, "min": 5},
+                            "symbol": {"fixed": "img/icons/marker/circle.svg", "mode": "fixed"},
+                            "symbolAlign": {"horizontal": "center", "vertical": "center"},
+                            "textConfig": {
+                                "fontSize": 12,
+                                "offsetX": 0,
+                                "offsetY": 0,
+                                "textAlign": "center",
+                                "textBaseline": "middle",
+                            },
+                        },
+                    },
+                    "location": {
+                        "mode": "lookup",
+                        "lookup": lookup_field,
+                        "gazetteer": "public/gazetteer/countries.json",
+                    },
+                    "name": "Countries",
+                    "tooltip": True,
+                    "type": "markers",
+                }
+            ],
+            "tooltip": {"mode": "details"},
+            "view": {"allLayers": True, "id": "zero", "lat": 25, "lon": 0, "zoom": 1.5},
+        },
+        field_defaults={
+            "color": {"mode": "continuous-BlPu"},
+            "thresholds": THRESHOLDS["neutral"],
+        },
+    )
+
+
+def ch_nodegraph(pid: int, title: str, nodes_sql: str, edges_sql: str, desc: str) -> tuple[str, dict[str, Any]]:
+    """Local hosts and the external networks they talk to, as a graph.
+
+    The node graph is the strictest panel in Grafana about frame shape: it
+    needs two frames, recognised here by their refIds `nodes` and `edges`.
+    The nodes frame must carry a unique `id`; the edges frame must carry a
+    unique `id` plus `source`/`target` that match node ids exactly. An edge
+    pointing at an id no node supplies crashes the panel rather than
+    degrading, which is why both queries derive their ids from the same
+    expressions over the same table and time filter.
+
+    Cardinality was checked live before building this: 19 local hosts and 59
+    external ASes over 6 hours, 174 edges. Grafana only displays 200 nodes
+    before hiding the rest behind cluster markers, so the LIMITs below keep
+    the graph inside that budget even if the LAN grows or the range widens.
+    """
+    return panel(
+        pid,
+        title,
+        "nodeGraph",
+        [
+            ch_query(nodes_sql, ref="nodes", fmt=2),
+            ch_query(edges_sql, ref="edges", fmt=2),
+        ],
+        "bytes",
+        desc,
+        options={
+            "zoomMode": "cooperative",
+            # Two clean tiers (local hosts on one side, external networks on
+            # the other) is exactly the shape `layered` renders well; the
+            # force layout turns a bipartite graph into crossing spaghetti.
+            "layoutAlgorithm": "layered",
+            "nodes": {"mainStatUnit": "bytes"},
+            "edges": {"mainStatUnit": "bytes"},
+        },
+        field_defaults={"thresholds": THRESHOLDS["neutral"]},
+    )
+
+
 def variables() -> list[dict[str, Any]]:
     return [
         datasource_var("DS_PROMETHEUS", "Prometheus", "prometheus", "prometheus"),
@@ -187,6 +515,9 @@ def build_dashboard() -> dict[str, Any]:
         "these totals as complete."
     )), 0, 0, 24, 4)
 
+    # Hero band. Six tiles, and the two that lead the story -- how much of
+    # this traffic ever leaves the house, and how much of it is IPv6 -- were
+    # previously buried on tab 3 or absent entirely.
     builder.add(overview, ch_stat(2, "Flows", (
         "SELECT count() AS flows FROM flows "
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL}"
@@ -206,30 +537,102 @@ def build_dashboard() -> dict[str, Any]:
         "GROUP BY time)"
     ), "bps", "Highest sampling-rate-corrected bitrate bucket in the selected range."), 8, 4, 4, 4)
 
+    # The single most interesting number in the whole dataset on a home
+    # network: almost everything stays on the LAN. Measured in bytes rather
+    # than flows, because the question is "how much of my traffic pays for
+    # internet bandwidth", not "how many conversations happened".
+    builder.add(overview, ch_stat(12, "External Share", (
+        "SELECT round(100 * sumIf(Bytes * SamplingRate, "
+        f"{CROSSES_BOUNDARY}) "
+        "/ greatest(sum(Bytes * SamplingRate), 1)) AS pct FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL}"
+    ), "percent", (
+        "Share of bytes that cross the local network boundary rather than staying LAN-local. "
+        "On a typical home network this is low -- most bytes are between local devices -- which is "
+        "the context every other panel on this dashboard should be read in. Derived from address "
+        "role, not interface boundary."
+    )), 12, 4, 4, 4)
+
+    # Deliberately flow share, not byte share. IPv6 carries ~9% of flows but
+    # well under 1% of bytes here, because the bulk transfers are still IPv4;
+    # a byte-share tile would read 0% and look like broken enrichment.
+    builder.add(overview, ch_stat(13, "IPv6 Flow Share", (
+        f"SELECT round(100 * countIf({IPV6}) / greatest(count(), 1)) AS pct FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL}"
+    ), "percent", (
+        "Share of flow records carried over IPv6, from the ethertype.\n\n"
+        "This is a share of **flows**, not of bytes. The two differ sharply here: IPv6 carries a "
+        "meaningful fraction of conversations (DNS, mDNS, NTP, service discovery) while the large "
+        "transfers are still IPv4, so byte share reads near zero and would look like an enrichment "
+        "failure rather than a real property of the traffic."
+    )), 16, 4, 4, 4)
+
     builder.add(overview, ch_stat(4, "Local Hosts", (
         "SELECT uniq(SrcAddr) AS hosts FROM flows "
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND SrcNetRole = 'internal'"
-    ), "none", "Distinct local source addresses seen. Depends on the `networks` prefixes in akvorado.yaml matching your addressing."), 12, 4, 4, 4)
+    ), "none", "Distinct local source addresses seen. Depends on the `networks` prefixes in akvorado.yaml matching your addressing."), 20, 4, 4, 4)
 
     builder.add(overview, ch_stat(5, "External Peers", (
         "SELECT uniq(DstAddr) AS peers FROM flows "
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND {EXTERNAL_DST}"
-    ), "none", "Distinct internet-side addresses contacted."), 16, 4, 4, 4)
+    ), "none", "Distinct internet-side addresses contacted."), 0, 8, 6, 4)
 
     builder.add(overview, ch_stat(11, "ASN Coverage", (
         "SELECT round(100 * countIf(SrcAS != 0 OR DstAS != 0) / greatest(count(), 1)) AS pct "
         "FROM flows "
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND {CROSSES_BOUNDARY}"
-    ), "percent", "Share of boundary-crossing flows with a source or destination AS after GeoIP/ASN enrichment."), 20, 4, 4, 4)
+    ), "percent", "Share of boundary-crossing flows with a source or destination AS after GeoIP/ASN enrichment."), 6, 8, 6, 4)
+
+    # InIfSpeed is a constant 1000 (Mbps) in this deployment -- softflowd
+    # reports the capture device's link speed. Reading the denominator out of
+    # the data rather than hardcoding 1e9 means this stays correct if the
+    # router is ever moved onto a faster or slower link. greatest(..., 1)
+    # guards the divide when no flows matched at all.
+    builder.add(overview, panel(
+        14,
+        "Peak Link Utilization",
+        "gauge",
+        [ch_query(
+            "SELECT max(bps) / greatest(max(link_bps), 1) AS util FROM ("
+            "SELECT $__timeInterval(TimeReceived) AS time, "
+            "sum(Bytes * SamplingRate) * 8 / $__interval_s AS bps, "
+            "max(InIfSpeed) * 1000000 AS link_bps "
+            "FROM flows "
+            f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
+            "GROUP BY time)",
+            fmt=2,
+        )],
+        "percentunit",
+        (
+            "Peak bitrate as a fraction of the capture interface's reported link speed "
+            "(InIfSpeed, a constant 1 Gbps here).\n\n"
+            "This is a **lower bound**: anything hardware flow offload hid from softflowd is missing "
+            "from the numerator, so real link utilization is at least this high. Use it for "
+            "'is the link anywhere near saturated', not for capacity planning."
+        ),
+        options={
+            "minVizHeight": 75,
+            "minVizWidth": 75,
+            "orientation": "auto",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+            "showThresholdLabels": False,
+            "showThresholdMarkers": True,
+            "sizing": "auto",
+        },
+        field_defaults={
+            "min": 0,
+            "max": 1,
+            "thresholds": THRESHOLDS["capacity"],
+            "noValue": "No flows",
+        },
+    ), 12, 8, 12, 4)
 
     builder.add(overview, timeseries(6, "Throughput by Direction", [ch_query(
         "SELECT $__timeInterval(TimeReceived) AS time, "
-        "multiIf(SrcNetRole = 'internal' AND DstNetRole = 'internal', 'local', "
-        "SrcNetRole = 'internal', 'outbound', 'inbound') AS direction, "
-        "sum(Bytes * SamplingRate) * 8 / $__interval_s AS bps "
+        f"{pivot_columns(DIRECTION_EXPR, DIRECTIONS, 'Bytes * SamplingRate * 8 / $__interval_s')} "
         "FROM flows "
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
-        "GROUP BY time, direction ORDER BY time"
+        "GROUP BY time ORDER BY time"
     )], "bps", (
         "Bit rate split into outbound, inbound, and LAN-local, derived from whether each address "
         "falls in one of the `clickhouse.networks` prefixes in akvorado.yaml.\n\n"
@@ -237,27 +640,44 @@ def build_dashboard() -> dict[str, Any]:
         "ingress and egress, so interface boundary is constant across every flow and cannot "
         "distinguish direction. If everything lands in one series, your LAN prefix is missing from "
         "`clickhouse.networks`."
-    )), 0, 8, 24, 8)
+    ), overrides=DIRECTION_COLORS), 0, 12, 12, 8)
+
+    # Companion to the absolute view, not a replacement. Percent stacking
+    # answers a different question -- what the mix is right now, independent
+    # of whether the link is busy -- and the two together read as one story:
+    # a spike in the left panel that does not change the shape of the right
+    # one is just more of the same traffic.
+    builder.add(overview, timeseries(15, "Direction Share", [ch_query(
+        "SELECT $__timeInterval(TimeReceived) AS time, "
+        f"{pivot_columns(DIRECTION_EXPR, DIRECTIONS, 'Bytes * SamplingRate')} "
+        "FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
+        "GROUP BY time ORDER BY time"
+    )], "bytes", (
+        "The same three buckets as the panel on the left, stacked to 100%. This answers 'what is the "
+        "mix right now' rather than 'how much is there' -- useful for spotting a shift to outbound "
+        "traffic that the absolute view hides because the total barely moved."
+    ), stacked=True, stack_mode="percent", fill=60, overrides=DIRECTION_COLORS), 12, 12, 12, 8)
 
     builder.add(overview, bargauge(7, "Top Local Talkers", [ch_query(
-        "SELECT IPv6NumToString(SrcAddr) AS host, sum(Bytes * SamplingRate) AS bytes "
+        f"SELECT {ip_display('SrcAddr')} AS host, sum(Bytes * SamplingRate) AS bytes "
         "FROM flows "
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND SrcNetRole = 'internal' "
         "GROUP BY host ORDER BY bytes DESC LIMIT 15",
         fmt=2,
-    )], "bytes", "Busiest local sources by uploaded bytes. Raw `flows` table only, so bounded by the interval-0 retention window.", transformations=[limit(15)]), 0, 16, 12, 9)
+    )], "bytes", "Busiest local sources by uploaded bytes. Raw `flows` table only, so bounded by the interval-0 retention window.", transformations=[limit(15)], values=True), 0, 20, 12, 9)
 
     builder.add(overview, bargauge(8, "Top External Destinations", [ch_query(
-        "SELECT IPv6NumToString(DstAddr) AS peer, sum(Bytes * SamplingRate) AS bytes "
+        f"SELECT {ip_display('DstAddr')} AS peer, sum(Bytes * SamplingRate) AS bytes "
         "FROM flows "
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND {EXTERNAL_DST} "
         "GROUP BY peer ORDER BY bytes DESC LIMIT 15",
         fmt=2,
-    )], "bytes", "Busiest internet-side destinations by bytes.", transformations=[limit(15)]), 12, 16, 12, 9)
+    )], "bytes", "Busiest internet-side destinations by bytes.", transformations=[limit(15)], values=True), 12, 20, 12, 9)
 
     builder.add(overview, table(9, "Top Conversations", [ch_query(
-        "SELECT IPv6NumToString(SrcAddr) AS Source, "
-        "IPv6NumToString(DstAddr) AS Destination, "
+        f"SELECT {ip_display('SrcAddr')} AS Source, "
+        f"{ip_display('DstAddr')} AS Destination, "
         "DstPort AS Port, "
         "dictGetOrDefault('protocols', 'name', toUInt64(Proto), toString(Proto)) AS Protocol, "
         "sum(Bytes * SamplingRate) AS Bytes, "
@@ -266,7 +686,7 @@ def build_dashboard() -> dict[str, Any]:
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
         "GROUP BY Source, Destination, Port, Protocol ORDER BY Bytes DESC LIMIT 50",
         fmt=2,
-    )], "Individual source/destination/port conversations, heaviest first. This is the panel that answers 'what is saturating the link right now'.", sort_col="Bytes"), 0, 25, 24, 10)
+    )], "Individual source/destination/port conversations, heaviest first. This is the panel that answers 'what is saturating the link right now'.", sort_col="Bytes"), 0, 29, 24, 10)
 
     tabs.append(builder.tab("Flow Overview", overview))
 
@@ -288,7 +708,7 @@ def build_dashboard() -> dict[str, Any]:
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND {EXTERNAL_DST} "
         "GROUP BY port ORDER BY bytes DESC LIMIT 15",
         fmt=2,
-    )], "bytes", "Internet-side destination ports by bytes. This is usually the most useful port ranking for web, DNS, streaming, VPN, and gaming traffic.", transformations=[limit(15)]), 0, 4, 8, 9)
+    )], "bytes", "Internet-side destination ports by bytes. This is usually the most useful port ranking for web, DNS, streaming, VPN, and gaming traffic.", transformations=[limit(15)], values=True), 0, 4, 8, 9)
 
     builder.add(applications, bargauge(106, "Top Source Ports", [ch_query(
         "SELECT concat(toString(SrcPort), '/', "
@@ -298,7 +718,7 @@ def build_dashboard() -> dict[str, Any]:
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND SrcPort > 0 "
         "GROUP BY port ORDER BY bytes DESC LIMIT 15",
         fmt=2,
-    )], "bytes", "Source ports by bytes. Expect many ephemeral client ports here; fixed source ports such as 443/UDP or 9100/TCP are the interesting exceptions.", transformations=[limit(15)]), 8, 4, 8, 9)
+    )], "bytes", "Source ports by bytes. Expect many ephemeral client ports here; fixed source ports such as 443/UDP or 9100/TCP are the interesting exceptions.", transformations=[limit(15)], values=True), 8, 4, 8, 9)
 
     builder.add(applications, piechart(102, "Protocol Mix", [ch_query(
         "SELECT dictGetOrDefault('protocols', 'name', toUInt64(Proto), toString(Proto)) AS protocol, "
@@ -307,7 +727,7 @@ def build_dashboard() -> dict[str, Any]:
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
         "GROUP BY protocol ORDER BY bytes DESC LIMIT 10",
         fmt=2,
-    )], "bytes", "Share of bytes by IP protocol."), 16, 4, 8, 9)
+    )], "bytes", "Share of bytes by IP protocol.", values=True), 16, 4, 8, 9)
 
     builder.add(applications, timeseries(103, "Throughput by Destination Port", [ch_query(
         "SELECT $__timeInterval(TimeReceived) AS time, "
@@ -319,42 +739,69 @@ def build_dashboard() -> dict[str, Any]:
         f"AND {ROUTER_SQL} AND {EXTERNAL_DST} "
         "GROUP BY DstPort ORDER BY sum(Bytes * SamplingRate) DESC LIMIT 8) "
         "GROUP BY time, port ORDER BY time"
-    )], "bps", "Bit rate over time for the eight busiest destination ports in the range.", stacked=True), 0, 13, 24, 9)
+    )], "bps", "Bit rate over time for the eight busiest destination ports in the range.", stacked=True, transformations=[partition_by("port")]), 0, 13, 24, 9)
 
     builder.add(applications, piechart(107, "Service Class Mix", [ch_query(
-        "SELECT multiIf("
-        "DstPort IN (53, 853) OR SrcPort IN (53, 853), 'DNS / encrypted DNS', "
-        "DstPort IN (80, 443, 8080, 8443) OR SrcPort IN (80, 443, 8080, 8443), 'Web / QUIC', "
-        "DstPort IN (9100, 9090, 3000, 8081, 8123) OR SrcPort IN (9100, 9090, 3000, 8081, 8123), 'Monitoring stack', "
-        "DstPort IN (22, 2222) OR SrcPort IN (22, 2222), 'SSH / admin', "
-        "DstPort = 123 OR SrcPort = 123, 'NTP', "
-        "DstPort = 5353 OR SrcPort = 5353, 'mDNS', "
-        "DstPort = 1900 OR SrcPort = 1900, 'SSDP / discovery', "
-        "'Other') AS service, "
+        f"SELECT {SERVICE_CLASS} AS service, "
         "sum(Bytes * SamplingRate) AS bytes "
         "FROM flows "
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
         "GROUP BY service ORDER BY bytes DESC",
         fmt=2,
-    )], "bytes", "Human-readable service buckets from source and destination ports. This is a convenience grouping, not DPI."), 0, 22, 8, 9)
+    )], "bytes", "Human-readable service buckets from source and destination ports. This is a convenience grouping, not DPI. Answers 'what is the mix over the whole range'; the companion panel below answers 'did it change'.", values=True), 0, 22, 8, 9)
 
-    builder.add(applications, table(104, "Packet Size Distribution", [ch_query(
-        "SELECT PacketSizeBucket AS Bucket, "
-        "sum(Packets * SamplingRate) AS Packets, "
-        "sum(Bytes * SamplingRate) AS Bytes "
-        "FROM flows "
-        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
-        "GROUP BY Bucket ORDER BY Packets DESC",
-        fmt=2,
-    )], "Packet size buckets. A distribution skewed to small packets alongside high packet rates is a useful signal for interactive vs bulk traffic, and for scan-like behaviour."), 8, 22, 8, 9)
+    # Was a static table of bucket totals, which answered "what is the mix
+    # over the whole range" and hid the thing that is actually interesting:
+    # the mix *changes* over the day. Small-packet-heavy periods are
+    # interactive and control traffic; the 1024+ band appearing is a bulk
+    # transfer starting. A table cannot show that transition at all.
+    builder.add(applications, heatmap(
+        104,
+        "Packet Size over Time",
+        [ch_query(
+            "SELECT $__timeInterval(TimeReceived) AS time, "
+            f"{packet_size_columns()} "
+            "FROM flows "
+            f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
+            "GROUP BY time ORDER BY time"
+        )],
+        "packets",
+        (
+            "Packets per mean-packet-size bucket, over time. Column names are bucket **upper** "
+            "bounds in bytes.\n\n"
+            "A band that sits at the bottom is interactive, control, and ACK traffic; weight in the "
+            "1024-1500 band is bulk transfer. The shift between them across a day is the shape "
+            "worth watching -- a sustained small-packet band alongside a high flow count is also "
+            "what scan-like behaviour looks like.\n\n"
+            "Sizes are per-flow means (`PacketSize`), not per-packet, so a flow mixing large and "
+            "tiny packets lands in a middle bucket rather than in both."
+        ),
+        y_axis_unit="bytes",
+    ), 8, 22, 8, 9)
 
-    builder.add(applications, table(105, "TCP Flag Combinations", [ch_query(
-        "SELECT TCPFlags AS Flags, count() AS Flows, sum(Bytes * SamplingRate) AS Bytes "
+    # Was a raw bitmask table: 19, 27, 23, 18... Nobody reads bitmasks, and
+    # the numbers are genuinely interesting once decoded. See TCP_SHAPE for
+    # the decoding and the live distribution it was checked against.
+    builder.add(applications, bargauge(105, "TCP Flow Outcomes", [ch_query(
+        f"SELECT {TCP_SHAPE} AS shape, count() AS flows "
         "FROM flows "
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND Proto = 6 "
-        "GROUP BY Flags ORDER BY Flows DESC LIMIT 20",
+        "GROUP BY shape ORDER BY flows DESC",
         fmt=2,
-    )], "Raw TCP flag bitmasks. Large numbers of flows carrying only SYN (2) are the classic signature of a scan or of a service that is refusing connections."), 16, 22, 8, 9)
+    )], "none", (
+        "TCP flag bitmasks decoded into what actually happened to each flow.\n\n"
+        "`TCPFlags` is the cumulative OR of every packet's flags across the flow's lifetime, so it "
+        "describes an outcome rather than a packet: a flow carrying both SYN and FIN was opened and "
+        "closed inside the capture window.\n\n"
+        "- **Completed** -- handshake and close both seen. The healthy majority.\n"
+        "- **RST** -- something reset the connection. Normal in small amounts (browsers abandon "
+        "connections constantly); a sustained rise against one destination is a service refusing.\n"
+        "- **SYN, never answered** -- a connection attempt that got nothing back. This is the scan "
+        "and unreachable-host signature, and it is normally near zero here.\n"
+        "- **Open / Established** -- still running when the flow was cut. Expected, because "
+        "`maxlife=60` cuts every flow once a minute regardless of state.\n\n"
+        "Colours are an identity contract shared with the Security Signals tab."
+    ), color_mode="palette-classic-by-name", overrides=TCP_SHAPE_COLORS, values=True), 16, 22, 8, 9)
 
     builder.add(applications, bargauge(108, "Top Local Service Ports", [ch_query(
         "SELECT concat(toString(DstPort), '/', "
@@ -364,7 +811,7 @@ def build_dashboard() -> dict[str, Any]:
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND {LOCAL_DST} AND DstPort > 0 "
         "GROUP BY port ORDER BY bytes DESC LIMIT 15",
         fmt=2,
-    )], "bytes", "Ports receiving traffic on internal destinations. Useful for spotting local scrapes, media servers, admin interfaces, and noisy LAN services.", transformations=[limit(15)]), 0, 31, 12, 9)
+    )], "bytes", "Ports receiving traffic on internal destinations. Useful for spotting local scrapes, media servers, admin interfaces, and noisy LAN services.", transformations=[limit(15)], values=True), 0, 31, 12, 9)
 
     builder.add(applications, table(109, "Port Conversation Matrix", [ch_query(
         "SELECT concat(toString(SrcPort), ' -> ', toString(DstPort), '/', "
@@ -378,6 +825,22 @@ def build_dashboard() -> dict[str, Any]:
         fmt=2,
     )], "Source-to-destination port pairs. This makes fixed source-port services stand out from ordinary client ephemeral ports.", sort_col="Bytes"), 12, 31, 12, 9)
 
+    # Companion to the Service Class donut, same buckets. The donut collapses
+    # the whole range into one number per class and so cannot show a mix that
+    # moved; percent stacking over time is the panel that does.
+    builder.add(applications, timeseries(110, "Service Class over Time", [ch_query(
+        "SELECT $__timeInterval(TimeReceived) AS time, "
+        f"{pivot_columns(SERVICE_CLASS, SERVICE_CLASSES, 'Bytes * SamplingRate')} "
+        "FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
+        "GROUP BY time ORDER BY time"
+    )], "bytes", (
+        "The same port-derived service buckets as the donut above, stacked to 100% over time.\n\n"
+        "Read it for shape changes rather than for levels: a backup window, a streaming session, or "
+        "an overnight update run all show up here as one band taking over, where the donut would "
+        "only show a slightly different slice."
+    ), stacked=True, stack_mode="percent", fill=60), 0, 40, 24, 9)
+
     tabs.append(builder.tab("Applications", applications))
 
     # ── External ─────────────────────────────────────────────────────────────
@@ -386,11 +849,17 @@ def build_dashboard() -> dict[str, Any]:
     builder.add(external, text(200, "", (
         "## Autonomous systems and geography\n"
         "ASN and country enrichment comes from the MaxMind/IPinfo databases mounted in `akvorado/geoip/`. "
-        "When the databases are missing, Akvorado still stores flows but AS, country, city, and network "
+        "When the databases are missing, Akvorado still stores flows but AS, country, and network "
         "labels stay empty. The resolution tiles below make that state explicit.\n\n"
+        "**Resolution here reads low by design, and that is not a fault.** Most flows on this network "
+        "are LAN-to-LAN, and a private address has no AS or country by definition. The tiles measure "
+        "resolution over boundary-crossing flows, so the honest reading is 'of the traffic that "
+        "actually left, how much did we identify' -- not 'how much of the enrichment is broken'.\n\n"
         "Read source-side panels as **who sent traffic to you or to local services** and destination-side "
         "panels as **where your clients sent traffic**. On a home LAN most source ports are ephemeral; AS "
-        "and destination ports are usually the cleaner story."
+        "and destination ports are usually the cleaner story.\n\n"
+        "City-level enrichment is deliberately off (the City and Country databases together OOM the "
+        "orchestrator at its current memory limit), so there is no city panel here."
     )), 0, 0, 24, 5)
 
     builder.add(external, ch_stat(201, "Destination AS Resolution", (
@@ -409,12 +878,16 @@ def build_dashboard() -> dict[str, Any]:
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND {CROSSES_BOUNDARY}"
     ), "percent", "Share of boundary-crossing flows with either side resolved to a non-empty country code."), 12, 5, 6, 4)
 
-    builder.add(external, ch_stat(203, "External Share", (
-        "SELECT round(100 * sumIf(Bytes * SamplingRate, "
-        f"{CROSSES_BOUNDARY}) "
-        "/ greatest(sum(Bytes * SamplingRate), 1)) AS pct FROM flows "
-        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL}"
-    ), "percent", "Share of bytes crossing the local network boundary rather than staying LAN-local. Derived from address role, not interface boundary."), 18, 5, 6, 4)
+    # Was a second copy of the hero row's External Share tile. Replaced with
+    # the number this tab actually lacked: how wide the geographic spread is,
+    # which is the headline for the map below it.
+    builder.add(external, ch_stat(203, "Countries Contacted", (
+        f"SELECT uniqExactIf({DST_COUNTRY}, {DST_COUNTRY} != '') AS countries FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND {EXTERNAL_DST}"
+    ), "none", (
+        "Distinct destination countries resolved in this range. Counts only flows whose destination "
+        "country actually resolved, so it is a floor on the real spread, not an estimate of it."
+    )), 18, 5, 6, 4)
 
     builder.add(external, bargauge(204, "Top Destination AS", [ch_query(
         "SELECT concat('AS', toString(DstAS), ' ', "
@@ -424,7 +897,7 @@ def build_dashboard() -> dict[str, Any]:
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND {EXTERNAL_DST} AND DstAS != 0 "
         "GROUP BY asn ORDER BY bytes DESC LIMIT 15",
         fmt=2,
-    )], "bytes", "Networks your traffic actually goes to, by bytes. Requires GeoIP/ASN.", transformations=[limit(15)]), 0, 9, 12, 9)
+    )], "bytes", "Networks your traffic actually goes to, by bytes. Requires GeoIP/ASN.", transformations=[limit(15)], values=True), 0, 9, 12, 9)
 
     builder.add(external, bargauge(208, "Top Source AS", [ch_query(
         "SELECT concat('AS', toString(SrcAS), ' ', "
@@ -434,7 +907,7 @@ def build_dashboard() -> dict[str, Any]:
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND {EXTERNAL_SRC} AND SrcAS != 0 "
         "GROUP BY asn ORDER BY bytes DESC LIMIT 15",
         fmt=2,
-    )], "bytes", "Internet-side source networks by bytes. This is the panel to inspect for inbound traffic or remote services sending data to the LAN.", transformations=[limit(15)]), 12, 9, 12, 9)
+    )], "bytes", "Internet-side source networks by bytes. This is the panel to inspect for inbound traffic or remote services sending data to the LAN.", transformations=[limit(15)], values=True), 12, 9, 12, 9)
 
     builder.add(external, bargauge(205, "Top Destination Country", [ch_query(
         f"SELECT {DST_COUNTRY} AS country, sum(Bytes * SamplingRate) AS bytes "
@@ -442,7 +915,7 @@ def build_dashboard() -> dict[str, Any]:
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND {EXTERNAL_DST} AND {DST_COUNTRY} != '' "
         "GROUP BY country ORDER BY bytes DESC LIMIT 15",
         fmt=2,
-    )], "bytes", "Destination countries by bytes. Requires GeoIP.", transformations=[limit(15)]), 0, 18, 12, 9)
+    )], "bytes", "Destination countries by bytes. Requires GeoIP.", transformations=[limit(15)], values=True), 0, 18, 12, 9)
 
     builder.add(external, bargauge(209, "Top Source Country", [ch_query(
         f"SELECT {SRC_COUNTRY} AS country, sum(Bytes * SamplingRate) AS bytes "
@@ -450,7 +923,7 @@ def build_dashboard() -> dict[str, Any]:
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND {EXTERNAL_SRC} AND {SRC_COUNTRY} != '' "
         "GROUP BY country ORDER BY bytes DESC LIMIT 15",
         fmt=2,
-    )], "bytes", "Internet-side source countries by bytes. Missing countries are stripped instead of showing ClickHouse FixedString NUL bytes.", transformations=[limit(15)]), 12, 18, 12, 9)
+    )], "bytes", "Internet-side source countries by bytes. Missing countries are stripped instead of showing ClickHouse FixedString NUL bytes.", transformations=[limit(15)], values=True), 12, 18, 12, 9)
 
     builder.add(external, timeseries(206, "Throughput by Destination AS", [ch_query(
         "SELECT $__timeInterval(TimeReceived) AS time, "
@@ -462,7 +935,7 @@ def build_dashboard() -> dict[str, Any]:
         f"AND {ROUTER_SQL} AND {EXTERNAL_DST} AND DstAS != 0 "
         "GROUP BY DstAS ORDER BY sum(Bytes * SamplingRate) DESC LIMIT 8) "
         "GROUP BY time, asn ORDER BY time"
-    )], "bps", "Bit rate to the eight busiest destination networks. Requires GeoIP/ASN.", stacked=True), 0, 27, 12, 9)
+    )], "bps", "Bit rate to the eight busiest destination networks. Requires GeoIP/ASN.", stacked=True, transformations=[partition_by("asn")]), 0, 27, 12, 9)
 
     builder.add(external, timeseries(210, "Throughput by Source AS", [ch_query(
         "SELECT $__timeInterval(TimeReceived) AS time, "
@@ -474,7 +947,7 @@ def build_dashboard() -> dict[str, Any]:
         f"AND {ROUTER_SQL} AND {EXTERNAL_SRC} AND SrcAS != 0 "
         "GROUP BY SrcAS ORDER BY sum(Bytes * SamplingRate) DESC LIMIT 8) "
         "GROUP BY time, asn ORDER BY time"
-    )], "bps", "Bit rate from the eight busiest source networks. Useful for inbound traffic and remote services that send large responses.", stacked=True), 12, 27, 12, 9)
+    )], "bps", "Bit rate from the eight busiest source networks. Useful for inbound traffic and remote services that send large responses.", stacked=True, transformations=[partition_by("asn")]), 12, 27, 12, 9)
 
     builder.add(external, table(211, "AS Conversation Matrix", [ch_query(
         "SELECT "
@@ -500,22 +973,254 @@ def build_dashboard() -> dict[str, Any]:
         f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND {CROSSES_BOUNDARY} "
         "GROUP BY SourceCountry, DestinationCountry ORDER BY Bytes DESC LIMIT 50",
         fmt=2,
-    )], "Country-to-country pairs after stripping missing FixedString values. This is a compact way to see where traffic is going without exposing individual IPs.", sort_col="Bytes"), 0, 46, 12, 9)
+    )], "Country-to-country pairs after stripping missing FixedString values. This is a compact way to see where traffic is going without exposing individual IPs.", sort_col="Bytes"), 0, 46, 24, 9)
 
-    builder.add(external, table(213, "Top Geo Cities", [ch_query(
-        "SELECT "
-        f"multiIf(DstGeoCity != '', concat({DST_COUNTRY}, ' / ', DstGeoCity), "
-        f"SrcGeoCity != '', concat({SRC_COUNTRY}, ' / ', SrcGeoCity), 'unresolved') AS City, "
+    # The destination-country codes are already a live, ~30%-populated
+    # FixedString(2), which is exactly what Grafana's `countries` gazetteer
+    # is keyed on -- so the map needs no coordinate source of its own and no
+    # invented positions. The marker layer's own `lookup` location mode does
+    # the resolution -- see ch_geomap for why the fieldLookup transform is
+    # the wrong tool here despite being the documented one.
+    builder.add(external, ch_geomap(214, "Where the Traffic Goes", (
+        f"SELECT {DST_COUNTRY} AS country, sum(Bytes * SamplingRate) AS bytes "
+        "FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND {EXTERNAL_DST} "
+        f"AND {DST_COUNTRY} != '' "
+        "GROUP BY country ORDER BY bytes DESC LIMIT 100"
+    ), "country", (
+        "Destination countries, marker size and colour by bytes.\n\n"
+        "Only flows whose destination country resolved appear here -- roughly a third of "
+        "boundary-crossing flows, per the Country Resolution tile above. Read the map as "
+        "'where the identified traffic went', not as a complete picture: an absent country means "
+        "unresolved just as often as it means unvisited.\n\n"
+        "Markers sit at country centroids from Grafana's built-in gazetteer. They are not the "
+        "location of any actual host, and country-level GeoIP is itself only an approximation -- "
+        "anycast CDN traffic in particular resolves to wherever the address block is registered."
+    )), 0, 55, 24, 11)
+
+    # Local hosts on one side, the networks they talk to on the other. The
+    # node and edge frames are derived from the same LIMITed pair set, so
+    # every edge endpoint is guaranteed to exist as a node -- a dangling
+    # endpoint crashes this panel rather than degrading.
+    _NODE_PAIRS = (
+        "WITH pairs AS ("
+        f"SELECT {ip_display('SrcAddr')} AS host, "
+        "toString(DstAS) AS asn, "
+        "dictGetOrDefault('asns', 'name', toUInt64(DstAS), concat('AS', toString(DstAS))) AS as_name, "
+        "sum(Bytes * SamplingRate) AS bytes, "
+        "count() AS flows "
+        "FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
+        f"AND {LOCAL_SRC} AND {EXTERNAL_DST} AND DstAS != 0 "
+        "GROUP BY host, asn, as_name ORDER BY bytes DESC LIMIT 60) "
+    )
+    builder.add(external, ch_nodegraph(
+        215,
+        "Local Hosts to External Networks",
+        _NODE_PAIRS + (
+            "SELECT concat('h:', host) AS id, host AS title, 'local host' AS subtitle, "
+            "sum(bytes) AS mainstat, sum(flows) AS secondarystat "
+            "FROM pairs GROUP BY id, title "
+            "UNION ALL "
+            "SELECT concat('a:', asn) AS id, as_name AS title, concat('AS', asn) AS subtitle, "
+            "sum(bytes) AS mainstat, sum(flows) AS secondarystat "
+            "FROM pairs GROUP BY id, title, subtitle"
+        ),
+        _NODE_PAIRS + (
+            "SELECT concat(host, '>', asn) AS id, "
+            "concat('h:', host) AS source, concat('a:', asn) AS target, "
+            "bytes AS mainstat, flows AS secondarystat "
+            "FROM pairs"
+        ),
+        (
+            "Which local devices talk to which networks on the internet, sized by bytes. Node stats "
+            "are bytes (main) and flow count (secondary).\n\n"
+            "Only flows with a resolved destination AS are included, and only the 60 heaviest "
+            "host-to-network pairs in the range -- Grafana hides nodes past 200 behind cluster "
+            "markers, so the cap keeps the graph readable rather than truthful-but-unusable. "
+            "Verified live: 60 pairs resolve to well under Grafana's cap.\n\n"
+            "This is the same relationship the AS Conversation Matrix below states as a table. The "
+            "table is what you sort and filter; this is what makes a device with an unexpected "
+            "number of network relationships obvious at a glance."
+        ),
+    ), 0, 66, 24, 13)
+
+    # Panel 213 was "Top Geo Cities". Removed rather than restyled: the City
+    # database is deliberately not loaded (it OOMs the orchestrator alongside
+    # Country at the configured memory limit), so SrcGeoCity/DstGeoCity are
+    # 0% populated and the panel was a permanent "no data" wall -- the exact
+    # thing the enrichment tiles above exist to distinguish from a real fault.
+    # The geomap below is what that space is worth spending on instead.
+
+    tabs.append(builder.tab("External", external))
+
+    # ── Security Signals ─────────────────────────────────────────────────────
+    #
+    # Deliberately small and deliberately hedged. Every panel here describes a
+    # *shape* that is sometimes worth a second look, never a verdict: on a
+    # home network the same shapes are produced constantly by ordinary
+    # browsing, CDN fan-out, and service discovery. Framing them as alerts
+    # would train the operator to ignore the tab.
+    #
+    # What is NOT here, and why:
+    #
+    #   - ICMP type/code decoding. The `icmp` dictionary exists in ClickHouse
+    #     and maps (proto, type, code) to names, but softflowd never populates
+    #     the type/code -- DstPort is a constant 0 on every Proto=1 and
+    #     Proto=58 flow in this deployment (verified live). Decoding it would
+    #     silently render every ICMP flow as "echo-reply", which is the
+    #     dictionary's response to (1,0,0), not a fact about the traffic.
+    #     Volume over time is what the data actually supports.
+    #
+    #   - A dedicated SYN-scan tile. The unanswered-SYN count is real and
+    #     included below, but it is a handful of flows per day here, so it is
+    #     presented as a number to watch rather than as a threshold to trip.
+
+    security: list[dict[str, Any]] = []
+    builder.add(security, text(400, "", (
+        "## Shapes worth a second look\n"
+        "Nothing on this tab is an alert, and nothing here means you have been attacked. These are "
+        "traffic *shapes* that are occasionally worth explaining -- and that a home network produces "
+        "innocently all the time.\n\n"
+        "- A browser opening a page touches dozens of CDN endpoints; that is fan-out.\n"
+        "- Connections get reset constantly as pages are abandoned; that is resets.\n"
+        "- Phones and TVs probe the LAN continuously; that is discovery traffic.\n\n"
+        "The useful signal is almost never a single number being non-zero. It is a **change**: a "
+        "device that suddenly fans out far wider than it used to, or a reset rate that climbs "
+        "against one destination. Compare against a quiet period before drawing conclusions.\n\n"
+        "**Coverage caveat applies here more than anywhere else.** Hardware flow offload means "
+        "softflowd never sees some traffic, so absence of a signal on this tab is not evidence of "
+        "absence. Check the Pipeline Health tab first."
+    )), 0, 0, 24, 7)
+
+    builder.add(security, ch_stat(401, "Reset Rate", (
+        "SELECT round(100 * countIf(bitAnd(TCPFlags, 4) != 0) / greatest(count(), 1)) AS pct "
+        "FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND Proto = 6"
+    ), "percent", (
+        "Share of TCP flows in which a RST was seen at any point.\n\n"
+        "A quarter to a third is entirely normal -- browsers abandon connections, servers close "
+        "idle sockets, and connection racing (Happy Eyeballs) resets the loser by design. Watch the "
+        "trend, not the value, and cross-check against the destination breakdown below if it moves."
+    )), 0, 7, 6, 4)
+
+    builder.add(security, ch_stat(402, "Unanswered Attempts", (
+        "SELECT countIf(bitAnd(TCPFlags, 2) != 0 AND bitAnd(TCPFlags, 16) = 0) AS flows "
+        "FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND Proto = 6"
+    ), "none", (
+        "TCP flows that carried a SYN and never a matching ACK -- a connection attempt that got "
+        "nothing back.\n\n"
+        "This is the closest thing in the dataset to a scan signature, and it is normally a handful "
+        "of flows: an unreachable host, a service that moved, a stale bookmark. It has no threshold "
+        "colour on purpose, because the number that matters is how it compares to yesterday, not "
+        "whether it crossed a line someone guessed at."
+    )), 6, 7, 6, 4)
+
+    builder.add(security, ch_stat(403, "Widest Fan-out", (
+        "SELECT max(dests) AS dests FROM ("
+        "SELECT uniq(DstAddr) AS dests FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
+        f"AND {LOCAL_SRC} AND {EXTERNAL_DST} "
+        "GROUP BY SrcAddr)"
+    ), "none", (
+        "The largest number of distinct external addresses any single local host contacted in this "
+        "range.\n\n"
+        "Ordinary web browsing reaches hundreds of endpoints per hour, so a high number is normal "
+        "for a laptop or phone and notable for a device that should be quiet -- a thermostat, a "
+        "printer, a camera. The table below names which host it was."
+    )), 12, 7, 6, 4)
+
+    builder.add(security, ch_stat(404, "Inbound Sources", (
+        "SELECT uniq(SrcAddr) AS sources FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
+        f"AND {EXTERNAL_SRC} AND {LOCAL_DST} AND DstPort > 0 AND DstPort < 1024"
+    ), "none", (
+        "Distinct internet-side addresses that sent traffic to a well-known port (below 1024) on a "
+        "local host.\n\n"
+        "Behind NAT with no port forwards this is mostly replies to things the LAN started -- NTP "
+        "servers answering, for instance. A rising count, or traffic to a port you did not expose, "
+        "is worth explaining."
+    )), 18, 7, 6, 4)
+
+    builder.add(security, timeseries(405, "TCP Flow Outcomes over Time", [ch_query(
+        "SELECT $__timeInterval(TimeReceived) AS time, "
+        + ", ".join(f"countIf({TCP_SHAPE} = '{name}') AS \"{name}\"" for name in TCP_SHAPES)
+        + " FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND Proto = 6 "
+        "GROUP BY time ORDER BY time"
+    )], "none", (
+        "The decoded TCP outcomes from the Applications tab, over time and stacked.\n\n"
+        "The point of the time axis is that the mix is normally stable. A step change -- resets "
+        "suddenly dominating, or unanswered attempts appearing in a band where there were none -- "
+        "is the thing to notice; the absolute counts follow whatever the network was doing."
+    ), stacked=True, overrides=TCP_SHAPE_COLORS), 0, 11, 12, 9)
+
+    builder.add(security, timeseries(406, "ICMP Volume", [ch_query(
+        "SELECT $__timeInterval(TimeReceived) AS time, "
+        "countIf(Proto = 1) AS \"ICMPv4\", countIf(Proto = 58) AS \"ICMPv6\" "
+        "FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND Proto IN (1, 58) "
+        "GROUP BY time ORDER BY time"
+    )], "none", (
+        "ICMP and ICMPv6 flow counts over time.\n\n"
+        "**No type/code breakdown is possible here.** ClickHouse ships an `icmp` dictionary that "
+        "maps (protocol, type, code) to names like `echo-request` or `destination-unreachable`, but "
+        "softflowd does not export ICMP type or code -- the field is a constant zero on every ICMP "
+        "flow in this deployment. Decoding it would label everything `echo-reply`, which is what the "
+        "dictionary returns for (1,0,0) and not a fact about the traffic. Volume is what the data "
+        "honestly supports.\n\n"
+        "ICMPv6 is steady and high on any IPv6 LAN: neighbour discovery and router advertisement "
+        "are ICMPv6. A sustained ICMPv4 climb is the more interesting of the two."
+    )), 12, 11, 12, 9)
+
+    builder.add(security, table(407, "Fan-out by Local Host", [ch_query(
+        f"SELECT {ip_display('SrcAddr')} AS Host, "
+        "uniq(DstAddr) AS Destinations, "
+        "uniq(DstAS) AS Networks, "
+        "uniq(DstPort) AS Ports, "
         "count() AS Flows, "
         "sum(Bytes * SamplingRate) AS Bytes "
         "FROM flows "
-        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} AND {CROSSES_BOUNDARY} "
-        "AND (DstGeoCity != '' OR SrcGeoCity != '') "
-        "GROUP BY City ORDER BY Bytes DESC LIMIT 50",
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
+        f"AND {LOCAL_SRC} AND {EXTERNAL_DST} "
+        "GROUP BY Host ORDER BY Destinations DESC LIMIT 30",
         fmt=2,
-    )], "City-level enrichment when the mounted GeoIP database provides it. Empty is normal with country-only databases.", sort_col="Bytes"), 12, 46, 12, 9)
+    )], (
+        "Local hosts ranked by how many distinct external destinations they contacted.\n\n"
+        "**This is a browsing-activity ranking as much as anything else.** A laptop at the top of "
+        "this table is the expected result, not a finding. What is worth a look is a device with a "
+        "narrow job -- a printer, a smart plug, an IP camera -- sitting anywhere near the top, or a "
+        "host whose `Ports` count is high while its `Bytes` stay tiny, which is the shape of "
+        "probing rather than of using a service.\n\n"
+        "`Networks` counts distinct destination ASes and is the steadier column: CDN fan-out "
+        "inflates `Destinations` heavily but usually resolves to only a handful of networks."
+    ), sort_col="Destinations"), 0, 20, 12, 10)
 
-    tabs.append(builder.tab("External", external))
+    builder.add(security, table(408, "Inbound to Local Hosts", [ch_query(
+        f"SELECT {ip_display('DstAddr')} AS Target, "
+        "DstPort AS Port, "
+        "dictGetOrDefault('protocols', 'name', toUInt64(Proto), toString(Proto)) AS Protocol, "
+        "uniq(SrcAddr) AS Sources, "
+        "count() AS Flows, "
+        "sum(Bytes * SamplingRate) AS Bytes "
+        "FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
+        f"AND {EXTERNAL_SRC} AND {LOCAL_DST} AND DstPort > 0 AND DstPort < 1024 "
+        "GROUP BY Target, Port, Protocol ORDER BY Flows DESC LIMIT 30",
+        fmt=2,
+    )], (
+        "Traffic from internet-side sources to well-known ports on local hosts.\n\n"
+        "Restricted to ports below 1024 to keep ordinary reply traffic on ephemeral ports out. Most "
+        "of what remains is still solicited -- an NTP server answering the LAN's own query looks "
+        "exactly like an inbound flow to port 123, because from the capture's point of view that is "
+        "what it is. softflowd cannot tell a reply from an unsolicited connection.\n\n"
+        "Read it as an inventory of what reaches in and on which port, and check anything you did "
+        "not deliberately expose. An empty table is the expected state behind NAT with no port "
+        "forwards."
+    ), sort_col="Flows"), 12, 20, 12, 10)
+
+    tabs.append(builder.tab("Security Signals", security))
 
     # ── Pipeline Health (Prometheus) ─────────────────────────────────────────
 
@@ -649,7 +1354,217 @@ def build_dashboard() -> dict[str, Any]:
         "effect. Empty is the healthy state."
     ), transformations=[limit(10)]), 0, 32, 24, 7)
 
+    # Every other tile on this tab is instantaneous: it answers "is the
+    # pipeline healthy right now" and cannot answer "was it healthy at 3am",
+    # which is the question you actually have when yesterday's byte totals
+    # look wrong. One state timeline covers the whole selected range.
+    #
+    # Value mappings live in fieldConfig.defaults, never in a byType override:
+    # that matcher silently fails to apply on state timelines and the panel
+    # renders raw "-Inf - +Inf" bracket text instead of the state names.
+    builder.add(health, state_timeline(313, "Availability History", [
+        prom_query(f'min(openwrt_netflow_exporter_up{{{PROM_FILTER}}}) or vector(0)', "Exporter running", "A"),
+        prom_query(f'min(openwrt_netflow_collector_available{{{PROM_FILTER}}}) or vector(0)', "Health collector", "B"),
+        prom_query(
+            f'(max(openwrt_flow_offload_enabled{{{PROM_FILTER}, mode="hw"}}) == bool 0) or vector(0)',
+            "Capture complete", "C",
+        ),
+    ], "none", (
+        "Each of the three trust conditions above, over the selected range instead of right now.\n\n"
+        "This is the panel that answers 'was it down at 3am'. A gap in **Exporter running** means "
+        "softflowd was not answering, so flows from that window are missing entirely rather than "
+        "merely incomplete. **Capture complete** going red means hardware flow offload was active "
+        "and the totals for that period are a lower bound.\n\n"
+        "The three series are deliberately the same conditions as the tiles at the top of the tab, "
+        "so a tile and its history can never disagree."
+    ), mappings=[
+        {"type": "value", "options": {
+            "1": {"text": "OK", "color": GREEN, "index": 0},
+            "0": {"text": "Degraded", "color": RED, "index": 1},
+        }},
+        {"type": "special", "options": {"match": "null", "result": {"text": "No data", "color": GRAY, "index": 2}}},
+    ],
+        # Value mappings only reach the legend when the colour scheme is NOT
+        # "thresholds": with threshold colouring Grafana labels each band by
+        # its threshold bracket ("< 1", "1+") and the mapped state names are
+        # discarded. The mappings above carry their own colours, so
+        # palette-classic never actually assigns one. Verified live on
+        # Grafana 13, 2026-07-26.
+        color_mode="palette-classic", thresholds_key="ok_bad"), 0, 39, 24, 8)
+
+    # The one ClickHouse panel on an otherwise all-Prometheus tab, and it
+    # earns its place: it cross-checks the address-role direction logic that
+    # every throughput panel on this dashboard depends on against the
+    # exporter's own FlowDirection field, which nothing else uses.
+    builder.add(health, table(314, "Direction Cross-Check", [ch_query(
+        "SELECT FlowDirection AS Reported, "
+        "multiIf(SrcNetRole = 'internal' AND DstNetRole = 'internal', 'local', "
+        "SrcNetRole = 'internal', 'outbound', 'inbound') AS Derived, "
+        "count() AS Flows, "
+        "sum(Bytes * SamplingRate) AS Bytes "
+        "FROM flows "
+        f"WHERE $__timeFilter(TimeReceived) AND {ROUTER_SQL} "
+        "GROUP BY Reported, Derived ORDER BY Flows DESC LIMIT 20",
+        fmt=2,
+    )], (
+        "Akvorado's own `FlowDirection` against the direction this dashboard derives from address "
+        "role. These are independent signals and this table is the only place they meet.\n\n"
+        "The expected shape is a strong diagonal: `egress`/`outbound` and `ingress`/`inbound` "
+        "should carry nearly all the flows. That agreement is what justifies using address role "
+        "everywhere else -- `InIfBoundary` is unusable here because softflowd reports one ifIndex "
+        "for both directions, but `FlowDirection` is populated independently and corroborates the "
+        "workaround.\n\n"
+        "If the diagonal breaks down, suspect `clickhouse.networks` in akvorado.yaml: a LAN prefix "
+        "missing from it makes every local address look external and skews every direction-split "
+        "panel on the Flow Overview tab. Rows with a blank role are flows where neither side "
+        "matched a configured prefix."
+    ), sort_col="Flows"), 0, 47, 24, 9)
+
     tabs.append(builder.tab("Pipeline Health", health))
+
+    # ── Pipeline Internals ───────────────────────────────────────────────────
+    #
+    # Pipeline Health answers "can I trust the numbers": binary, instantaneous,
+    # router-side. This tab answers "where in the collector is it struggling":
+    # rate-of-change, saturation, backlog, all Akvorado-side. They are kept
+    # apart because the first is for anyone reading the dashboard and the
+    # second is only useful once something on the first tab looks wrong.
+    #
+    # Every metric name below was confirmed present on the live VictoriaMetrics
+    # instance before being written here.
+
+    internals: list[dict[str, Any]] = []
+    builder.add(internals, text(500, "", (
+        "## Where the collector is struggling\n"
+        "Akvorado's own pipeline, in order: **inlet** receives UDP and pushes to Kafka without "
+        "parsing, **Kafka** buffers, **outlet** consumes, decodes, enriches, and batch-inserts into "
+        "ClickHouse.\n\n"
+        "Walk it in that order when something is wrong -- the first stage that stops keeping up is "
+        "the one to fix. Consumer lag rising while everything else looks fine means the outlet is "
+        "the bottleneck; insert latency rising means ClickHouse is.\n\n"
+        "All of this is collector health, not flow data. A perfectly healthy pipeline still cannot "
+        "recover traffic that hardware offload hid from softflowd in the first place -- that is the "
+        "Pipeline Health tab's job."
+    )), 0, 0, 24, 5)
+
+    # The top candidate alert for this stack and, until now, invisible on
+    # every dashboard. Lag is the one number that says the outlet is not
+    # keeping up with what the inlet is producing.
+    builder.add(internals, timeseries(501, "Kafka Consumer Lag", [
+        prom_query('sum(akvorado_outlet_kafka_consumergroup_lag_messages) or vector(0)', "messages behind", "A"),
+    ], "none", (
+        "Messages sitting in Kafka that the outlet has not consumed yet.\n\n"
+        "Zero or near-zero is healthy and normal here. Sustained growth means the outlet cannot "
+        "keep up with the inlet -- flows are not lost while Kafka still holds them, but they are "
+        "arriving in ClickHouse late, so recent panels on the other tabs will read low until it "
+        "catches up. If lag keeps climbing, the retention on the Kafka topic eventually decides "
+        "what gets dropped.\n\n"
+        "The threshold band is a judgement call, not a measured limit: this deployment sits at zero, "
+        "so anything into the thousands is a real change of state rather than noise."
+    ), thresholds_value=thresholds(("green", None), ("yellow", 1000), ("red", 10000))), 0, 5, 12, 8)
+
+    # insert_time is a real histogram (_bucket with le), so histogram_quantile
+    # applies. flow_per_batch below is a summary and must NOT be treated the
+    # same way -- see its comment.
+    builder.add(internals, timeseries(502, "ClickHouse Insert Latency", [
+        prom_query(
+            'histogram_quantile(0.50, sum by (le) (rate(akvorado_outlet_clickhouse_insert_time_seconds_bucket[$__rate_interval])))',
+            "p50", "A",
+        ),
+        prom_query(
+            'histogram_quantile(0.95, sum by (le) (rate(akvorado_outlet_clickhouse_insert_time_seconds_bucket[$__rate_interval])))',
+            "p95", "B",
+        ),
+        prom_query(
+            'histogram_quantile(0.99, sum by (le) (rate(akvorado_outlet_clickhouse_insert_time_seconds_bucket[$__rate_interval])))',
+            "p99", "C",
+        ),
+    ], "s", (
+        "How long each batch insert into ClickHouse takes, from Akvorado's own histogram.\n\n"
+        "`le` is preserved inside the inner aggregation, which `histogram_quantile` requires. "
+        "Rising p95 with flat p50 is ClickHouse occasionally stalling -- usually merges or disk "
+        "pressure; both percentiles rising together is sustained write pressure. This is the stage "
+        "immediately upstream of every ClickHouse panel on this dashboard, so latency here shows up "
+        "there as data arriving late."
+    ), thresholds_value=thresholds(("green", None), ("yellow", 1), ("red", 5))), 12, 5, 12, 8)
+
+    builder.add(internals, timeseries(503, "Decoder Throughput by Record Type", [
+        prom_query(
+            'sum by (type) (rate(akvorado_outlet_flow_decoder_netflow_records_total[$__rate_interval]))',
+            "{{type}}", "A",
+        ),
+    ], "none", (
+        "NetFlow records decoded per second, split by record type.\n\n"
+        "This panel exists for one specific failure that is otherwise invisible: **templates "
+        "arriving with no data records**. NetFlow v9 sends the schema (`TemplateFlowSet`, "
+        "`OptionsTemplateFlowSet`) separately from the data (`DataFlowSet`). If softflowd is running "
+        "but capturing nothing, the template lines keep ticking along at their usual slow rate while "
+        "`DataFlowSet` sits flat at zero -- the pipeline looks alive from every other angle and no "
+        "flows arrive.\n\n"
+        "Healthy is `DataFlowSet` far above the rest. `DataFlowSet` at zero with templates still "
+        "flowing means checking the capture interface and pcap filter on the router."
+    ), overrides=[
+        color_override("DataFlowSet", GREEN),
+        color_override("TemplateFlowSet", GRAY),
+        color_override("OptionsTemplateFlowSet", GRAY),
+        color_override("OptionsDataFlowSet", BLUE),
+    ]), 0, 13, 12, 8)
+
+    # Guarded divide: an unguarded hits/(hits+misses) yields +Inf or NaN
+    # whenever the outlet has been restarted and neither counter has moved.
+    builder.add(internals, timeseries(504, "Metadata Cache Hit Ratio", [
+        prom_query(
+            "sum(rate(akvorado_outlet_metadata_cache_hits_total[$__rate_interval])) "
+            "/ (sum(rate(akvorado_outlet_metadata_cache_hits_total[$__rate_interval])) "
+            "+ sum(rate(akvorado_outlet_metadata_cache_misses_total[$__rate_interval])) > 0)",
+            "hit ratio", "A",
+        ),
+    ], "percentunit", (
+        "Share of interface-metadata lookups served from the outlet's cache.\n\n"
+        "The denominator is guarded with `> 0` so an idle or freshly-restarted outlet renders no "
+        "data rather than `+Inf` or a misleading 100%.\n\n"
+        "This should sit very close to 1 in a single-router deployment: there is one exporter and "
+        "one interface, so after the first lookup everything is a hit. A ratio that drops and stays "
+        "down means entries are being evicted or expired faster than they are used, which is the "
+        "same underlying condition that produces `metadata missing` errors on the Collector Error "
+        "Reasons panel."
+    ), thresholds_value=thresholds(("red", None), ("yellow", 0.8), ("green", 0.95))), 12, 13, 12, 8)
+
+    builder.add(internals, timeseries(505, "Outlet Worker Load", [
+        prom_query('sum(rate(akvorado_outlet_clickhouse_worker_steady_total[$__rate_interval])) or vector(0)', "steady", "A"),
+        prom_query('sum(rate(akvorado_outlet_clickhouse_worker_overloaded_total[$__rate_interval])) or vector(0)', "overloaded", "B"),
+        prom_query('sum(rate(akvorado_outlet_clickhouse_worker_underloaded_total[$__rate_interval])) or vector(0)', "underloaded", "C"),
+    ], "none", (
+        "How often the outlet's ClickHouse writer workers reported themselves steady, overloaded, "
+        "or underloaded -- Akvorado's own autoscaling signal.\n\n"
+        "Sustained `overloaded` is the saturation warning that precedes consumer lag: the workers "
+        "are asking for help before the backlog becomes visible upstream. `underloaded` dominating "
+        "is the normal state on a home link and is not a problem to fix."
+    ), stacked=True, overrides=[
+        color_override("steady", GREEN),
+        color_override("overloaded", RED),
+        color_override("underloaded", GRAY),
+    ]), 0, 21, 12, 8)
+
+    # flow_per_batch is a SUMMARY, not a histogram: it exposes precomputed
+    # quantiles under a `quantile` label and has no `le` buckets at all.
+    # histogram_quantile() over it returns nothing. Select the quantiles
+    # directly instead.
+    builder.add(internals, timeseries(506, "Flows per ClickHouse Batch", [
+        prom_query('akvorado_outlet_clickhouse_flow_per_batch{quantile="0.5"}', "p50", "A"),
+        prom_query('akvorado_outlet_clickhouse_flow_per_batch{quantile="0.9"}', "p90", "B"),
+        prom_query('akvorado_outlet_clickhouse_flow_per_batch{quantile="0.99"}', "p99", "C"),
+    ], "none", (
+        "How many flows the outlet packs into each ClickHouse insert.\n\n"
+        "This is a Prometheus **summary**, not a histogram -- it publishes precomputed quantiles "
+        "under a `quantile` label and has no `le` buckets, so `histogram_quantile()` over it "
+        "returns nothing. The quantiles are selected directly.\n\n"
+        "Read it together with insert latency: small batches with high latency means the outlet is "
+        "flushing early under time pressure rather than filling batches, which is inefficient but "
+        "not lossy. Batch size is driven by flow arrival rate, so it tracks how busy the network is."
+    )), 12, 21, 12, 8)
+
+    tabs.append(builder.tab("Pipeline Internals", internals))
 
     spec: dict[str, Any] = {
         "title": "OpenWrt - NetFlow",
@@ -738,7 +1653,9 @@ def validate_dashboard(dashboard: dict[str, Any]) -> None:
         "Flow Overview",
         "Applications",
         "External",
+        "Security Signals",
         "Pipeline Health",
+        "Pipeline Internals",
     ]
     refs = layout_refs(spec["layout"])
     assert set(refs) == set(spec["elements"])
@@ -792,6 +1709,27 @@ def validate_dashboard(dashboard: dict[str, Any]) -> None:
                 assert "SamplingRate" in inner, (
                     f"{element['spec']['id']}: aggregate over {inner.strip()} is not "
                     "multiplied by SamplingRate"
+                )
+
+    # histogram_quantile() only works over a classic histogram's `le` buckets.
+    # Akvorado publishes both shapes side by side and they are easy to confuse:
+    # insert_time_seconds is a histogram (_bucket + le), flow_per_batch is a
+    # summary that exposes precomputed quantiles under a `quantile` label and
+    # has no buckets at all. histogram_quantile() over the summary returns
+    # nothing -- an empty panel with no error anywhere, which is exactly the
+    # failure this dashboard exists to make impossible elsewhere.
+    for element in spec["elements"].values():
+        for query in element["spec"]["data"]["spec"]["queries"]:
+            expr = query["spec"]["query"]["spec"].get("expr")
+            if not expr or "histogram_quantile" not in expr:
+                continue
+            metrics = re.findall(r"\b(akvorado_\w+|openwrt_\w+|node_\w+)\b", expr)
+            assert metrics, f"{element['spec']['id']}: histogram_quantile over no known metric"
+            for metric in metrics:
+                assert metric.endswith("_bucket"), (
+                    f"{element['spec']['id']}: histogram_quantile over {metric}, which is not a "
+                    "_bucket series; summaries expose a `quantile` label instead and must be "
+                    "selected directly"
                 )
 
     defined = {variable["spec"]["name"] for variable in spec["variables"]}
