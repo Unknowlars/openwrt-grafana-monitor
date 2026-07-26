@@ -37,5 +37,7 @@ python3 -m scripts.build_openwrt_operations_dashboard
 ```
 
 Generated outputs belong in `grafana-dashboard-exports/` and
-`grafana/provisioning/dashboards/`. Preserve the legacy exports unless the
-change explicitly targets them.
+`grafana/provisioning/dashboards/`. The four classic dashboards
+(`scripts/build_dashboards.py`) also publish a manual-import copy under
+`grafana-dashboard-exports/legacy/`; regenerating them keeps that copy in
+sync automatically, so there is no separate manual step.

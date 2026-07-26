@@ -216,9 +216,16 @@ TEMPLATING = {"list": [
         "hide": 0, "label": "Datasource",
     },
     {
-        "name": "router", "type": "custom", "query": "openwrt",
+        "name": "router", "type": "query", "label": "Router",
+        "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+        "definition": 'label_values(node_load1{job="openwrt"}, router)',
+        "query": {
+            "query": 'label_values(node_load1{job="openwrt"}, router)',
+            "refId": "PrometheusVariableQueryEditor-VariableQuery",
+        },
         "current": {"text": "openwrt", "value": "openwrt"},
-        "hide": 0, "label": "Router",
+        "hide": 0, "includeAll": False, "multi": False,
+        "options": [], "refresh": 1, "regex": "", "skipUrlSync": False, "sort": 1,
     },
     {
         "name": "wan_interface", "type": "custom", "query": "wan",
@@ -1453,9 +1460,16 @@ def build_logs():
             "hide": 0, "label": "Loki",
         },
         {
-            "name": "router", "type": "custom", "query": "openwrt",
+            "name": "router", "type": "query", "label": "Router",
+            "datasource": {"type": "loki", "uid": "${DS_LOKI}"},
+            "definition": 'label_values({job="openwrt-syslog"}, router)',
+            "query": {
+                "query": 'label_values({job="openwrt-syslog"}, router)',
+                "refId": "LokiVariableQueryEditor-VariableQuery",
+            },
             "current": {"text": "openwrt", "value": "openwrt"},
-            "hide": 0, "label": "Router",
+            "hide": 0, "includeAll": False, "multi": False,
+            "options": [], "refresh": 1, "regex": "", "skipUrlSync": False, "sort": 1,
         },
     ]}
 
@@ -1571,7 +1585,10 @@ def build_logs():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTDIR = ROOT / "grafana/provisioning/dashboards"
+OUTDIRS = [
+    ROOT / "grafana/provisioning/dashboards",
+    ROOT / "grafana-dashboard-exports/legacy",
+]
 
 dashboards = [
     ("openwrt-overview.json", build_overview()),
@@ -1581,10 +1598,11 @@ dashboards = [
 ]
 
 for filename, dash in dashboards:
-    path = OUTDIR / filename
-    with open(path, "w") as f:
-        json.dump(dash, f, indent=2)
-    size_kb = len(json.dumps(dash)) // 1024
+    rendered = json.dumps(dash, indent=2)
+    for outdir in OUTDIRS:
+        outdir.mkdir(parents=True, exist_ok=True)
+        (outdir / filename).write_text(rendered)
+    size_kb = len(rendered) // 1024
     print(f"  {filename}: {len(dash['panels'])} panels, {size_kb}KB")
 
-print(f"\nBuilt {len(dashboards)} dashboards into {OUTDIR}/")
+print(f"\nBuilt {len(dashboards)} dashboards into {' and '.join(str(d) for d in OUTDIRS)}/")

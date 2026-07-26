@@ -12,6 +12,7 @@ run on standard OpenWrt installations without a custom firmware image.
 
 - [What You Get](#what-you-get)
 - [Dashboard Preview](#dashboard-preview)
+- [Dashboard Gallery](#dashboard-gallery)
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
@@ -52,6 +53,86 @@ Kafka, ClickHouse, Redis, and significant memory usage.
 The generated v2 dashboards are available as manual-import files in
 [`grafana-dashboard-exports/`](grafana-dashboard-exports/). Docker provisioning
 uses the matching files under `grafana/provisioning/dashboards/`.
+
+More screenshots, organized by dashboard, are in the [Dashboard Gallery](#dashboard-gallery) below.
+
+## Dashboard Gallery
+
+Screenshots from a running instance. Click a dashboard to expand it.
+
+<details>
+<summary><strong>Mission Control</strong> — one dashboard covering router health, WAN, WiFi, devices, DNS/DHCP, topology, and logs</summary>
+<br>
+
+![Mission Control overview](docs/screenshots/mission-control/overview.png)
+![Mission Control WAN and Internet](docs/screenshots/mission-control/wan_and_internet.png)
+![Mission Control WiFi and clients](docs/screenshots/mission-control/wifi_and_clients.png)
+![Mission Control LAN devices and traffic](docs/screenshots/mission-control/lan_devices_traffic.png)
+![Mission Control DNS and DHCP](docs/screenshots/mission-control/dns_dhcp.png)
+![Mission Control router health](docs/screenshots/mission-control/router_health.png)
+![Mission Control topology](docs/screenshots/mission-control/topology.png)
+![Mission Control logs and security](docs/screenshots/mission-control/logs_and_security.png)
+
+</details>
+
+<details>
+<summary><strong>Operations</strong> — router health, WAN, WiFi, devices, and per-client insight in one tabbed dashboard</summary>
+<br>
+
+![Operations overview](docs/screenshots/operations/overview.png)
+![Operations WAN and Internet](docs/screenshots/operations/wan_internet.png)
+![Operations WiFi and clients](docs/screenshots/operations/wifi_and_clients.png)
+![Operations LAN, NAT, and devices](docs/screenshots/operations/lan_nat_devices.png)
+![Operations client insight](docs/screenshots/operations/client_insight.png)
+
+</details>
+
+<details>
+<summary><strong>Clients</strong> — unified per-client identity, traffic, and WiFi roaming</summary>
+<br>
+
+![Clients overview](docs/screenshots/clients/overview.png)
+![Clients detail](docs/screenshots/clients/clients.png)
+
+</details>
+
+<details>
+<summary><strong>Advanced Monitoring</strong> — optional-profile detail: per-device traffic and WiFi mesh</summary>
+<br>
+
+![Advanced Monitoring overview](docs/screenshots/advanced/overview.png)
+![Advanced Monitoring device traffic](docs/screenshots/advanced/device_traffic.png)
+![Advanced Monitoring WiFi mesh](docs/screenshots/advanced/wifi_mesh.png)
+
+</details>
+
+<details>
+<summary><strong>NetFlow</strong> — per-flow traffic detail via the optional Akvorado stack</summary>
+<br>
+
+![NetFlow overview](docs/screenshots/netflow/flow_overview.png)
+![NetFlow applications](docs/screenshots/netflow/applications.png)
+![NetFlow external destinations](docs/screenshots/netflow/external.png)
+
+</details>
+
+<details>
+<summary><strong>Topology</strong> — the network node graph on its own</summary>
+<br>
+
+![Topology](docs/screenshots/topology/topology.png)
+
+</details>
+
+<details>
+<summary><strong>Classic dashboards</strong> — the original four (Overview, Network, Devices, Logs)</summary>
+<br>
+
+![Classic Overview](docs/screenshots/legacy/overview.png)
+![Classic Network](docs/screenshots/legacy/network.png)
+![Classic Devices](docs/screenshots/legacy/devices.png)
+
+</details>
 
 ## Requirements
 

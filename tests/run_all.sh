@@ -31,12 +31,22 @@ cmp grafana-dashboard-exports/openwrt-clients-v2.json \
     grafana/provisioning/dashboards/openwrt-clients-v2.json
 cmp grafana-dashboard-exports/openwrt-operations-v2.json \
     grafana/provisioning/dashboards/openwrt-operations-v2.json
+cmp grafana-dashboard-exports/openwrt-operations-v2.json \
+    grafana-dashboard-exports/legacy/openwrt-operations-v2.json
 cmp grafana-dashboard-exports/openwrt-topology-v2.json \
     grafana/provisioning/dashboards/openwrt-topology-v2.json
 cmp grafana-dashboard-exports/openwrt-mission-control.json \
     grafana/provisioning/dashboards/openwrt-mission-control.json
 cmp grafana-dashboard-exports/openwrt-netflow-v2.json \
     grafana/provisioning/dashboards/openwrt-netflow-v2.json
+cmp grafana/provisioning/dashboards/openwrt-overview.json \
+    grafana-dashboard-exports/legacy/openwrt-overview.json
+cmp grafana/provisioning/dashboards/openwrt-network.json \
+    grafana-dashboard-exports/legacy/openwrt-network.json
+cmp grafana/provisioning/dashboards/openwrt-devices.json \
+    grafana-dashboard-exports/legacy/openwrt-devices.json
+cmp grafana/provisioning/dashboards/openwrt-logs.json \
+    grafana-dashboard-exports/legacy/openwrt-logs.json
 
 echo "== shell syntax =="
 sh -n openwrt/setup.sh openwrt/scripts/*.sh

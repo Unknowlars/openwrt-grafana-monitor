@@ -20,6 +20,9 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTS = [
     ROOT / "grafana-dashboard-exports/openwrt-operations-v2.json",
     ROOT / "grafana/provisioning/dashboards/openwrt-operations-v2.json",
+    # A stray copy also lives under legacy/ from before Operations had its own
+    # v2 family home; keep it in sync too rather than let it go stale again.
+    ROOT / "grafana-dashboard-exports/legacy/openwrt-operations-v2.json",
 ]
 
 PROM_DS = "${DS_PROMETHEUS}"

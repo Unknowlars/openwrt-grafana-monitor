@@ -1939,14 +1939,29 @@
       },
       {
         "name": "router",
-        "type": "custom",
-        "query": "openwrt",
+        "type": "query",
+        "label": "Router",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(node_load1{job=\"openwrt\"}, router)",
+        "query": {
+          "query": "label_values(node_load1{job=\"openwrt\"}, router)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
         "current": {
           "text": "openwrt",
           "value": "openwrt"
         },
         "hide": 0,
-        "label": "Router"
+        "includeAll": false,
+        "multi": false,
+        "options": [],
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
       },
       {
         "name": "wan_interface",

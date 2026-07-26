@@ -1,7 +1,7 @@
 {
-  "title": "OpenWRT \u2014 Devices",
+  "title": "OpenWrt \u2014 Devices",
   "uid": "openwrt-devices",
-  "description": "LAN device tracking via router_device_up: online/offline counts, NAT traffic per device, DHCP leases, WiFi AP throughput.",
+  "description": "LAN device tracking via ping-based presence, NAT traffic per device, DHCP leases, static reservations, and WiFi AP throughput.",
   "tags": [
     "openwrt",
     "devices"
@@ -453,8 +453,8 @@
     {
       "type": "bargauge",
       "id": 6,
-      "title": "Top Devices by NAT Traffic (bytes)",
-      "description": "Top 10 LAN clients by total NAT traffic bytes (current snapshot, not rate)",
+      "title": "Top Devices by Traffic Rate",
+      "description": "Top 10 LAN clients by current combined upload+download rate, from the traffic profile's nftables counters. Empty rather than wrong when the traffic profile is not installed. Replaces the former node_nat_traffic ranking, which had no cardinality bound.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -465,8 +465,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "topk(10, sum by(src)(node_nat_traffic{job=\"openwrt\", router=\"$router\"}))",
-          "legendFormat": "{{src}}",
+          "expr": "topk(10, sum by(device)(rate(openwrt_device_traffic_bytes_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval])))",
+          "legendFormat": "{{device}}",
           "refId": "A"
         }
       ],
@@ -486,15 +486,15 @@
               },
               {
                 "color": "blue",
-                "value": 10000
+                "value": 100000
               },
               {
                 "color": "purple",
-                "value": 100000
+                "value": 1000000
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "Bps"
         },
         "overrides": []
       },
@@ -548,7 +548,7 @@
       "type": "timeseries",
       "id": 11,
       "title": "WiFi AP Throughput",
-      "description": "Traffic on the configured WiFi AP interfaces.",
+      "description": "Traffic on the WiFi AP interfaces. 2.4 GHz (phy0-ap0) and 5 GHz (phy1-ap0).",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -560,7 +560,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", router=\"$router\", device=\"$wifi24_interface\"}[$__rate_interval])",
-          "legendFormat": "2.4 GHz RX",
+          "legendFormat": "2.4 GHz RX (phy0-ap0)",
           "refId": "A"
         },
         {
@@ -569,7 +569,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", router=\"$router\", device=\"$wifi24_interface\"}[$__rate_interval])",
-          "legendFormat": "2.4 GHz TX",
+          "legendFormat": "2.4 GHz TX (phy0-ap0)",
           "refId": "B"
         },
         {
@@ -578,7 +578,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "rate(node_network_receive_bytes_total{job=\"openwrt\", router=\"$router\", device=\"$wifi5_interface\"}[$__rate_interval])",
-          "legendFormat": "5 GHz RX",
+          "legendFormat": "5 GHz RX (phy1-ap0)",
           "refId": "C"
         },
         {
@@ -587,7 +587,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "rate(node_network_transmit_bytes_total{job=\"openwrt\", router=\"$router\", device=\"$wifi5_interface\"}[$__rate_interval])",
-          "legendFormat": "5 GHz TX",
+          "legendFormat": "5 GHz TX (phy1-ap0)",
           "refId": "D"
         }
       ],
@@ -659,485 +659,10 @@
       "pluginVersion": "12.4.0"
     },
     {
-      "type": "row",
-      "id": 12,
-      "title": "WiFi Clients",
-      "collapsed": false,
-      "panels": [],
-      "gridPos": {
-        "x": 0,
-        "y": 21,
-        "w": 24,
-        "h": 1
-      }
-    },
-    {
-      "type": "timeseries",
-      "id": 13,
-      "title": "WiFi Client Signal",
-      "description": "Per-client signal from hostapd_stations, falling back to wifi_stations when hostapd exposes no samples. Client MAC addresses are exposed as labels.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "hostapd_station_signal_dbm{job=\"openwrt\", router=\"$router\"} or (label_replace(label_replace(wifi_station_signal_dbm{job=\"openwrt\", router=\"$router\"}, \"station\", \"$1\", \"mac\", \"(.+)\"), \"vif\", \"$1\", \"ifname\", \"(.+)\") unless on(job, router) hostapd_station_signal_dbm{job=\"openwrt\", router=\"$router\"})",
-          "legendFormat": "{{station}} {{vif}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 15,
-            "gradientMode": "opacity",
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            },
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "mappings": [],
-          "unit": "dBm",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 22,
-        "w": 12,
-        "h": 8
-      },
-      "options": {
-        "legend": {
-          "calcs": [
-            "lastNotNull",
-            "min"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "transformations": [],
-      "pluginVersion": "12.4.0"
-    },
-    {
-      "type": "timeseries",
-      "id": 15,
-      "title": "WiFi Client RX/TX Rate",
-      "description": "Per-station rate in bits/sec. Byte counters are preferred when exposed; otherwise the panel falls back to sampled wifi_stations link rates. The station label is a client MAC address.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "rate(hostapd_station_receive_bytes_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]) * 8 or (label_replace(label_replace(rate(wifi_station_receive_bytes_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]) * 8, \"station\", \"$1\", \"mac\", \"(.+)\"), \"vif\", \"$1\", \"ifname\", \"(.+)\") unless on(job, router) rate(hostapd_station_receive_bytes_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]) * 8) or (label_replace(label_replace(wifi_station_receive_kilobits_per_second{job=\"openwrt\", router=\"$router\"} * 1000, \"station\", \"$1\", \"mac\", \"(.+)\"), \"vif\", \"$1\", \"ifname\", \"(.+)\") unless on(job, router) (rate(hostapd_station_receive_bytes_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]) * 8 or label_replace(label_replace(rate(wifi_station_receive_bytes_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]) * 8, \"station\", \"$1\", \"mac\", \"(.+)\"), \"vif\", \"$1\", \"ifname\", \"(.+)\")))",
-          "legendFormat": "RX {{station}} {{vif}}",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "rate(hostapd_station_transmit_bytes_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]) * 8 or (label_replace(label_replace(rate(wifi_station_transmit_bytes_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]) * 8, \"station\", \"$1\", \"mac\", \"(.+)\"), \"vif\", \"$1\", \"ifname\", \"(.+)\") unless on(job, router) rate(hostapd_station_transmit_bytes_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]) * 8) or (label_replace(label_replace(wifi_station_transmit_kilobits_per_second{job=\"openwrt\", router=\"$router\"} * 1000, \"station\", \"$1\", \"mac\", \"(.+)\"), \"vif\", \"$1\", \"ifname\", \"(.+)\") unless on(job, router) (rate(hostapd_station_transmit_bytes_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]) * 8 or label_replace(label_replace(rate(wifi_station_transmit_bytes_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]) * 8, \"station\", \"$1\", \"mac\", \"(.+)\"), \"vif\", \"$1\", \"ifname\", \"(.+)\")))",
-          "legendFormat": "TX {{station}} {{vif}}",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 15,
-            "gradientMode": "opacity",
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            },
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "mappings": [],
-          "unit": "bps",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 22,
-        "w": 12,
-        "h": 8
-      },
-      "options": {
-        "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "transformations": [],
-      "pluginVersion": "12.4.0"
-    },
-    {
-      "type": "table",
-      "id": 14,
-      "title": "Connected WiFi Stations",
-      "description": "Currently connected WiFi stations from hostapd_stations or wifi_stations. Availability depends on optional WiFi collectors.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "hostapd_station_signal_dbm{job=\"openwrt\", router=\"$router\"} or (label_replace(label_replace(wifi_station_signal_dbm{job=\"openwrt\", router=\"$router\"}, \"station\", \"$1\", \"mac\", \"(.+)\"), \"vif\", \"$1\", \"ifname\", \"(.+)\") unless on(job, router) hostapd_station_signal_dbm{job=\"openwrt\", router=\"$router\"})",
-          "legendFormat": "",
-          "refId": "A",
-          "format": "table",
-          "instant": true
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "filterable": true,
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 30,
-        "w": 8,
-        "h": 8
-      },
-      "options": {
-        "cellHeight": "sm",
-        "showHeader": true,
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
-          ],
-          "fields": ""
-        },
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "Signal dBm"
-          }
-        ]
-      },
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "job": true,
-              "router": true,
-              "mac": true,
-              "ifname": true
-            },
-            "renameByName": {
-              "station": "Station",
-              "ssid": "SSID",
-              "vif": "Interface",
-              "bssid": "BSSID",
-              "frequency": "Frequency",
-              "channel": "Channel",
-              "Value": "Signal dBm"
-            }
-          }
-        }
-      ],
-      "pluginVersion": "12.4.0"
-    },
-    {
-      "type": "table",
-      "id": 16,
-      "title": "WiFi Connected Duration",
-      "description": "Connected duration by station from hostapd_stations, falling back to this repo's iw-based textfile metric when needed.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "hostapd_station_connected_seconds_total{job=\"openwrt\", router=\"$router\"} or (openwrt_wifi_station_connected_seconds{job=\"openwrt\", router=\"$router\"} unless on(job, router) hostapd_station_connected_seconds_total{job=\"openwrt\", router=\"$router\"})",
-          "legendFormat": "",
-          "refId": "A",
-          "format": "table",
-          "instant": true
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "filterable": true,
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 30,
-        "w": 8,
-        "h": 8
-      },
-      "options": {
-        "cellHeight": "sm",
-        "showHeader": true,
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
-          ],
-          "fields": ""
-        },
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "Connected Seconds"
-          }
-        ]
-      },
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "job": true,
-              "router": true
-            },
-            "renameByName": {
-              "station": "Station",
-              "ssid": "SSID",
-              "vif": "Interface",
-              "frequency": "Frequency",
-              "channel": "Channel",
-              "Value": "Connected Seconds"
-            }
-          }
-        }
-      ],
-      "pluginVersion": "12.4.0"
-    },
-    {
-      "type": "table",
-      "id": 17,
-      "title": "WiFi Inactive Seconds",
-      "description": "Inactive seconds by station from hostapd_stations or wifi_stations. High values can indicate idle or poor-quality clients.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "hostapd_station_inactive_seconds{job=\"openwrt\", router=\"$router\"} or (label_replace(label_replace(wifi_station_inactive_milliseconds{job=\"openwrt\", router=\"$router\"} / 1000, \"station\", \"$1\", \"mac\", \"(.+)\"), \"vif\", \"$1\", \"ifname\", \"(.+)\") unless on(job, router) hostapd_station_inactive_seconds{job=\"openwrt\", router=\"$router\"})",
-          "legendFormat": "",
-          "refId": "A",
-          "format": "table",
-          "instant": true
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "filterable": true,
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 30,
-        "w": 8,
-        "h": 8
-      },
-      "options": {
-        "cellHeight": "sm",
-        "showHeader": true,
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
-          ],
-          "fields": ""
-        },
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "Inactive Seconds"
-          }
-        ]
-      },
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "job": true,
-              "router": true,
-              "mac": true,
-              "ifname": true
-            },
-            "renameByName": {
-              "station": "Station",
-              "ssid": "SSID",
-              "vif": "Interface",
-              "frequency": "Frequency",
-              "channel": "Channel",
-              "Value": "Inactive Seconds"
-            }
-          }
-        }
-      ],
-      "pluginVersion": "12.4.0"
-    },
-    {
       "type": "bargauge",
-      "id": 18,
-      "title": "WiFi Clients by AP",
-      "description": "Client counts grouped by AP. Hostapd frequency/channel labels are used when available; otherwise wifi_stations ifname is used.",
+      "id": 12,
+      "title": "WiFi Client Signal",
+      "description": "Current WiFi client signal strength per station. Stronger signals are closer to -40 dBm; weaker clients trend toward -80 dBm or below.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1148,8 +673,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "count by(job, router, vif, frequency, channel) (hostapd_station_signal_dbm{job=\"openwrt\", router=\"$router\"}) or (label_replace(wifi_stations{job=\"openwrt\", router=\"$router\"}, \"vif\", \"$1\", \"ifname\", \"(.+)\") unless on(job, router) hostapd_station_signal_dbm{job=\"openwrt\", router=\"$router\"})",
-          "legendFormat": "{{vif}} {{frequency}} MHz ch {{channel}}",
+          "expr": "sort_desc(wifi_station_signal_dbm{job=\"openwrt\", router=\"$router\"})",
+          "legendFormat": "{{mac}} {{ifname}}",
           "refId": "A"
         }
       ],
@@ -1159,33 +684,34 @@
             "mode": "thresholds"
           },
           "mappings": [],
-          "min": 0,
+          "min": -95,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": 0
+                "color": "red",
+                "value": -95
               },
               {
                 "color": "yellow",
-                "value": 0.6
+                "value": -75
               },
               {
-                "color": "red",
-                "value": 0.85
+                "color": "green",
+                "value": -60
               }
             ]
           },
-          "unit": "short"
+          "unit": "dBm",
+          "max": -30
         },
         "overrides": []
       },
       "gridPos": {
         "x": 0,
-        "y": 38,
-        "w": 24,
-        "h": 5
+        "y": 21,
+        "w": 12,
+        "h": 8
       },
       "options": {
         "displayMode": "gradient",
@@ -1216,9 +742,9 @@
     },
     {
       "type": "timeseries",
-      "id": 23,
-      "title": "WiFi Station Link Rate",
-      "description": "Per-station PHY link rates and expected throughput from wifi_stations. Empty when the optional collector is unavailable.",
+      "id": 13,
+      "title": "WiFi Client Aggregate Bitrate",
+      "description": "Aggregate current WiFi client receive and transmit bitrate per AP interface. Requires the wifi_stations collector.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1229,8 +755,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "label_replace(label_replace(wifi_station_receive_kilobits_per_second{job=\"openwrt\", router=\"$router\"} * 1000, \"station\", \"$1\", \"mac\", \"(.+)\"), \"vif\", \"$1\", \"ifname\", \"(.+)\")",
-          "legendFormat": "RX {{station}} {{vif}}",
+          "expr": "1000 * sum by(ifname) (wifi_station_receive_kilobits_per_second{job=\"openwrt\", router=\"$router\"})",
+          "legendFormat": "{{ifname}} RX",
           "refId": "A"
         },
         {
@@ -1238,18 +764,9 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "label_replace(label_replace(wifi_station_transmit_kilobits_per_second{job=\"openwrt\", router=\"$router\"} * 1000, \"station\", \"$1\", \"mac\", \"(.+)\"), \"vif\", \"$1\", \"ifname\", \"(.+)\")",
-          "legendFormat": "TX {{station}} {{vif}}",
+          "expr": "1000 * sum by(ifname) (wifi_station_transmit_kilobits_per_second{job=\"openwrt\", router=\"$router\"})",
+          "legendFormat": "{{ifname}} TX",
           "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "label_replace(label_replace(wifi_station_expected_throughput_kilobits_per_second{job=\"openwrt\", router=\"$router\"} * 1000, \"station\", \"$1\", \"mac\", \"(.+)\"), \"vif\", \"$1\", \"ifname\", \"(.+)\")",
-          "legendFormat": "Expected {{station}} {{vif}}",
-          "refId": "C"
         }
       ],
       "fieldConfig": {
@@ -1296,10 +813,10 @@
         "overrides": []
       },
       "gridPos": {
-        "x": 0,
-        "y": 43,
+        "x": 12,
+        "y": 21,
         "w": 12,
-        "h": 7
+        "h": 8
       },
       "options": {
         "legend": {
@@ -1320,10 +837,10 @@
       "pluginVersion": "12.4.0"
     },
     {
-      "type": "timeseries",
-      "id": 24,
-      "title": "WiFi Station Packet Rate",
-      "description": "Per-station WiFi packet rate from wifi_stations. Empty when the optional collector is unavailable.",
+      "type": "bargauge",
+      "id": 14,
+      "title": "Top WiFi Stations by Packet Rate",
+      "description": "Most active WiFi stations by combined packet rate. Uses the station RX and TX packet counters exposed by the wifi_stations collector.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1334,82 +851,148 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "label_replace(label_replace(rate(wifi_station_receive_packets_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]), \"station\", \"$1\", \"mac\", \"(.+)\"), \"vif\", \"$1\", \"ifname\", \"(.+)\")",
-          "legendFormat": "RX {{station}} {{vif}}",
+          "expr": "topk(10, rate(wifi_station_receive_packets_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]) + rate(wifi_station_transmit_packets_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]))",
+          "legendFormat": "{{mac}} {{ifname}}",
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "label_replace(label_replace(rate(wifi_station_transmit_packets_total{job=\"openwrt\", router=\"$router\"}[$__rate_interval]), \"station\", \"$1\", \"mac\", \"(.+)\"), \"vif\", \"$1\", \"ifname\", \"(.+)\")",
-          "legendFormat": "TX {{station}} {{vif}}",
-          "refId": "B"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 15,
-            "gradientMode": "opacity",
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            },
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
+            "mode": "thresholds"
           },
           "mappings": [],
-          "unit": "pps",
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green",
                 "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 500
               }
             ]
-          }
+          },
+          "unit": "pps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "namePlacement": "auto",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 300,
+        "minVizWidth": 8,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        }
+      },
+      "transformations": [],
+      "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "bargauge",
+      "id": 15,
+      "title": "Most Inactive WiFi Stations",
+      "description": "Current inactivity timer for each WiFi client. Larger values mean the station has been quiet for longer.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sort_desc(wifi_station_inactive_milliseconds{job=\"openwrt\", router=\"$router\"})",
+          "legendFormat": "{{mac}} {{ifname}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 5000
+              },
+              {
+                "color": "red",
+                "value": 30000
+              }
+            ]
+          },
+          "unit": "ms"
         },
         "overrides": []
       },
       "gridPos": {
         "x": 12,
-        "y": 43,
+        "y": 29,
         "w": 12,
-        "h": 7
+        "h": 8
       },
       "options": {
-        "legend": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "namePlacement": "auto",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 300,
+        "minVizWidth": 8,
+        "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
+          "fields": "",
+          "values": false
         },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
         }
       },
       "transformations": [],
@@ -1423,7 +1006,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 50,
+        "y": 37,
         "w": 24,
         "h": 1
       }
@@ -1554,7 +1137,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 51,
+        "y": 38,
         "w": 24,
         "h": 12
       },
@@ -1643,8 +1226,8 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 63,
-        "w": 24,
+        "y": 50,
+        "w": 12,
         "h": 10
       },
       "options": {
@@ -1679,6 +1262,90 @@
         }
       ],
       "pluginVersion": "12.4.0"
+    },
+    {
+      "type": "table",
+      "id": 23,
+      "title": "Static DHCP Reservations",
+      "description": "Static DHCP host reservations from UCI. Helpful for mapping device names to fixed IPs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "uci_dhcp_host{job=\"openwrt\", router=\"$router\"}",
+          "legendFormat": "",
+          "refId": "A",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 50,
+        "w": 12,
+        "h": 10
+      },
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "Value": true
+            },
+            "renameByName": {
+              "name": "Hostname",
+              "mac": "MAC Address",
+              "ip": "Reserved IP",
+              "dns": "Register DNS"
+            }
+          }
+        }
+      ],
+      "pluginVersion": "12.4.0"
     }
   ],
   "templating": {
@@ -1700,14 +1367,29 @@
       },
       {
         "name": "router",
-        "type": "custom",
-        "query": "openwrt",
+        "type": "query",
+        "label": "Router",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(node_load1{job=\"openwrt\"}, router)",
+        "query": {
+          "query": "label_values(node_load1{job=\"openwrt\"}, router)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
         "current": {
           "text": "openwrt",
           "value": "openwrt"
         },
         "hide": 0,
-        "label": "Router"
+        "includeAll": false,
+        "multi": false,
+        "options": [],
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
       },
       {
         "name": "wan_interface",

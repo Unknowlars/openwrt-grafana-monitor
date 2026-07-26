@@ -66,7 +66,11 @@ complete file inventory.
   MA-L registry. Needs network access; run it only when refreshing vendors.
 - `grafana/provisioning/dashboards/`: generated provisioned dashboard JSON.
 - `grafana-dashboard-exports/`: generated manual-import copies for v2 dashboards.
-- `grafana-dashboard-exports/legacy/`: preserved legacy dashboard exports.
+- `grafana-dashboard-exports/legacy/`: manual-import copies of the four classic
+  dashboards (`scripts/build_dashboards.py`), kept byte-identical to
+  `grafana/provisioning/dashboards/` the same way the v2 pairs are. Also holds
+  a duplicate copy of `openwrt-operations-v2.json` from before Operations had
+  its own v2 family home.
 
 Edit generators first. Inspect generated JSON only to verify output pairs,
 schema/import shape, or exact provisioning content.

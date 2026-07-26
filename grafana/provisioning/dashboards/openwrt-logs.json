@@ -779,14 +779,29 @@
       },
       {
         "name": "router",
-        "type": "custom",
-        "query": "openwrt",
+        "type": "query",
+        "label": "Router",
+        "datasource": {
+          "type": "loki",
+          "uid": "${DS_LOKI}"
+        },
+        "definition": "label_values({job=\"openwrt-syslog\"}, router)",
+        "query": {
+          "query": "label_values({job=\"openwrt-syslog\"}, router)",
+          "refId": "LokiVariableQueryEditor-VariableQuery"
+        },
         "current": {
           "text": "openwrt",
           "value": "openwrt"
         },
         "hide": 0,
-        "label": "Router"
+        "includeAll": false,
+        "multi": false,
+        "options": [],
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
       }
     ]
   }

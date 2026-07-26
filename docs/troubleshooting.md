@@ -156,6 +156,15 @@ do it on the **log line** (`|= "pid 1234"`) rather than as a label.
 - Check the time range — set it to "Last 1 hour" and wait a scrape interval (30s)
 - Verify datasource URLs in Grafana → Connections → Data Sources (should be `http://localhost:9090` etc.)
 - Run a test query in Explore: `node_load1` in Prometheus, `{job="openwrt-syslog"}` in Loki
+- Check the `Router` dashboard variable actually matches your `router` label. If
+  every panel is empty but Explore queries work, open the variable's dropdown —
+  it should list your real router names (e.g. `openwrt-main`), not just a
+  single fixed `openwrt` entry. If you imported an older copy of the classic
+  Overview/Network/Devices/Logs dashboards from before this was fixed, the
+  `router` variable was hardcoded to the literal value `openwrt`, so anyone
+  using a different `ROUTER_NAME` or multiple routers got no matches on any
+  panel. Re-import the dashboard from `grafana-dashboard-exports/` to pick up
+  the fix.
 
 ---
 
