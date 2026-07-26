@@ -142,11 +142,11 @@ MaxMind names: `GeoLite2-ASN.mmdb`, `GeoLite2-City.mmdb`, and
 `country.mmdb`, either rename them or add those paths to
 `akvorado/akvorado.yaml`.
 
-**On the homelab cluster, ASN and Country are live.** Roughly 40% of flows
-resolve to a destination AS and 30% to a destination country. That is not a
-fault and the dashboard says so explicitly: the remainder is overwhelmingly
-LAN-to-LAN traffic, and a private address has no AS or country by definition.
-The **External** tab's resolution tiles are therefore scoped to
+**ASN and Country enrichment work once the databases are in place**, but do
+not expect resolution anywhere close to 100% of flows. On an ordinary home
+network, most traffic is LAN-to-LAN, and a private address has no AS or
+country by definition — that share of flows will never resolve, and it is not
+a fault. The **External** tab's resolution tiles are therefore scoped to
 boundary-crossing flows, so they answer "of the traffic that actually left,
 how much did we identify" rather than "how much of the enrichment is broken".
 

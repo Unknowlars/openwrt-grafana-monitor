@@ -63,7 +63,7 @@ Go to **http://localhost:3000**
 
 Login: `admin` / value from `GRAFANA_ADMIN_PASSWORD` in `.env`
 
-The classic OpenWrt dashboards and the v2beta1 Operations dashboard load automatically from `grafana/provisioning/dashboards/`.
+The classic OpenWrt dashboards and the v2 Operations dashboard load automatically from `grafana/provisioning/dashboards/`.
 
 The Operations dashboard is also generated into `grafana-dashboard-exports/openwrt-operations-v2.json` as a manual-import copy.
 

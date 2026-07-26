@@ -8,16 +8,35 @@ The default stack uses [Grafana OTEL-LGTM](https://github.com/grafana/docker-ote
 and Grafana Alloy. Router-side collectors are POSIX shell and Lua 5.1 so they
 run on standard OpenWrt installations without a custom firmware image.
 
+## Contents
+
+- [What You Get](#what-you-get)
+- [Dashboard Preview](#dashboard-preview)
+- [Requirements](#requirements)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Optional Features](#optional-features)
+- [Architecture](#architecture)
+- [Repository Layout](#repository-layout)
+- [Documentation](#documentation)
+- [Local Validation](#local-validation)
+- [License](#license)
+
 ## What You Get
 
-- CPU, memory, temperature, filesystem, inode, service, and conntrack health
-- WAN latency, jitter, packet loss, DNS, IPv6, link, firewall, and SQM metrics
-- DHCP leases, device state, bounded client traffic, and WiFi client quality
-- Unified client identity with MAC, hostname, IP, network, radio, and SSID data
-- Multi-router scraping with router-scoped labels and topology reconciliation
-- Remote syslog in Loki, including DHCP, firewall, kernel, and service logs
-- Optional guarded SSH MCP sidecar for router diagnostics and maintenance
-- Optional Akvorado NetFlow stack for flow, application, destination, and ASN data
+- **Router health**: CPU, memory, temperature, filesystem/inode usage,
+  service status, and conntrack (NAT session) load
+- **Network quality**: WAN latency, jitter, packet loss, DNS, IPv6, link,
+  firewall counters, and SQM (bufferbloat) metrics
+- **Devices and WiFi**: DHCP leases, device presence, per-client traffic, and
+  WiFi client quality, unified under one MAC-based client identity
+- **Multi-router support**: scrape several routers/APs with per-router labels
+  and automatic topology mapping between them
+- **Logs**: router syslog (DHCP, firewall, kernel, service events) shipped to
+  Loki
+- **Optional add-ons**: a guarded SSH sidecar for router diagnostics, and an
+  Akvorado NetFlow stack for per-flow traffic detail (who talked to whom, on
+  which port)
 
 Nine dashboards are included in the default stack: Overview, Network, Devices,
 Logs, Operations, Clients, Advanced Monitoring, Topology, and Mission Control.
@@ -109,6 +128,7 @@ The main settings are in `.env`:
 | `SCRAPE_INTERVAL` | `30s` | Alloy scrape interval |
 | `SYSLOG_PORT` | `514` | Syslog listener port |
 | `GRAFANA_ADMIN_PASSWORD` | `changeme` | Grafana admin password |
+| `TZ` | `UTC` | Timezone for the otel-lgtm container |
 
 Optional MCP settings are documented in [SSH MCP sidecar](docs/mcp-ssh.md).
 Keep `.env`, SSH credentials, host keys, and router data out of Git.
