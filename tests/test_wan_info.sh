@@ -1,6 +1,6 @@
 #!/bin/sh
 # Fixture test for the WAN info helper. Stubs uci/wget so staging and the
-# textfile-dir cleanliness contract can be exercised offline (R9).
+# textfile-dir cleanliness contract can be exercised offline.
 #
 # After a run the textfile dir must contain exactly the .prom file and no
 # staged .prom.<pid> leftovers. A seeded pre-fix leftover must be swept.

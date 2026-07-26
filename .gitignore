@@ -11,12 +11,13 @@ graphify-out/
 .codex/
 .opencode/
 claude/
+known_hosts
+akvorado/geoip/*.mmdb
 __pycache__/
 tests/__pycache__/
 skills/
 grafana_docs/
 screenshot/
-docs/screenshots/*
 mcp_server/
 
 # Site-specific Akvorado interface metadata (router addresses + ifindexes).

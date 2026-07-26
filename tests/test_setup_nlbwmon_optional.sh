@@ -1,5 +1,5 @@
 #!/bin/sh
-# Static regression test for R8: setup.sh tolerates an unavailable nlbwmon
+# Static regression test: setup.sh tolerates an unavailable nlbwmon
 # package, so the later clients-profile install block must not unconditionally
 # copy into /usr/share/nlbwmon or run /etc/init.d/nlbwmon.
 

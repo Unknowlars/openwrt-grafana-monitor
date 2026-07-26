@@ -6,7 +6,7 @@
 -- This is a plain module, loaded with require() from topology.lua.
 --
 -- The data table is generated from the IEEE MA-L registry by
--- build_oui_table.py. Nothing here is hand-written, because a guessed OUI
+-- scripts/build_oui_table.py. Nothing here is hand-written, because a guessed OUI
 -- assignment renders a confidently wrong vendor on the dashboard.
 --
 -- Every lookup failure returns nil rather than a fallback string: the caller

@@ -1,6 +1,6 @@
 """
 OpenWrt Grafana Monitor — Dashboard Builder
-Generated from live metrics at http://192.168.0.1:9100/metrics
+Defaults target the metrics exposed by the bundled OpenWrt collectors.
 
 Confirmed metrics and interfaces:
   WAN interface:       wan
@@ -8,9 +8,8 @@ Confirmed metrics and interfaces:
   WiFi 5 GHz AP:      phy1-ap0
   Tailscale VPN:      tailscale0
   LAN bridge:         br-lan
-  Router model:       ASUS RT-AX53U (MediaTek MT7621)
 
-Key metrics confirmed live:
+Key metrics expected from the bundled collectors:
   node_cpu_seconds_total{cpu, mode}
   node_memory_*_bytes
   node_load1/5/15
@@ -47,6 +46,7 @@ Key metrics confirmed live:
 
 import json
 import copy
+from pathlib import Path
 
 DS = {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
 
@@ -1185,7 +1185,7 @@ def build_devices():
             "{{device}}", "A",
         )],
         x=12, y=y, w=12, h=8, unit="Bps",
-        desc="Top 10 LAN clients by current combined upload+download rate, from the traffic profile's nftables counters. Empty rather than wrong when the traffic profile is not installed. Replaces the former node_nat_traffic ranking, which had no cardinality bound (docs/client-topology-and-netflow-plan.md §0.3).",
+        desc="Top 10 LAN clients by current combined upload+download rate, from the traffic profile's nftables counters. Empty rather than wrong when the traffic profile is not installed. Replaces the former node_nat_traffic ranking, which had no cardinality bound.",
         thresholds=[
             {"color": "green",  "value": 0},
             {"color": "blue",   "value": 100000},
@@ -1570,7 +1570,8 @@ def build_logs():
 # BUILD ALL DASHBOARDS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-OUTDIR = "grafana/provisioning/dashboards"
+ROOT = Path(__file__).resolve().parents[1]
+OUTDIR = ROOT / "grafana/provisioning/dashboards"
 
 dashboards = [
     ("openwrt-overview.json", build_overview()),
@@ -1580,7 +1581,7 @@ dashboards = [
 ]
 
 for filename, dash in dashboards:
-    path = f"{OUTDIR}/{filename}"
+    path = OUTDIR / filename
     with open(path, "w") as f:
         json.dump(dash, f, indent=2)
     size_kb = len(json.dumps(dash)) // 1024

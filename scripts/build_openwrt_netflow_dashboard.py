@@ -57,7 +57,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from build_openwrt_operations_dashboard import (
+from .build_openwrt_operations_dashboard import (
     AVAILABILITY_MAPPINGS,
     BLUE,
     GRAY,
@@ -90,9 +90,10 @@ from build_openwrt_operations_dashboard import (
 )
 
 
+ROOT = Path(__file__).resolve().parents[1]
 OUTS = [
-    Path("grafana-dashboard-exports/openwrt-netflow-v2.json"),
-    Path("grafana/provisioning/dashboards/openwrt-netflow-v2.json"),
+    ROOT / "grafana-dashboard-exports/openwrt-netflow-v2.json",
+    ROOT / "grafana/provisioning/dashboards/openwrt-netflow-v2.json",
 ]
 
 PROM_DS = "${DS_PROMETHEUS}"
@@ -133,7 +134,7 @@ CROSSES_BOUNDARY = "(SrcNetRole != 'internal' OR DstNetRole != 'internal')"
 SRC_COUNTRY = "replaceRegexpAll(toString(SrcCountry), '\\\\x00', '')"
 DST_COUNTRY = "replaceRegexpAll(toString(DstCountry), '\\\\x00', '')"
 
-# EType is the ethertype: 0x0800 IPv4, 0x86DD IPv6. Verified live -- both are
+# EType is the ethertype: 0x0800 IPv4, 0x86DD IPv6. Both are
 # populated, roughly 91%/9% of flows.
 IPV6 = "EType = 34525"
 
@@ -160,8 +161,8 @@ def ip_display(column: str) -> str:
 # unanswered-SYN test comes first because it is the one shape that is
 # interesting precisely when nothing else was ever set.
 #
-# Live distribution over 3h (2026-07-26): completed 26537, RST 13924, still
-# open 4660, data-only 3642, closed-without-handshake 1810, SYN-only 60.
+# TCP shape categories are kept explicit so operators can distinguish completed,
+# reset, still-open, and unanswered flows.
 TCP_SHAPE = (
     "multiIf("
     "bitAnd(TCPFlags, 2) != 0 AND bitAnd(TCPFlags, 16) = 0, 'SYN, never answered', "
@@ -230,7 +231,7 @@ def pivot_columns(label_expr: str, names: list[str], agg: str) -> str:
     (time, label, value) into one series per label. It returns a single series
     named after the value column, so a three-way direction split renders as
     one line called "bps" -- wrong, and wrong in a way that looks like a
-    working panel. Verified live against Grafana 13 on 2026-07-26.
+    working panel. Validate it against the Grafana version used by the operator.
 
     Two fixes exist. For a dynamic label set, `partitionByValues` splits the
     frame browser-side but names the series "<value column> <label>". For a
@@ -379,7 +380,7 @@ def ch_geomap(pid: int, title: str, sql: str, lookup_field: str, desc: str) -> t
     fails: the transform errors with "missing frame in gazetteer" (browser
     console only) and the panel renders a bare basemap with **no panel-level
     error at all**. All three transform-based variants were tried against a
-    live Grafana 13 on 2026-07-26 -- `gazetteer` as a path, as a label, and
+    the bundled Grafana -- `gazetteer` as a path, as a label, and
     paired with an explicit `coords` location -- and every one rendered an
     empty map. The geomap's built-in lookup is the mechanism that works, and
     it needs no transformation.
@@ -1038,7 +1039,7 @@ def build_dashboard() -> dict[str, Any]:
             "Only flows with a resolved destination AS are included, and only the 60 heaviest "
             "host-to-network pairs in the range -- Grafana hides nodes past 200 behind cluster "
             "markers, so the cap keeps the graph readable rather than truthful-but-unusable. "
-            "Verified live: 60 pairs resolve to well under Grafana's cap.\n\n"
+            "The dashboard keeps the grouped label set bounded for Grafana.\n\n"
             "This is the same relationship the AS Conversation Matrix below states as a table. The "
             "table is what you sort and filter; this is what makes a device with an unexpected "
             "number of network relationships obvious at a glance."
@@ -1067,7 +1068,7 @@ def build_dashboard() -> dict[str, Any]:
     #   - ICMP type/code decoding. The `icmp` dictionary exists in ClickHouse
     #     and maps (proto, type, code) to names, but softflowd never populates
     #     the type/code -- DstPort is a constant 0 on every Proto=1 and
-    #     Proto=58 flow in this deployment (verified live). Decoding it would
+    #     Proto=58 flow. Decoding it would
     #     silently render every ICMP flow as "echo-reply", which is the
     #     dictionary's response to (1,0,0), not a fact about the traffic.
     #     Volume over time is what the data actually supports.
@@ -1388,8 +1389,7 @@ def build_dashboard() -> dict[str, Any]:
         # "thresholds": with threshold colouring Grafana labels each band by
         # its threshold bracket ("< 1", "1+") and the mapped state names are
         # discarded. The mappings above carry their own colours, so
-        # palette-classic never actually assigns one. Verified live on
-        # Grafana 13, 2026-07-26.
+        # palette-classic never actually assigns one.
         color_mode="palette-classic", thresholds_key="ok_bad"), 0, 39, 24, 8)
 
     # The one ClickHouse panel on an otherwise all-Prometheus tab, and it

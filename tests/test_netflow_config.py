@@ -226,7 +226,7 @@ class TestNetflowDashboard(unittest.TestCase):
         import sys
 
         sys.path.insert(0, str(ROOT))
-        import build_openwrt_netflow_dashboard as generator
+        import scripts.build_openwrt_netflow_dashboard as generator
 
         cls.generator = generator
         cls.spec = generator.build_dashboard()["spec"]
@@ -260,12 +260,12 @@ class TestNetflowDashboard(unittest.TestCase):
     def test_generated_copies_match_the_generator(self):
         rendered = self.generator.stable_json(self.generator.build_dashboard())
         for out in self.generator.OUTS:
-            path = ROOT / out
+            path = Path(out)
             self.assertTrue(path.exists(), f"{out} was never generated")
             self.assertEqual(
                 rendered,
                 path.read_text(encoding="utf-8"),
-                f"{out} is stale; rerun build_openwrt_netflow_dashboard.py",
+                f"{out} is stale; rerun python3 -m scripts.build_openwrt_netflow_dashboard",
             )
 
     def test_no_panel_queries_a_column_that_is_empty_here(self):
@@ -513,7 +513,7 @@ class TestNetflowDashboard(unittest.TestCase):
         #  - A continuous-* scheme maps small values to the dark end of the
         #    ramp. On the dark theme the tail of a ranking becomes dark blue
         #    on dark grey and, because valueMode is "color", the NUMBERS go
-        #    with it. Observed 2026-07-26: rows 6-12 of a 12-row top-N had no
+        #    with it. Rows after the leading top-N entries must not be
         #    legible value at all.
         #  - Graded green/yellow/red steps on a size ranking paint the biggest
         #    item red as though being biggest were a fault.

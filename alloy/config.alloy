@@ -39,14 +39,13 @@ prometheus.scrape "openwrt" {
 //
 // node_nat_traffic (from the required nat_traffic collector) is a full
 // src x dst cross product over the conntrack table with no bound of any
-// kind — see docs/client-topology-and-netflow-plan.md §0.3. It cannot be
+// kind. It cannot be
 // collapsed to a bounded per-src rollup at this layer: Alloy's relabel
 // actions operate per-sample, not as an aggregation, so dropping the `dest`
 // label would make same-timestamp samples for a single src collide, and
-// Prometheus silently keeps only the first and drops the rest — measured
-// against the live router on 2026-07-22, 11 of 19 active src had more than
-// one non-zero dest, so this would have silently undercounted the majority
-// of clients. Dropping the metric outright is the only correct fix at this
+// Prometheus silently keeps only the first and drops the rest, which can
+// silently undercount clients. Dropping the metric outright is the only
+// correct fix at this
 // layer; the Devices/Client-Insights dashboards use the traffic profile's
 // per-device nftables counters (openwrt_device_traffic_bytes_total) instead.
 prometheus.relabel "openwrt_bound_cardinality" {
@@ -89,8 +88,7 @@ prometheus.relabel "openwrt_bound_cardinality" {
   // operations dashboard's WiFi Client Detail panel label_replaces
   // openwrt_wifi_station_connected_seconds{station=...} into a `mac` field and
   // joins it against wifi_station_signal_dbm; lowercasing one side only would
-  // silently empty that join. Verified live 2026-07-25: both labels arrive
-  // uppercase.
+  // silently empty that join. Both labels must be normalised together.
   rule {
     source_labels = ["station"]
     target_label  = "station"
@@ -127,8 +125,8 @@ prometheus.remote_write "lgtm" {
 //
 // The label *names* below keep the `message_` prefix the wildcard produced,
 // because that is what the dashboards already select on — `message_severity`
-// and `message_app_name` appear in build_dashboards.py,
-// build_openwrt_mission_control.py, build_openwrt_operations_dashboard.py and
+// and `message_app_name` appear in the dashboard generators under `scripts/`
+// and
 // the generated provisioning JSON. Renaming them to bare `severity`/`app_name`
 // would silently return no data in every one of those panels.
 //
@@ -160,7 +158,7 @@ loki.relabel "openwrt_syslog" {
   }
 
   // Prefer the sending device's own hostname over the single ROUTER_NAME
-  // static default below, so logs from a second AP (M2, ROUTER_TARGETS)
+  // static default below, so logs from a second AP in ROUTER_TARGETS
   // label correctly instead of all being attributed to the first router.
   // regex requires a non-empty match so a listener without a hostname field
   // falls back to the static `router` label set below rather than being

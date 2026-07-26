@@ -52,13 +52,13 @@ grep -q 'openwrt_client_connections_total{mac="aa:bb:cc:dd:ee:ff",service="https
 grep -q 'openwrt_client_bytes_total{mac="11:22:33:44:55:66",direction="out",service="other"} 9' "$OUT" || { echo "FAIL: unknown protocol was not bucketed as other"; exit 1; }
 # A layer7 name outside the trimmed whitelist (e.g. nlbwmon's own built-in
 # BitTorrent classification, never in our ~10-bucket protocol file) must
-# bucket to "other", not abort the whole scrape -- see plan §3.3/M6 live-audit
-# note, 2026-07-23: this exact failure mode zeroed all traffic on a live router.
+# bucket to "other", not abort the whole scrape. This failure must never zero
+# all traffic for a router.
 grep -q 'openwrt_client_bytes_total{mac="77:88:99:aa:bb:cc",direction="in",service="other"} 500' "$OUT" || { echo "FAIL: unmapped protocol name did not bucket as other"; exit 1; }
 grep -q 'openwrt_client_traffic_collector_available 1' "$OUT" || { echo "FAIL: unmapped protocol name incorrectly failed the whole scrape closed"; exit 1; }
 
 # A legitimately empty result set (fresh install, accounting-period rollover,
-# just after `nlbw -c commit`) must still write output. Before R3 the awk had no
+# just after `nlbw -c commit`) must still write output. The awk must not
 # input file, the script aborted under `set -e` before the mv, and the previous
 # period's .prom stayed in place still reporting available 1 -- stale data
 # indistinguishable from healthy data. The honest result is available 1 with no

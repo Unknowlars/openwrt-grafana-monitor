@@ -99,7 +99,7 @@ so pcap generally still sees them.
 Every captured packet is copied to userspace and hashed into a flow table. On a
 low-end MIPS/ARM router at line rate this can be the dominant cost. This has
 **not** been measured on the routers in this deployment — the measurement spike
-(M10 in `client-topology-and-netflow-plan.md` §12.2) has never been run.
+has not been benchmarked on the supported router hardware.
 
 Measure before and after on the gateway: `load`, `openwrt_softnet_*` drops, and
 an `iperf3` run. Abort if CPU cost exceeds a few percent of a core or `softnet`
@@ -354,7 +354,7 @@ curl -s http://127.0.0.1:8081/api/v0/outlet/metrics | grep -i error
 
 Then open **OpenWrt - NetFlow** in Grafana and check the Pipeline Health tab
 first: exporter running, flow data complete, no capture drops, no forced expiry.
-The dashboard is generated from `build_openwrt_netflow_dashboard.py` and has
+The dashboard is generated from `scripts/build_openwrt_netflow_dashboard.py` and has
 six tabs:
 
 - **Flow Overview**: hero band (flows, traffic, peak bitrate, external share,
@@ -475,15 +475,12 @@ appends its schema version to the configured topic name.
 - `akvorado/clickhouse/` — ClickHouse server config (log TTLs, Prometheus endpoint).
 - `openwrt/netflow/softflowd.config` — UCI template rendered by `setup.sh`.
 - `openwrt/scripts/openwrt-monitor-netflow-health.sh` — exporter health collector.
-- `build_openwrt_netflow_dashboard.py` — dashboard source. Edit this, never the
+- `scripts/build_openwrt_netflow_dashboard.py` — dashboard source. Edit this, never the
   generated JSON.
 
 ## Relationship to the earlier design
 
-`docs/client-topology-and-netflow-plan.md` §3.6 and milestone M11 designed a
-NetFlow tier around **flowlogs-pipeline writing into Loki**. That collector
-choice is superseded by Akvorado, which gives a real flow store and a queryable
-schema instead of log lines. The router-side analysis in §3.5 (softflowd as the
-only packaged exporter, the self-capture feedback loop, the UCI init script's
-limits) still stands and is implemented here. The M10 CPU gate still applies
-and has still not been run.
+The original flow-logging approach was replaced by Akvorado, which provides a
+real flow store and queryable schema instead of log lines. The router-side
+softflowd limitations and CPU benchmark gate still apply and are documented
+above.

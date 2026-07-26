@@ -2656,7 +2656,7 @@
         "spec": {
           "id": 201,
           "title": "Traffic Accounting State",
-          "description": "Not collected means nlbwmon is unavailable. Accounting unreliable means software or hardware flow offload is enabled, so all M6 traffic panels suppress values rather than showing wrong zeros.",
+          "description": "Not collected means nlbwmon is unavailable. Accounting unreliable means software or hardware flow offload is enabled, so traffic panels suppress values rather than showing wrong zeros.",
           "links": [],
           "data": {
             "kind": "QueryGroup",

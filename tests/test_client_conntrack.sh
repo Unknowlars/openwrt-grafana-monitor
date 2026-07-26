@@ -44,7 +44,7 @@ json_select() {
       ;;
     *)
       # Match real jshn: fail closed when the key/index is absent and do not
-      # leave the cursor on a missing path. Needed so R10 can exercise a
+      # leave the cursor on a missing path. This exercises a
       # missing interface `config` object.
       new_stack="$JSHN_STACK|$JSHN_PATH"
       case "$1" in
@@ -120,10 +120,10 @@ grep -q 'openwrt_wifi_assoc_events_total{ap=".*",ssid="Home-5G",event="connected
 grep -q 'openwrt_wifi_assoc_events_total{ap=".*",ssid="Guest-5G",event="disconnected"} 1' "$OUT" || { echo 'FAIL: disconnected aggregate missing'; exit 1; }
 ! grep -q 'openwrt_wifi_assoc_events_total{[^}]*mac=' "$OUT" || { echo 'FAIL: roaming counter must not have mac'; exit 1; }
 
-# R6: wlan3 in the shared tests/fixtures/wireless_status.json fixture is named
+# wlan3 in the shared tests/fixtures/wireless_status.json fixture is named
 # `Lab Net"5G` (a space and a double quote). This expected value must stay
 # identical to EXPECTED_SANITIZED_SSID in tests/test_client_inventory.lua --
-# that pairing is what keeps the shell and Lua sanitizing converged. Before R6
+# that pairing is what keeps the shell and Lua sanitizing converged. The
 # the Lua collectors emitted the raw SSID here, so one physical SSID appeared
 # under two label values and joins between the two metric families returned
 # nothing.
@@ -136,7 +136,7 @@ PATH="$WORK/bin:$PATH" OPENWRT_MONITOR_TEXTFILE_DIR="$WORK/out" \
   sh "$ROOT/openwrt/scripts/openwrt-monitor-client-conntrack.sh"
 grep -q 'openwrt_wifi_assoc_events_total{ap=".*",ssid="Home-5G",event="connected"} 1' "$OUT" || { echo 'FAIL: log-ring event was counted twice'; exit 1; }
 
-# R7: cap conntrack series to CLIENT_CONNTRACK_MAX, keeping the busiest clients
+# Cap conntrack series to CLIENT_CONNTRACK_MAX, keeping the busiest clients
 # rather than an arbitrary awk hash-order subset of getHostHints.
 CLIENT_CONNTRACK_MAX=3
 host_count=$((CLIENT_CONNTRACK_MAX + 10))
@@ -186,7 +186,7 @@ grep -q 'openwrt_client_conntrack_entries{mac="02:00:00:00:00:03"} 3' "$OUT" || 
 ! grep -q 'openwrt_client_conntrack_entries{mac="02:00:00:00:00:04"}' "$OUT" || { echo 'FAIL: lower-count client survived cap ahead of a busier client'; exit 1; }
 ! grep -q 'openwrt_client_conntrack_entries{mac="02:00:00:00:00:0d"}' "$OUT" || { echo 'FAIL: idle tail survived cap'; exit 1; }
 
-# R10: an interface entry without `config` must not inherit the previous
+# An interface entry without `config` must not inherit the previous
 # interface's SSID. Without the per-iteration reset, wlan-stale would map to
 # Home-5G and both roam events would count under that SSID.
 cat > "$WORK/wireless_missing_config.json" <<'EOF'
@@ -217,7 +217,7 @@ EOF
 chmod +x "$WORK/bin/logread"
 cp "$ROOT/tests/fixtures/gethosthints.json" "$WORK/gethosthints.json"
 PATH="$WORK/bin:$PATH" OPENWRT_MONITOR_TEXTFILE_DIR="$WORK/out" \
-  OPENWRT_MONITOR_ASSOC_EVENTS_STATE="$WORK/assoc-events-r10" \
+  OPENWRT_MONITOR_ASSOC_EVENTS_STATE="$WORK/assoc-events-missing-config" \
   OPENWRT_MONITOR_JSHN_PATH="$WORK/libubox/jshn.sh" \
   sh "$ROOT/openwrt/scripts/openwrt-monitor-client-conntrack.sh"
 grep -q 'openwrt_wifi_assoc_events_total{ap=".*",ssid="Home-5G",event="connected"} 1' "$OUT" \

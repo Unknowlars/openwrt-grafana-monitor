@@ -4,11 +4,9 @@
 The generated JSON files are artifacts. This script is the source of truth.
 It writes both the manual import export and the provisioned dashboard copy.
 
-See docs/client-topology-and-netflow-plan.md §2.2-§2.4 and §11 (M5) for the
-design. The node graph panel is driven directly by the Prometheus datasource
+The node graph panel is driven directly by the Prometheus datasource
 using instant table queries with refId="nodes"/"edges" -- no Infinity plugin,
-no GF_INSTALL_PLUGINS, confirmed viable against the bundled Grafana by the M4
-spike.
+no GF_INSTALL_PLUGINS, confirmed viable against the bundled Grafana setup.
 
 MULTI-ROUTER RECONCILIATION
 
@@ -27,13 +25,13 @@ network:
      `openwrt_topology_infra_mac` lists each box's own interface MACs; the
      matching client node *and every edge pointing at it* are suppressed.
      Dropping the node alone would leave a dangling target, which crashes the
-     panel rather than rendering incompletely (plan §2.1).
+     panel rather than rendering incompletely.
   3. Resolve the wired-vs-wifi conflict. The gateway cannot see another AP's
      association list, so it classifies that AP's wireless clients as wired
      and emits a `lan:` edge for them. Whenever some AP claims the same MAC
      with an `assoc:` edge, the gateway's `lan:` edge is dropped.
 
-Node-value choice (the "M4 nuance"): the transformation pipeline applies a
+Node-value choice: the transformation pipeline applies a
 single `organize` rename uniformly to every frame it touches by field name,
 not by refId, so there is no way to rename `Value` -> `mainstat` on the edges
 frame only while leaving the nodes frame's `Value` field alone within one
@@ -58,7 +56,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from build_openwrt_operations_dashboard import (
+from .build_openwrt_operations_dashboard import (
     AVAILABILITY_MAPPINGS,
     GRAY,
     GREEN,
@@ -79,9 +77,10 @@ from build_openwrt_operations_dashboard import (
 )
 
 
+ROOT = Path(__file__).resolve().parents[1]
 OUTS = [
-    Path("grafana-dashboard-exports/openwrt-topology-v2.json"),
-    Path("grafana/provisioning/dashboards/openwrt-topology-v2.json"),
+    ROOT / "grafana-dashboard-exports/openwrt-topology-v2.json",
+    ROOT / "grafana/provisioning/dashboards/openwrt-topology-v2.json",
 ]
 
 PROM_DS = "${DS_PROMETHEUS}"
@@ -425,9 +424,7 @@ def validate_dashboard(dash: dict[str, Any]) -> None:
             defaults = panel_spec["vizConfig"]["spec"]["fieldConfig"]["defaults"]
             assert "unit" in defaults, f"missing unit: {key} {panel_spec['title']}"
             assert defaults["unit"] != "short", f"generic short unit: {key} {panel_spec['title']}"
-        # noValue belongs in fieldConfig.defaults; under options it is silently
-        # ignored by Grafana. Regression check for the 2026-07-23 fix -- see
-        # docs/client-topology-and-netflow-plan.md gap #4.
+        # noValue belongs in fieldConfig.defaults, where Grafana reads it.
         assert "noValue" not in panel_spec["vizConfig"]["spec"]["options"], f"noValue in panel options: {key}"
         assert "pluginVersion" not in json.dumps(element)
         if viz == "nodeGraph":

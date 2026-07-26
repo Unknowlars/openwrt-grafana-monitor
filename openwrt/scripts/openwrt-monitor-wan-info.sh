@@ -13,8 +13,8 @@ metric_file="$outdir/openwrt_wan_info.prom"
 # Stage outside $outdir (same filesystem on OpenWrt: /var -> /tmp) and mv
 # atomically into place, matching every sibling helper.
 #
-# Note (2026-07-25 live measurement on R4's sibling defect): the textfile
-# collector globs *.prom only, so a staged .prom.<pid> is not double-scraped.
+# The textfile collector globs *.prom only, so a staged .prom.<pid> is not
+# double-scraped.
 # The harm is leftover-file accumulation after a crash/reboot/kill with no trap
 # and no sweep.
 metric_tmp="/tmp/.openwrt-monitor-openwrt_wan_info.$$"

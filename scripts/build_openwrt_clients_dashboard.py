@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from build_openwrt_operations_dashboard import (
+from .build_openwrt_operations_dashboard import (
     AVAILABILITY_MAPPINGS,
     BLUE,
     GREEN,
@@ -44,9 +44,10 @@ from build_openwrt_operations_dashboard import (
 )
 
 
+ROOT = Path(__file__).resolve().parents[1]
 OUTS = [
-    Path("grafana-dashboard-exports/openwrt-clients-v2.json"),
-    Path("grafana/provisioning/dashboards/openwrt-clients-v2.json"),
+    ROOT / "grafana-dashboard-exports/openwrt-clients-v2.json",
+    ROOT / "grafana/provisioning/dashboards/openwrt-clients-v2.json",
 ]
 
 PROM_DS = "${DS_PROMETHEUS}"
@@ -291,7 +292,7 @@ def build_dashboard() -> dict[str, Any]:
 
     traffic: list[dict[str, Any]] = []
     b.add(traffic, text(200, "", "## Per-client traffic\nnlbwmon accounts traffic by MAC and a deliberately small service set. The counters reset at nlbwmon accounting-period rollover, which `rate()` and `increase()` handle normally. Flow offload is a hard correctness guard: when enabled, all traffic values below are suppressed and the accounting state is red."), 0, 0, 24, 4)
-    b.add(traffic, stat(201, "Traffic Accounting State", TRAFFIC_ACCOUNTING_STATE, "none", "Not collected means nlbwmon is unavailable. Accounting unreliable means software or hardware flow offload is enabled, so all M6 traffic panels suppress values rather than showing wrong zeros.", mappings=TRAFFIC_STATE_MAPPINGS, thresholds_key="ok_bad", color_mode="value"), 0, 4, 8, 4)
+    b.add(traffic, stat(201, "Traffic Accounting State", TRAFFIC_ACCOUNTING_STATE, "none", "Not collected means nlbwmon is unavailable. Accounting unreliable means software or hardware flow offload is enabled, so traffic panels suppress values rather than showing wrong zeros.", mappings=TRAFFIC_STATE_MAPPINGS, thresholds_key="ok_bad", color_mode="value"), 0, 4, 8, 4)
     b.add(traffic, stat(202, "Traffic Collector", TRAFFIC_AVAILABLE, "none", "Availability of the nlbwmon textfile collector. A failed schema or unsupported service is fail-closed.", mappings=AVAILABILITY_MAPPINGS, thresholds_key="unavailable", color_mode="value"), 8, 4, 8, 4)
     b.add(traffic, stat(203, "Flow Offload", f'max(openwrt_flow_offload_enabled{{{PROM_FILTER}}}) or vector(0)', "none", "Software or hardware flow offload makes conntrack-derived nlbwmon accounting unreliable.", mappings=OFFLOAD_MAPPINGS, thresholds_key="ok_bad", color_mode="value"), 16, 4, 8, 4)
     b.add(traffic, timeseries(205, "Inbound by Client", [prom_query(f'topk(12, {TRAFFIC_IN})', "{{mac}}", "A")], "Bps", "Per-MAC nlbwmon inbound rate. Suppressed when flow offload is enabled.", overrides=[field_override("Inbound", [{"id": "color", "value": {"mode": "fixed", "fixedColor": GREEN}}])]), 0, 8, 12, 8)
@@ -427,8 +428,8 @@ def validate_dashboard(dash: dict[str, Any]) -> None:
             assert "unit" in defaults, f"missing unit: {key} {panel_spec['title']}"
             assert defaults["unit"] != "short", f"generic short unit: {key} {panel_spec['title']}"
         # noValue belongs in fieldConfig.defaults; under options it is silently
-        # ignored by Grafana. Regression check for the 2026-07-23 fix -- see
-        # docs/client-topology-and-netflow-plan.md gap #4.
+        # ignored by Grafana. Keep noValue in field defaults, where Grafana
+        # reads it.
         assert "noValue" not in panel_spec["vizConfig"]["spec"]["options"], f"noValue in panel options: {key}"
         assert "pluginVersion" not in json.dumps(element)
     assert len(panel_ids) == len(set(panel_ids)), "duplicate panel ids"

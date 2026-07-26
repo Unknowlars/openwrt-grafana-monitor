@@ -21,7 +21,7 @@ local WIRELESS_STATUS = load_fixture(root .. "/tests/fixtures/wireless_status.js
 local ASSOCLIST = load_fixture(root .. "/tests/fixtures/assoclist.json")
 
 -- The router's own interface addresses, as `cat /sys/class/net/*/address`
--- would report them -- confirmed live (2026-07-22) that getHostHints
+-- would report them. The fixture covers the getHostHints
 -- includes the router's own br-lan identity as if it were a client, which
 -- router_own_macs() in the collector is meant to filter back out.
 local ROUTER_OWN_MAC = "60:cf:84:f2:a4:30"
@@ -85,8 +85,8 @@ package.preload["uci"] = function()
       return {
         foreach = function(_, config, sectiontype, callback)
           if config == "firewall" and sectiontype == "defaults" then
-            -- Simulates the live-audit finding (2026-07-23): the firewall
-            -- defaults read intermittently fails. Each call consumes one
+            -- Simulates an intermittent firewall-defaults read failure. Each
+            -- call consumes one
             -- simulated failure so tests can exercise both "fails within the
             -- retry budget, then succeeds" and "fails every time".
             if MOCK.firewall_cursor_fail_remaining > 0 then
@@ -269,7 +269,7 @@ check(full["openwrt_flow_offload_read_success"][1].value == 1,
 check(full["openwrt_client_inventory_truncated"][1].value == 0, "not truncated under the default cap")
 
 -- 1b. Firewall UCI read fails twice then succeeds: the retry added in the
---     2026-07-23 live-audit fix must recover within the same scrape, not
+--     retry behavior must recover within the same scrape, not
 --     just on a later one. -------------------------------------------------
 reset_mocks()
 MOCK.firewall_cursor_fail_remaining = 2
@@ -330,7 +330,7 @@ table.sort(capped_macs)
 check(capped_macs[1] == "2a:11:22:33:44:55", "capped set is the lowest macs in sorted order")
 
 -- 5. SSID label values are sanitized, and identically to the shell path. ------
--- R6: this collector used to emit the raw ubus SSID while
+-- The collector must emit the sanitised SSID while
 -- openwrt-monitor-client-conntrack.sh emitted a sanitized one, so one physical
 -- SSID appeared under two different label values and any join between
 -- openwrt_client_info and the assoc-event metrics returned nothing. A raw `"`

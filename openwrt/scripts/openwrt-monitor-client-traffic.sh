@@ -80,9 +80,9 @@ service_bucket() {
     # Any protocol name outside the trimmed set (nlbwmon's built-in
     # classifications aren't fully removed by trimming its protocol file, and
     # this list is intentionally a small subset of the ~45 shipped buckets --
-    # see plan §3.3) buckets to "other" rather than failing the record. A
+    # buckets to "other" rather than failing the record. A
     # single unrecognized bucket must never zero out an entire router's
-    # traffic accounting -- see plan §3.3/M6 live-audit note, 2026-07-23.
+    # traffic accounting.
     *) printf '%s\n' other ;;
   esac
 }

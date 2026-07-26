@@ -3,8 +3,8 @@
 -- identity/association data, see topology.lua's header comment), in both of
 -- the deployment roles the collector supports.
 --
--- The standing acceptance criteria (plan §2.1, M5) are checked in every
--- scenario: every edge source/target must resolve to a node id emitted in the
+-- The standing acceptance criteria are checked in every scenario: every edge
+-- source/target must resolve to a node id emitted in the
 -- same scrape, and every arc__* group must sum to 1. A dangling edge endpoint
 -- crashes Grafana's node graph panel rather than rendering incompletely, so
 -- the disappearing-client and role-transition cases are exercised explicitly.

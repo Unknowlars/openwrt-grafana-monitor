@@ -1,5 +1,5 @@
 #!/bin/sh
-# Test for R2: setup.sh must not abort on the legacy-crontab upgrade path.
+# setup.sh must not abort on the legacy-crontab upgrade path.
 #
 # There is no general test harness for setup.sh (it mutates a live router), so
 # this extracts the legacy-crontab removal block straight out of the real
@@ -43,7 +43,7 @@ grep -q '^  mv "\$CRONTAB_FILE.clean" "\$CRONTAB_FILE"$' "$BLOCK" || {
 # in exactly the case this fix is about, leaving the legacy lines in place and
 # reintroducing the duplicate-series problem.
 ! grep -q '\[ -s "\$CRONTAB_FILE.clean" \]' "$BLOCK" || {
-  echo "FAIL: mv is guarded on a non-empty staged file -- see R2, this is wrong"
+  echo "FAIL: mv is guarded on a non-empty staged file"
   exit 1
 }
 
@@ -94,7 +94,7 @@ run_case() {
   rm -f "$CT" "$WORK/out.$$"
 }
 
-# The R2 case: the legacy lines are the entire crontab, so `grep -v` selects
+# The legacy lines are the entire crontab, so `grep -v` selects
 # nothing and exits 1. Result must be an empty crontab, not a dead installer.
 run_case "legacy entries are the whole crontab" \
 '* * * * * /usr/bin/openwrt-grafana-monitor-metrics

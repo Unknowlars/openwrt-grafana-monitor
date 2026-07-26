@@ -4390,7 +4390,7 @@
         "spec": {
           "id": 215,
           "title": "Local Hosts to External Networks",
-          "description": "Which local devices talk to which networks on the internet, sized by bytes. Node stats are bytes (main) and flow count (secondary).\n\nOnly flows with a resolved destination AS are included, and only the 60 heaviest host-to-network pairs in the range -- Grafana hides nodes past 200 behind cluster markers, so the cap keeps the graph readable rather than truthful-but-unusable. Verified live: 60 pairs resolve to well under Grafana's cap.\n\nThis is the same relationship the AS Conversation Matrix below states as a table. The table is what you sort and filter; this is what makes a device with an unexpected number of network relationships obvious at a glance.",
+          "description": "Which local devices talk to which networks on the internet, sized by bytes. Node stats are bytes (main) and flow count (secondary).\n\nOnly flows with a resolved destination AS are included, and only the 60 heaviest host-to-network pairs in the range -- Grafana hides nodes past 200 behind cluster markers, so the cap keeps the graph readable rather than truthful-but-unusable. The dashboard keeps the grouped label set bounded for Grafana.\n\nThis is the same relationship the AS Conversation Matrix below states as a table. The table is what you sort and filter; this is what makes a device with an unexpected number of network relationships obvious at a glance.",
           "links": [],
           "data": {
             "kind": "QueryGroup",

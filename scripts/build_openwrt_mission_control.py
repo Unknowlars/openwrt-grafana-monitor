@@ -60,7 +60,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from build_openwrt_operations_dashboard import (
+from .build_openwrt_operations_dashboard import (
     BLUE,
     GRAY,
     GREEN,
@@ -83,9 +83,10 @@ from build_openwrt_operations_dashboard import (
 )
 
 
+ROOT = Path(__file__).resolve().parents[1]
 OUTS = [
-    Path("grafana-dashboard-exports/openwrt-mission-control.json"),
-    Path("grafana/provisioning/dashboards/openwrt-mission-control.json"),
+    ROOT / "grafana-dashboard-exports/openwrt-mission-control.json",
+    ROOT / "grafana/provisioning/dashboards/openwrt-mission-control.json",
 ]
 
 DASHBOARD_NAME = "openwrt-mission-control"
@@ -489,7 +490,7 @@ def bargauge(
     # the ramp, so on the dark theme the tail of a ranking goes dark-blue-on-
     # dark-grey and, because valueMode is "color", takes the numbers with it.
     # "thresholds" with the neutral single-step palette is the same blue,
-    # uniformly and readably. Verified on screen 2026-07-26.
+    # uniformly and readably.
     color_mode: str = "thresholds",
     transformations: list[dict[str, Any]] | None = None,
     decimals: int | None = None,
@@ -666,7 +667,7 @@ def state_timeline(
 
     Value mappings go in `fieldConfig.defaults.mappings`. A `byType` override
     carrying mappings silently fails to apply on this panel type and leaves the
-    raw `-inf - +inf` bracket text on screen (field-verified).
+    raw `-inf - +inf` bracket text on screen.
     """
     return panel(
         pid,
@@ -2983,7 +2984,7 @@ def grid_items_by_tab(layout: dict[str, Any]) -> dict[str, list[dict[str, Any]]]
 
 
 BANNED_UNITS = {"short", ""}
-PANEL_BUDGET = (60, 90)  # ceiling raised 2026-07-23 to admit the audit's justified additions; see docs/client-topology-and-netflow-plan.md
+PANEL_BUDGET = (60, 90)  # Keep tabs useful without allowing unbounded growth.
 
 # Unit ids verified against grafana-data's valueFormats/categories.ts. Grafana
 # silently renders an unknown id as raw numbers, so an invented unit like

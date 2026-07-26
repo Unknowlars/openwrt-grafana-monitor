@@ -6045,7 +6045,7 @@
             "spec": {
               "options": {
                 "mode": "markdown",
-                "content": "## Client Insights\nWho is on the network and what they are doing. Per-device upload/download comes from the nftables traffic profile (hostnames from DHCP leases). When the traffic profile is not installed these panels are empty rather than wrong — the device table still lists every known client. Per-remote-destination attribution (\"who talked to what\") is not sourced from NAT conntrack accounting, which has no cardinality bound; it is deferred to the traffic-attribution phase in docs/client-topology-and-netflow-plan.md.",
+                "content": "## Client Insights\nWho is on the network and what they are doing. Per-device upload/download comes from the nftables traffic profile (hostnames from DHCP leases). When the traffic profile is not installed these panels are empty rather than wrong — the device table still lists every known client. Per-remote-destination attribution (\"who talked to what\") is not sourced from NAT conntrack accounting because that stream has unbounded cardinality; use the optional NetFlow profile when that detail is required.",
                 "code": {
                   "language": "plaintext",
                   "showLineNumbers": false,

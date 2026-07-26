@@ -1,24 +1,19 @@
-# Grafana-managed alert rules for this repo's OpenWrt monitoring, per
-# docs/client-topology-and-netflow-plan.md §5.1 (M8).
+# Grafana-managed alert rules for this repo's OpenWrt monitoring.
 #
 # datasourceUid below is "prometheus", matching the uid this repo's own
 # grafana/provisioning/datasources/datasources.yaml assigns to the bundled
 # docker-compose Prometheus datasource. That is the only Grafana instance
-# this repo can verify end-to-end. The live production Grafana found during
-# the 2026-07-23 audit (docs/client-topology-and-netflow-plan.md, new §0.2
-# note) is a separately maintained Kubernetes deployment (VictoriaMetrics +
+# this repo can verify end-to-end. A separately maintained Kubernetes
+# deployment (VictoriaMetrics +
 # kube-prometheus-stack) whose actual Prometheus datasource UID is not known
 # to this repo -- if this file is deployed there, `datasourceUid` must be
 # updated to match that instance's real datasource UID first, or every rule
 # below will fail to evaluate (execErrState: Error). This file has NOT been
-# applied to the production router setup as part of this audit's router-side
-# changes; it is committed for review.
+# applied to any external production Grafana; verify the datasource UID before
+# deploying it there.
 #
-# "Guest -> trusted traffic" from the plan's §5.1 table is deliberately not
-# included here: it depends on a flow-attribution metric (peer_kind) that
-# only exists if M11 (NetFlow) ships, which it has not -- shipping a rule
-# against a metric that does not exist yet would be exactly the no-op this
-# plan's own rules forbid.
+# "Guest -> trusted traffic" is deliberately not included here: it depends on
+# a flow-attribution metric that is only available with optional NetFlow.
 apiVersion: 1
 
 groups:
@@ -85,10 +80,9 @@ groups:
           description: >-
             Torrent traffic, malware, or a broken IoT device are the usual
             causes. Cross-check against the client's traffic panel on the
-            Clients dashboard. No-data is OK, not alerting: M7's per-client
-            conntrack collector is confirmed broken on both reference routers
-            as of the 2026-07-23 audit (missing `conntrack` package -- see the
-            plan's M7 section) and this alert must not fire on that absence.
+            Clients dashboard. No-data is OK, not alerting: the per-client
+            conntrack collector may be unavailable when the router lacks the
+            optional `conntrack` package; this alert must not fire on absence.
         labels:
           severity: warning
 
@@ -117,10 +111,9 @@ groups:
         annotations:
           summary: Hardware flow offload is enabled; nftables/conntrack-based traffic counters may under-report.
           description: >-
-            See plan §3.4. No-data is OK, not alerting: this metric's read is
-            currently unreliable (see the 2026-07-23 audit note in the plan's
-            §8 findings, and the openwrt_flow_offload_read_success hardening
-            in client_inventory.lua) -- an absent sample must not be read as
+            No-data is OK, not alerting: this metric's read is currently
+            unreliable when the router cannot verify flow-offload state -- an
+            absent sample must not be read as
             "offload is off".
         labels:
           severity: info
@@ -178,6 +171,6 @@ groups:
         for: 5m
         annotations:
           summary: The client inventory cap (CLIENT_INVENTORY_MAX) was hit; client counts are now incomplete.
-          description: Raise CLIENT_INVENTORY_MAX in /etc/openwrt-grafana-monitor.conf, per plan §1.1.
+          description: Raise CLIENT_INVENTORY_MAX in /etc/openwrt-grafana-monitor.conf if a larger bounded inventory is required.
         labels:
           severity: warning

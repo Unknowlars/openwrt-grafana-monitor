@@ -4,12 +4,12 @@
 -- neighbour table, /etc/ethers, the DHCP leasefile, reverse DNS, getifaddrs(),
 -- and UCI static leases (in that priority order) into one MAC-keyed map. This
 -- collector adds the two things getHostHints does not know: which radio/SSID
--- a client is associated with, and whether it is associated at all. See
--- docs/client-topology-and-netflow-plan.md §1.1 for the full design.
+-- a client is associated with, and whether it is associated at all. This
+-- provides one bounded MAC-keyed identity source for the dashboards.
 --
 -- mac is the primary key everywhere in this file: lowercase, colon-separated,
 -- validated with a MAC-shaped pattern rather than run through the generic
--- label sanitizer (which would eat the colons) -- see plan §9.7.
+-- label sanitizer (which would eat the colons).
 
 local ok_ubus, ubus = pcall(require, "ubus")
 local ok_iwinfo, iwinfo = pcall(require, "iwinfo")
@@ -49,7 +49,7 @@ end
 
 -- Bit 1 (the locally-administered bit) of the first octet. Replaces an OUI
 -- vendor lookup, which mostly fails on modern per-SSID randomised MACs
--- anyway -- see plan §6/§8.
+-- anyway; modern client devices frequently use randomized MACs.
 local function is_locally_administered(mac)
   local first_octet = tonumber(mac:sub(1, 2), 16)
   if not first_octet then return false end
@@ -175,14 +175,9 @@ end
 -- uci get firewall.@defaults[0].flow_offloading{,_hw}. Read defensively: a
 -- misread here must not make the rest of the collector look broken.
 --
--- Live audit (2026-07-23): this read was found to fail silently on most
--- scrapes on both reference routers -- openwrt_flow_offload_enabled showed
--- samples on only ~10% (openwrt-main) / ~3% (openwrt-new) of scrapes over 24h,
--- with no error surfaced anywhere, because a failed pcall left `state` empty
--- and the caller's `if offload.sw ~= nil` guard then omits the metric
--- entirely rather than reporting it unavailable. The exact UCI failure mode
--- was not isolated (no live shell session was available to trace it further),
--- so this hardens against it two ways instead of guessing at one cause: (1)
+-- A failed UCI read must not omit the metric silently. Retry with a fresh
+-- cursor, and always emit a read-success gauge so an absent state is not
+-- mistaken for flow offload being disabled.
 -- retry a few times with a fresh cursor, in case it is transient contention;
 -- (2) always report whether the read succeeded, via a second return value,
 -- so a dashboard or alert can distinguish "read failed" from "genuinely off"
@@ -207,7 +202,7 @@ end
 
 -- network.wireless status: for every radio interface, resolve
 -- ifname -> {ssid, band, network}. Confirmed against a live router
--- (2026-07-22, OpenWrt 24.10-class ubus) rather than assumed: `ssid` and
+-- based on the supported OpenWrt ubus schema rather than assumed: `ssid` and
 -- `network` live directly on iface.config, and `band` ("2g"/"5g"/"6g") lives
 -- directly on the radio's own config -- no iwinfo call and no separate UCI
 -- wifi-iface cross-join needed for any of this. The first draft of this
@@ -286,7 +281,7 @@ end
 local function save_seen_store(store)
   -- Staged in the same directory as the target so the final os.rename is a
   -- same-filesystem, atomic rename. /etc is not the same filesystem as /tmp
-  -- on OpenWrt (unlike /var, see the helper-script convention in plan §9.2),
+  -- on OpenWrt (unlike /var),
   -- so staging under /tmp here would risk a cross-device rename failure.
   local tmp = SEEN_FILE .. ".tmp." .. tostring(os.time())
   local file = io.open(tmp, "w")
@@ -473,8 +468,8 @@ local function scrape()
   local offload_read = metric("openwrt_flow_offload_read_success", "gauge")
   local truncated = metric("openwrt_client_inventory_truncated", "gauge")
 
-  -- Availability is reported only after collection completes -- see plan
-  -- §9.1. Every external read (ubus, iwinfo, uci, leasefile, arp, seen-store)
+  -- Availability is reported only after collection completes. Every external
+  -- read (ubus, iwinfo, uci, leasefile, arp, seen-store)
   -- happens before any metric() call above is invoked, so a failure at any
   -- point during gathering (ubus dying mid-run, a malformed response, a
   -- read-only /etc) leaves zero partial series, not a half-populated scrape.

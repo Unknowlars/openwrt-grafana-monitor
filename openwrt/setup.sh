@@ -75,7 +75,7 @@
 #                              per-client DNS query logging to syslog/Loki --
 #                              this is a full household browsing history for as
 #                              long as Loki retains logs. Opt-in only; see
-#                              docs/client-topology-and-netflow-plan.md §4.1.
+#                              the operator documentation.
 #
 # =============================================================================
 
@@ -526,7 +526,7 @@ if profile_enabled clients; then
   install_file "$HELPER_SRC_DIR/openwrt-monitor-client-traffic.sh" /usr/bin/openwrt-monitor-client-traffic.sh 0755
   install_file "$HELPER_SRC_DIR/openwrt-monitor-client-conntrack.sh" /usr/bin/openwrt-monitor-client-conntrack.sh 0755
   # topology.lua reshapes the same identity/association data client_inventory
-  # gathers into the node-graph metric contract (plan §2.2-§2.4); it has the
+  # gathers into the node-graph metric contract; it has the
   # same package dependencies (getHostHints, iwinfo assoclist), so it rides
   # along in the same profile rather than getting its own.
   install_file "$COLLECTOR_SRC_DIR/topology.lua" /usr/lib/lua/prometheus-collectors/topology.lua 0644
@@ -737,7 +737,7 @@ uci commit system
 /etc/init.d/log restart
 log "    OK: syslog configured"
 
-# ── Optional: per-client DNS query attribution (plan §4.1, M9) ────────────────
+# ── Optional: per-client DNS query attribution ───────────────────────────────
 #
 # Off by default. dnsmasq's logqueries writes one syslog line per DNS query,
 # prefixed with the requesting client's IP -- this repo already ships syslog

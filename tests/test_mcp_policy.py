@@ -169,7 +169,7 @@ class CommandPolicyTests(unittest.TestCase):
 
 
 class HostKeyPolicyTests(unittest.TestCase):
-    """R11: default RejectPolicy; AutoAddPolicy only via explicit insecure flag."""
+    """Default RejectPolicy; AutoAddPolicy only via explicit insecure flag."""
 
     def test_default_policy_is_reject(self) -> None:
         policy = resolve_host_key_policy()

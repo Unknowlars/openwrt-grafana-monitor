@@ -11,8 +11,7 @@ OUTFILE="$OUTDIR/openwrt_wan_quality.prom"
 # This script had the longest staging window of any of them: the header block is
 # written before up to three serial `ping -c 5` runs, so a partial
 # openwrt_wan_quality.prom.<pid> sat in /var/prometheus for 15+ seconds out of
-# every 5 minutes. Measured on a live router (2026-07-25, OpenWrt 25.12.5,
-# ASUS RT-AX53U): that partial file is NOT scraped -- the textfile collector
+# every 5 minutes. That partial file is NOT scraped -- the textfile collector
 # globs *.prom only, and 144 one-second polls spanning a confirmed collector run
 # showed zero duplicated series. So the harm is not double-exposed metrics; it is
 # that a crash, reboot, or killall mid-run leaves the partial file in a tmpfs

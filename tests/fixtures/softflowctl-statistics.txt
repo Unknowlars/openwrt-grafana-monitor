@@ -1,4 +1,4 @@
-softflowd[3141]: Accumulated statistics since 2026-07-25T09:14:02 UTC:
+softflowd[3141]: Accumulated statistics since 2025-01-01T00:00:00 UTC:
 Number of active flows: 412
 Packets processed: 9182734
 Fragments: 12

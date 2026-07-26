@@ -16,9 +16,10 @@ from pathlib import Path
 from typing import Any
 
 
+ROOT = Path(__file__).resolve().parents[1]
 OUTS = [
-    Path("grafana-dashboard-exports/openwrt-operations-v2.json"),
-    Path("grafana/provisioning/dashboards/openwrt-operations-v2.json"),
+    ROOT / "grafana-dashboard-exports/openwrt-operations-v2.json",
+    ROOT / "grafana/provisioning/dashboards/openwrt-operations-v2.json",
 ]
 
 PROM_DS = "${DS_PROMETHEUS}"
@@ -70,7 +71,7 @@ THRESHOLDS = {
     # ("Weakest Clients by Signal") hit on every single bar. This was latent
     # while bar gauges used a continuous-* scheme, because those ignore
     # thresholds entirely; it became visible when rankings moved to
-    # thresholds colouring. See SKILL.md golden rule 22.
+    # thresholds colouring.
     "neutral": thresholds(("blue", None)),
     "unavailable": thresholds(("gray", 0), ("blue", 1)),
 }
@@ -294,9 +295,7 @@ def stat(
         "color": {"mode": "thresholds"},
         # noValue is a fieldConfig.defaults property, not a panel option --
         # under `options` Grafana silently ignores it and every custom
-        # empty-state message goes unused. See docs/client-topology-and-
-        # netflow-plan.md and skills/grafana-dashboards references/fourth-
-        # pass-field-notes.md; Mission Control already has this fixed.
+        # empty-state message goes unused.
         "noValue": no_value,
     }
     if decimals is not None:
@@ -434,8 +433,8 @@ def bargauge(
     deliberately NOT a `continuous-*` scheme: those map small values to the
     dark end of the ramp, so on Grafana's dark theme the tail of a ranking
     goes dark-blue-on-dark-grey, and because `valueMode` is "color" the
-    numbers disappear along with the bars. Verified on screen 2026-07-26 --
-    rows 6-12 of a 12-row top-N had no legible value at all.
+    numbers disappear along with the bars.
+    rows 6-12 of a 12-row top-N can otherwise have no legible value at all.
 
     Use "palette-classic" instead when the rows are identities worth telling
     apart at a glance; it is equally readable but hands some rows red and
@@ -452,7 +451,7 @@ def bargauge(
         default the panel finds one numeric field, reduces the whole column to
         a single number, and draws nothing usable.
 
-    Field-verified against Grafana 13 on 2026-07-26: identical ClickHouse
+    Validated against the supported Grafana environment: identical ClickHouse
     queries render 15 named bars with `values=True` and an empty panel with
     `values=False`.
     """
@@ -613,7 +612,7 @@ def state_timeline(
     Value mappings go in fieldConfig.defaults, never in a `byType` override:
     that matcher silently fails to apply on state timelines and the panel
     renders raw `-Inf - +Inf` bracket text instead of the state names. See
-    skills/grafana-dashboards/references/fourth-pass-field-notes.md item 1.
+    Keep these fields aligned with Grafana's supported field configuration.
 
     Use this rather than `status-history` when the question is "how long was
     it in this state"; status-history draws every individual sample instead
@@ -891,9 +890,8 @@ def build_dashboard() -> dict[str, Any]:
     # Per-device traffic rate, from the traffic profile's nftables counters.
     # Used by the LAN tab's top-devices ranking and the whole Client Insights
     # tab. Defined here (rather than down by Client Insights, where it used
-    # to live) because the LAN tab is built first and needs it too — see
-    # docs/client-topology-and-netflow-plan.md §0.3 for why this replaced
-    # node_nat_traffic, which had no cardinality bound.
+    # to live) because the LAN tab is built first and needs it too. The
+    # bounded traffic profile replaces the unbounded node_nat_traffic series.
     DL = f'sum by(device) (rate(openwrt_device_traffic_bytes_total{{{PROM_FILTER}, direction="download"}}[$__rate_interval]))'
     UL = f'sum by(device) (rate(openwrt_device_traffic_bytes_total{{{PROM_FILTER}, direction="upload"}}[$__rate_interval]))'
     TOTAL_RATE = f'sum by(device) (rate(openwrt_device_traffic_bytes_total{{{PROM_FILTER}}}[$__rate_interval]))'
@@ -952,7 +950,7 @@ def build_dashboard() -> dict[str, Any]:
     tabs.append(b.tab("LAN, NAT & Devices", lan))
 
     clients: list[dict[str, Any]] = []
-    b.add(clients, text(800, "", "## Client Insights\nWho is on the network and what they are doing. Per-device upload/download comes from the nftables traffic profile (hostnames from DHCP leases). When the traffic profile is not installed these panels are empty rather than wrong — the device table still lists every known client. Per-remote-destination attribution (\"who talked to what\") is not sourced from NAT conntrack accounting, which has no cardinality bound; it is deferred to the traffic-attribution phase in docs/client-topology-and-netflow-plan.md."), 0, 0, 24, 3)
+    b.add(clients, text(800, "", "## Client Insights\nWho is on the network and what they are doing. Per-device upload/download comes from the nftables traffic profile (hostnames from DHCP leases). When the traffic profile is not installed these panels are empty rather than wrong — the device table still lists every known client. Per-remote-destination attribution (\"who talked to what\") is not sourced from NAT conntrack accounting because that stream has unbounded cardinality; use the optional NetFlow profile when that detail is required."), 0, 0, 24, 3)
     b.add(clients, stat(801, "Tracked Clients", f'count(openwrt_device_info{{{PROM_FILTER}}}) or vector(0)', "none", "Distinct client identities currently tracked by the per-device traffic collector.", thresholds_key="neutral", graph=True, color_mode="value"), 0, 3, 6, 4)
     b.add(clients, stat(802, "Total Download Rate", f'({DL.replace("sum by(device) ", "sum ")}) or vector(0)', "Bps", "Aggregate download rate across all tracked clients right now.", thresholds_key="neutral", graph=True, color_mode="value"), 6, 3, 6, 4)
     b.add(clients, stat(803, "Total Upload Rate", f'({UL.replace("sum by(device) ", "sum ")}) or vector(0)', "Bps", "Aggregate upload rate across all tracked clients right now.", thresholds_key="neutral", graph=True, color_mode="value"), 12, 3, 6, 4)
@@ -964,9 +962,8 @@ def build_dashboard() -> dict[str, Any]:
     b.add(clients, table(809, "Client Activity", [prom_query(DL, "", "A", fmt="table", instant=True), prom_query(UL, "", "B", fmt="table", instant=True), prom_query(f'openwrt_device_info{{{PROM_FILTER}}}', "", "C", fmt="table", instant=True)], "One row per client, merging download and upload rates with identity from separate queries and a derived Total column. This is a joinByField + calculateField merge, not three separate panels. Clients with no current traffic still appear via the identity query.", transformations=[tf("joinByField", {"byField": "device", "mode": "outer"}), calculate("Total", "Value #A", "Value #B", "+"), organize(exclude=["Time", "__name__", "Value #C", "interface", "mac", "cluster", "job", "router", "endpoint", "instance", "namespace", "prometheus", "prometheus_replica", "service"], rename={"device": "Client", "ip": "IP", "Value #A": "Download", "Value #B": "Upload"}, index={"Client": 0, "IP": 1, "Download": 2, "Upload": 3, "Total": 4}), sort_by("Total", desc=True), limit(50)], overrides=[{"matcher": {"id": "byRegexp", "options": "/Download|Upload|Total/"}, "properties": [{"id": "unit", "value": "Bps"}, {"id": "custom.cellOptions", "value": {"type": "gauge", "mode": "gradient"}}, {"id": "min", "value": 0}]}], sort_col="Total", sort_desc=True), 0, 24, 24, 11)
     # Panel 810 ("Top External Destinations") was removed here: it ranked by
     # remote IP from node_nat_traffic, which has no cardinality bound — see
-    # docs/client-topology-and-netflow-plan.md §0.3 and §10.5. There is no
-    # bounded replacement for "who did each client talk to" yet; that is
-    # deferred to the plan's traffic-attribution phase (nlbwmon/NetFlow),
+    # There is no bounded Prometheus replacement for "who did each client
+    # talk to" yet; that detail belongs in the optional nlbwmon/NetFlow path,
     # which buckets remote peers before they ever reach Prometheus.
     b.add(clients, bargauge(811, "WiFi Clients by Packet Rate", [prom_query(f'topk(10, sum by(mac) (rate(wifi_station_receive_packets_total{{{PROM_FILTER}}}[$__rate_interval]) + rate(wifi_station_transmit_packets_total{{{PROM_FILTER}}}[$__rate_interval])))', "{{mac}}", "A")], "pps", "Top WiFi stations by real packet rate from station packet counters (not PHY link rate). Keyed by MAC because the exporter's WiFi MAC casing does not match the DHCP lease map.", thresholds_key="neutral", transformations=[limit(10)]), 0, 35, 24, 8)
     b.add(clients, table(812, "WiFi Client Detail", [prom_query(f'wifi_station_signal_dbm{{{PROM_FILTER}}}', "", "A", fmt="table", instant=True), prom_query(f'wifi_station_receive_kilobits_per_second{{{PROM_FILTER}}} * 1000', "", "B", fmt="table", instant=True), prom_query(f'wifi_station_transmit_kilobits_per_second{{{PROM_FILTER}}} * 1000', "", "C", fmt="table", instant=True), prom_query(f'label_replace(openwrt_wifi_station_connected_seconds{{{PROM_FILTER}}}, "mac", "$1", "station", "(.*)")', "", "D", fmt="table", instant=True)], "Per-station WiFi quality: signal, negotiated RX/TX link rate, and session age. The connected-seconds series is label_replaced from station to mac so it joins the signal and rate queries.", transformations=[tf("joinByField", {"byField": "mac", "mode": "outer"}), organize(exclude=["Time", "__name__", "vif", "cluster", "job", "router", "endpoint", "instance", "namespace", "prometheus", "prometheus_replica", "service"], rename={"mac": "Station MAC", "ifname": "Radio", "Value #A": "Signal dBm", "Value #B": "RX Link", "Value #C": "TX Link", "Value #D": "Connected"}, index={"Station MAC": 0, "Radio": 1, "Signal dBm": 2, "RX Link": 3, "TX Link": 4, "Connected": 5}), sort_by("Signal dBm", desc=False)], overrides=[{"matcher": {"id": "byRegexp", "options": "/RX Link|TX Link/"}, "properties": [{"id": "unit", "value": "bps"}]}, {"matcher": {"id": "byName", "options": "Connected"}, "properties": [{"id": "unit", "value": "s"}]}, {"matcher": {"id": "byName", "options": "Signal dBm"}, "properties": [{"id": "unit", "value": "dBm"}, {"id": "custom.cellOptions", "value": {"type": "color-background"}}, {"id": "thresholds", "value": thresholds(("red", -90), ("yellow", -70), ("green", -60))}]}], sort_col="Signal dBm", sort_desc=False), 0, 43, 24, 9)
@@ -1242,9 +1239,7 @@ def validate_dashboard(dash: dict[str, Any]) -> None:
             defaults = panel_spec["vizConfig"]["spec"]["fieldConfig"]["defaults"]
             assert "unit" in defaults, f"missing unit: {key} {panel_spec['title']}"
             assert defaults["unit"] != "short", f"generic short unit: {key} {panel_spec['title']}"
-        # noValue belongs in fieldConfig.defaults; under options it is silently
-        # ignored by Grafana. Regression check for the 2026-07-23 fix -- see
-        # docs/client-topology-and-netflow-plan.md gap #4.
+        # noValue belongs in fieldConfig.defaults, where Grafana reads it.
         assert "noValue" not in panel_spec["vizConfig"]["spec"]["options"], f"noValue in panel options: {key}"
         assert "pluginVersion" not in json.dumps(element)
     assert len(panel_ids) == len(set(panel_ids)), "duplicate panel ids"

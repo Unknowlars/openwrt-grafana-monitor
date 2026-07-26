@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from build_openwrt_operations_dashboard import (
+from .build_openwrt_operations_dashboard import (
     AVAILABILITY_MAPPINGS,
     BLUE,
     GREEN,
@@ -39,9 +39,10 @@ from build_openwrt_operations_dashboard import (
 )
 
 
+ROOT = Path(__file__).resolve().parents[1]
 OUTS = [
-    Path("grafana-dashboard-exports/openwrt-advanced-v2.json"),
-    Path("grafana/provisioning/dashboards/openwrt-advanced-v2.json"),
+    ROOT / "grafana-dashboard-exports/openwrt-advanced-v2.json",
+    ROOT / "grafana/provisioning/dashboards/openwrt-advanced-v2.json",
 ]
 
 PROM_DS = "${DS_PROMETHEUS}"
@@ -242,9 +243,7 @@ def validate_dashboard(dashboard: dict[str, Any]) -> None:
         assert key == f"panel-{panel_spec['id']}"
         if panel_spec["vizConfig"]["group"] not in {"text", "logs"}:
             assert panel_spec["vizConfig"]["spec"]["fieldConfig"]["defaults"].get("unit") != "short"
-        # noValue belongs in fieldConfig.defaults; under options it is silently
-        # ignored by Grafana. Regression check for the 2026-07-23 fix -- see
-        # docs/client-topology-and-netflow-plan.md gap #4.
+        # noValue belongs in fieldConfig.defaults, where Grafana reads it.
         assert "noValue" not in panel_spec["vizConfig"]["spec"]["options"], f"noValue in panel options: {key}"
     assert len(ids) == len(set(ids))
     for tab in spec["layout"]["spec"]["tabs"]:

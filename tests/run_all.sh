@@ -13,21 +13,16 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
 echo "== python generators compile =="
-python3 -m py_compile build_dashboards.py \
-  build_openwrt_operations_dashboard.py \
-  build_openwrt_advanced_dashboard.py \
-  build_openwrt_clients_dashboard.py \
-  build_openwrt_topology_dashboard.py \
-  build_openwrt_mission_control.py \
-  build_openwrt_netflow_dashboard.py
+python3 -m compileall -q scripts
 
 echo "== dashboards regenerate deterministically =="
-python3 build_openwrt_advanced_dashboard.py
-python3 build_openwrt_clients_dashboard.py
-python3 build_openwrt_operations_dashboard.py
-python3 build_openwrt_topology_dashboard.py
-python3 build_openwrt_mission_control.py
-python3 build_openwrt_netflow_dashboard.py
+python3 -m scripts.build_dashboards
+python3 -m scripts.build_openwrt_advanced_dashboard
+python3 -m scripts.build_openwrt_clients_dashboard
+python3 -m scripts.build_openwrt_operations_dashboard
+python3 -m scripts.build_openwrt_topology_dashboard
+python3 -m scripts.build_openwrt_mission_control
+python3 -m scripts.build_openwrt_netflow_dashboard
 
 echo "== generated copies are byte-identical =="
 cmp grafana-dashboard-exports/openwrt-advanced-v2.json \

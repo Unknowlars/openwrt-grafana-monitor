@@ -28,12 +28,12 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG = ROOT / "alloy" / "config.alloy"
 
 GENERATORS = (
-    "build_dashboards.py",
-    "build_openwrt_mission_control.py",
-    "build_openwrt_operations_dashboard.py",
-    "build_openwrt_advanced_dashboard.py",
-    "build_openwrt_clients_dashboard.py",
-    "build_openwrt_topology_dashboard.py",
+    "scripts/build_dashboards.py",
+    "scripts/build_openwrt_mission_control.py",
+    "scripts/build_openwrt_operations_dashboard.py",
+    "scripts/build_openwrt_advanced_dashboard.py",
+    "scripts/build_openwrt_clients_dashboard.py",
+    "scripts/build_openwrt_topology_dashboard.py",
 )
 
 # Fields loki.source.syslog exposes that must never become stream labels.
@@ -61,7 +61,7 @@ def strip_comments(text: str) -> str:
 
 class TestAlloySyslogLabels(unittest.TestCase):
     def test_no_wildcard_syslog_labelmap(self) -> None:
-        """A labelmap over __syslog_(.+) promotes the PID -- see R5."""
+        """A labelmap over __syslog_(.+) promotes the PID."""
         text = strip_comments(config_text())
         self.assertNotIn(
             "labelmap",
@@ -69,8 +69,8 @@ class TestAlloySyslogLabels(unittest.TestCase):
             "alloy/config.alloy uses a labelmap action. For __syslog_* this "
             "promotes message_proc_id (a PID) to a Loki stream label and "
             "reintroduces unbounded stream cardinality. Rename an explicit "
-            "allowlist of fields instead -- see R5 in "
-            "docs/CODE-REVIEW-REMEDIATION-PLAN.md.",
+            "allowlist of fields instead. See "
+            "the repository's contributor documentation.",
         )
 
     def test_pid_and_msgid_are_not_promoted(self) -> None:
@@ -94,7 +94,7 @@ class TestAlloySyslogLabels(unittest.TestCase):
         )
 
     def test_labels_selected_by_dashboards_are_promoted(self) -> None:
-        """The regression that R5's own prescribed snippet would have caused.
+        """The regression caused by promoting every syslog label.
 
         If a generator selects on message_severity but Alloy promotes bare
         `severity`, the panel silently returns no data.

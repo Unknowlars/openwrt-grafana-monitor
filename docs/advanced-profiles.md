@@ -55,9 +55,8 @@ safely collapsed at the Alloy layer without silently under-reporting clients
 with more than one active destination. `node_nat_traffic` is now dropped
 before it reaches Prometheus (`alloy/config.alloy`); it is still exported by
 the router (the required package is unchanged) but Grafana never sees it. The
-"who did each client talk to" question this metric used to answer for
-external IPs has no bounded replacement yet and is deferred to the
-traffic-attribution phase in `docs/client-topology-and-netflow-plan.md`.
+"Who did each client talk to" is not represented by a bounded Prometheus
+series. Use the optional NetFlow profile when that detail is needed.
 
 ## WiFi mesh collector
 
@@ -88,9 +87,8 @@ without a readable snapshot the availability metric is `0`.
 The `clients` profile installs `client_inventory.lua`, a single MAC-keyed
 identity source that replaces the ad hoc joins the dashboards previously did
 across `dhcp_lease`, `uci_dhcp_host`, `wifi_station_*`, and
-`hostapd_station_*` (which disagree on label names and on MAC case). See
-`docs/client-topology-and-netflow-plan.md` §0.1 and §1.1 for the full
-rationale.
+`hostapd_station_*` (which disagree on label names and on MAC case). This gives
+the dashboards one bounded, MAC-keyed identity source.
 
 Identity comes from `ubus call luci-rpc getHostHints`, which OpenWrt already
 builds by merging the neighbour table, `/etc/ethers`, the DHCP leasefile,
@@ -117,7 +115,7 @@ unaffected.
 
 MAC addresses are the primary key everywhere in this collector: lowercase,
 colon-separated, deliberately different from `dhcp_lease`/`uci_dhcp_host`'s
-uppercase convention (see plan §9.7) -- do not join this collector's output
+uppercase convention -- do not join this collector's output
 against those metrics without normalising case first.
 
 `getHostHints` performs reverse-DNS lookups as one of its sources. On a home
@@ -141,8 +139,9 @@ Client identity still prefers `getHostHints`, but falls back to DHCP leases and
 ARP when the LuCI host-hints path is unavailable or cannot be parsed.
 If no conntrack source is available, only the conntrack metrics fail closed;
 the WiFi association-event companion still runs from `network.wireless status`
-and `logread` when those sources are available. **Live audit, 2026-07-25:**
-both reference routers had the helper deployed but reported
+and `logread` when those sources are available. If no conntrack source is
+available, the helper reports unavailable while the other client metrics keep
+working:
 `openwrt_client_conntrack_collector_available 0`; the fallback keeps that from
 being a CLI-packaging-only outage on routers with readable procfs conntrack
 state.
@@ -209,7 +208,7 @@ not exported and `openwrt_client_inventory_truncated` is set to `1`. The
 first-seen timestamp store (`/etc/openwrt-client-seen`, used for new-device
 alerting) is capped the same way, with least-recently-seen eviction.
 
-The generated Clients dashboard (`build_openwrt_clients_dashboard.py`) uses
+The generated Clients dashboard (`scripts/build_openwrt_clients_dashboard.py`) uses
 this identity data directly, including MAC-keyed traffic accounting. Verify the
 collector directly:
 
@@ -259,15 +258,9 @@ every nlbwmon traffic panel suppresses values and shows `Accounting unreliable
 - flow offload enabled` instead of displaying zeros. Do not treat an empty
 traffic chart in this state as idle traffic.
 
-**Live audit finding, 2026-07-23:** `openwrt_flow_offload_enabled` itself was
-found to be present in the exposition's `# TYPE` line but absent as an actual
-sample on ~90-97% of scrapes on both reference routers, with no error
-anywhere -- the UCI read in `flow_offload_state()` (client_inventory.lua) was
-failing almost every time, silently. This was hardened (retry, and a new
-always-emitted `openwrt_flow_offload_read_success` gauge) but the exact UCI
-failure mode was not isolated -- no live shell session was available to trace
-it further this session. Check `openwrt_flow_offload_read_success` before
-trusting an absence of `openwrt_flow_offload_enabled` as "offload is off".
+`openwrt_flow_offload_enabled` is emitted only when the UCI read succeeds.
+Check `openwrt_flow_offload_read_success` before trusting an absent
+`openwrt_flow_offload_enabled` sample as "offload is off".
 
 If accurate conntrack-derived accounting is required, disable both modes:
 
@@ -307,7 +300,7 @@ limits, and troubleshooting are in [netflow-akvorado.md](netflow-akvorado.md).
 Generate the advanced dashboard into both supported locations:
 
 ```sh
-python3 build_openwrt_advanced_dashboard.py
+python3 -m scripts.build_openwrt_advanced_dashboard
 ```
 
 The generated files are:

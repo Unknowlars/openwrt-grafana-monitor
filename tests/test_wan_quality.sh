@@ -2,14 +2,13 @@
 # Fixture test for the WAN quality collector. Stubs ping/ip/nslookup so the
 # staging and exposition contract can be exercised offline.
 #
-# The property under test is the one that matters for R4: after a run the
+# The property under test is that after a run the
 # textfile dir contains exactly the .prom file and no staged temp copy.
 #
 # Note the exposure is leftover-file accumulation, not double-scraped metrics.
-# Measured on a live router (2026-07-25): the textfile collector globs *.prom
-# only, so a staged openwrt_wan_quality.prom.<pid> is never read -- 144
-# one-second polls spanning a confirmed collector run found zero duplicated
-# series. The duplicate assertion below is kept anyway: it is cheap, it is the
+# The textfile collector globs *.prom only, so a staged
+# openwrt_wan_quality.prom.<pid> is never read. The duplicate assertion below is
+# kept anyway: it is cheap, it is the
 # property we actually want to hold, and it does not depend on the exporter's
 # glob pattern staying what it is today.
 
@@ -51,7 +50,7 @@ PATH="$WORK/bin:$PATH" OPENWRT_MONITOR_TEXTFILE_DIR="$WORK/out" \
 OUT="$WORK/out/openwrt_wan_quality.prom"
 [ -f "$OUT" ] || { echo "FAIL: no output written"; exit 1; }
 
-# The property that actually matters, and it generalizes to R9: no duplicate
+# The property that actually matters is that no duplicate
 # series across the whole textfile dir.
 python3 "$ROOT/tests/check_exposition.py" "$WORK/out"/*.prom* || exit 1
 

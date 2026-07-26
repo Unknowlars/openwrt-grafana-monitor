@@ -454,7 +454,7 @@
       "type": "bargauge",
       "id": 6,
       "title": "Top Devices by Traffic Rate",
-      "description": "Top 10 LAN clients by current combined upload+download rate, from the traffic profile's nftables counters. Empty rather than wrong when the traffic profile is not installed. Replaces the former node_nat_traffic ranking, which had no cardinality bound (docs/client-topology-and-netflow-plan.md \u00a70.3).",
+      "description": "Top 10 LAN clients by current combined upload+download rate, from the traffic profile's nftables counters. Empty rather than wrong when the traffic profile is not installed. Replaces the former node_nat_traffic ranking, which had no cardinality bound.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"

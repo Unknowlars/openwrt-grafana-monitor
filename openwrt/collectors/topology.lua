@@ -1,9 +1,9 @@
 -- Network topology collector: reshapes the identity/association data
 -- client_inventory.lua uses into the Grafana node-graph metric contract --
 -- openwrt_topology_node / openwrt_topology_edge -- so the bundled Prometheus
--- datasource can drive a node graph panel with no plugin install. See
--- docs/client-topology-and-netflow-plan.md §2.2-§2.4 for why the contract is
--- shaped this way, and §9.7/§10.2 for the id/label rules this file follows.
+-- datasource can drive a node graph panel with no plugin install. Every node
+-- and edge carries a stable id and authority label for safe multi-router
+-- reconciliation.
 --
 -- This collector is deliberately self-contained rather than requiring
 -- client_inventory.lua: every other collector in this directory (see
@@ -12,8 +12,8 @@
 --
 -- Node and edge frames MUST come from the same snapshot in the same scrape --
 -- a dangling edge endpoint (a source/target with no matching node id) crashes
--- Grafana's node graph panel, it does not just render incompletely (plan
--- §2.1). Every edge below is only appended after its source and target ids
+-- Grafana's node graph panel, it does not just render incompletely. Every
+-- edge below is only appended after its source and target ids
 -- have been added to the node id set built earlier in the same collect() run.
 --
 -- MULTI-ROUTER SHAPE
@@ -107,7 +107,7 @@ local function is_private_ipv4(ip)
 end
 
 -- Mirrors client_inventory.lua's router_own_macs(): getHostHints includes the
--- router's own br-lan identity as if it were a client (confirmed live, M1).
+-- router's own br-lan identity as if it were a client.
 local function router_own_macs()
   local macs = {}
   local pipe = io.popen("cat /sys/class/net/*/address 2>/dev/null")
@@ -248,7 +248,7 @@ local function detect_role(connection)
 end
 
 -- network.wireless status -> ifname -> radio/interface facts. Identical
--- approach to client_inventory.lua's wifi_ifaces(), confirmed live (M1) that
+-- approach to client_inventory.lua's wifi_ifaces();
 -- iface.config.ssid/network and radio.config.band need no UCI cross-join.
 -- Only `ap` mode interfaces become BSS nodes; a mesh or station vif is a
 -- different kind of link and is better absent than mislabelled as an AP.
@@ -703,8 +703,8 @@ local function scrape()
   local edge_metric = metric("openwrt_topology_edge", "gauge")
   local infra_metric = metric("openwrt_topology_infra_mac", "gauge")
 
-  -- Availability is reported only after collection completes -- see plan
-  -- §9.1 and client_inventory.lua. Every external read happens before any
+  -- Availability is reported only after collection completes. Every external
+  -- read happens before any
   -- metric() call above is invoked.
   local ok, completed = pcall(collect, node_metric, edge_metric, infra_metric)
   available({}, (ok and completed) and 1 or 0)
