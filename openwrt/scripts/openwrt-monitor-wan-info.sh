@@ -2,18 +2,34 @@
 
 set -e
 
-. /lib/functions/network.sh
+# Optional on OpenWrt; when absent wan_ip stays unknown so offline tests and
+# partial installs still emit the public-IP change gauge.
+[ -r /lib/functions/network.sh ] && . /lib/functions/network.sh
 
 tmp_file="/tmp/wanip.out.$$"
-outdir="/var/prometheus"
+# Overridable so the collector logic can be exercised in tests.
+outdir="${OPENWRT_MONITOR_TEXTFILE_DIR:-/var/prometheus}"
 metric_file="$outdir/openwrt_wan_info.prom"
-metric_tmp="$metric_file.$$"
+# Stage outside $outdir (same filesystem on OpenWrt: /var -> /tmp) and mv
+# atomically into place, matching every sibling helper.
+#
+# The textfile collector globs *.prom only, so a staged .prom.<pid> is not
+# double-scraped.
+# The harm is leftover-file accumulation after a crash/reboot/kill with no trap
+# and no sweep.
+metric_tmp="/tmp/.openwrt-monitor-openwrt_wan_info.$$"
 last_public_ip_file="/tmp/openwrt-grafana-monitor-last-public-ip"
 wan_network=""
 wan_ip="unknown"
 public_ip=""
 public_ip_changed=0
 hostname="$(uci get system.@system[0].hostname 2>/dev/null || printf 'openwrt')"
+
+mkdir -p "$outdir"
+# Sweeps leftover .prom.<pid> files left in $outdir by the pre-fix staging bug.
+# Removable once no deployed router predates this fix.
+rm -f "$metric_file".[0-9]*
+trap 'rm -f "$tmp_file" "$metric_tmp"' EXIT
 
 network_find_wan wan_network 2>/dev/null || true
 if [ -n "$wan_network" ]; then
@@ -41,7 +57,6 @@ fi
 printf 'wanip=%s publicip=%s hostname=%s\n' "$wan_ip" "$public_ip" "$hostname" > "$tmp_file"
 mv "$tmp_file" /tmp/wanip.out
 
-mkdir -p "$outdir"
 {
   printf '# HELP wan_public_ip_changed 1 if public IP changed since the last successful lookup, else 0. Compatibility alias for older dashboards.\n'
   printf '# TYPE wan_public_ip_changed gauge\n'

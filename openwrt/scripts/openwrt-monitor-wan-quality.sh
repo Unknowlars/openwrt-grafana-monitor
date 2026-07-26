@@ -2,9 +2,21 @@
 
 set -e
 
-OUTDIR="/var/prometheus"
+# Overridable so the collector logic can be exercised in tests.
+OUTDIR="${OPENWRT_MONITOR_TEXTFILE_DIR:-/var/prometheus}"
 OUTFILE="$OUTDIR/openwrt_wan_quality.prom"
-TMPFILE="$OUTFILE.$$"
+# Stage outside $OUTDIR (same filesystem on OpenWrt: /var -> /tmp) and mv
+# atomically into place, matching every sibling helper.
+#
+# This script had the longest staging window of any of them: the header block is
+# written before up to three serial `ping -c 5` runs, so a partial
+# openwrt_wan_quality.prom.<pid> sat in /var/prometheus for 15+ seconds out of
+# every 5 minutes. That partial file is NOT scraped -- the textfile collector
+# globs *.prom only, and 144 one-second polls spanning a confirmed collector run
+# showed zero duplicated series. So the harm is not double-exposed metrics; it is
+# that a crash, reboot, or killall mid-run leaves the partial file in a tmpfs
+# directory forever, with no trap and no sweep to reclaim it.
+TMPFILE="/tmp/.openwrt-monitor-openwrt_wan_quality.$$"
 CONF="/etc/openwrt-grafana-monitor.conf"
 COUNT="${1:-5}"
 TIMEOUT="${2:-1}"
@@ -15,6 +27,11 @@ DNS_PROBE_TIMEOUT="${DNS_PROBE_TIMEOUT:-5}"
 [ -r "$CONF" ] && . "$CONF"
 
 mkdir -p "$OUTDIR"
+# Sweeps duplicate .prom.<pid> files left in $OUTDIR by the pre-fix staging bug
+# above, so routers already running the old code self-heal on the next run.
+# Removable once no deployed router predates this fix.
+rm -f "$OUTFILE".[0-9]*
+trap 'rm -f "$TMPFILE"' EXIT
 
 escape_label() {
   printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g'

@@ -2,11 +2,18 @@
 
 set -e
 
-OUTDIR="/var/prometheus"
+# Overridable so the collector logic can be exercised in tests.
+OUTDIR="${OPENWRT_MONITOR_TEXTFILE_DIR:-/var/prometheus}"
 OUTFILE="$OUTDIR/openwrt_wifi_radio.prom"
-TMPFILE="$OUTFILE.$$"
+# The textfile collector reads every file in $OUTDIR, so a temp file left
+# there by a crashed run is scraped as a second copy of every metric below.
+# Stage outside $OUTDIR (same filesystem on OpenWrt: /var -> /tmp) and mv
+# atomically into place.
+TMPFILE="/tmp/.openwrt-monitor-openwrt_wifi_radio.$$"
 
 mkdir -p "$OUTDIR"
+rm -f "$OUTFILE".[0-9]*
+trap 'rm -f "$TMPFILE"' EXIT
 
 {
   printf '# HELP openwrt_wifi_radio_collector_available Whether iwinfo is available for WiFi radio collection.\n'

@@ -27,3 +27,26 @@ datasources:
     url: http://localhost:3200
     access: proxy
     editable: false
+
+  # NetFlow flow records, written by Akvorado. Unlike the three above — which
+  # use localhost because they run *inside* the otel-lgtm container — ClickHouse
+  # is a sibling container, so this addresses it by compose service name.
+  #
+  # This provisioning directory is a single read-only mount and cannot be made
+  # conditional on a compose profile. With the netflow profile down the host
+  # simply does not resolve: the datasource is listed but every query errors.
+  # That is expected and harmless; nothing in the default dashboard set queries
+  # it. Requires the grafana-clickhouse-datasource plugin (see
+  # GF_PLUGINS_PREINSTALL in docker-compose.yml).
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    uid: clickhouse
+    access: proxy
+    editable: false
+    jsonData:
+      host: clickhouse
+      port: 9000
+      protocol: native
+      secure: false
+      username: default
+      defaultDatabase: default

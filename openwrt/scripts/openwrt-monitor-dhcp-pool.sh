@@ -2,7 +2,8 @@
 
 set -e
 
-OUTDIR="/var/prometheus"
+# Overridable so the collector logic can be exercised in tests.
+OUTDIR="${OPENWRT_MONITOR_TEXTFILE_DIR:-/var/prometheus}"
 OUTFILE="$OUTDIR/openwrt_dhcp_pool.prom"
 TMPFILE="$OUTFILE.$$"
 METRICFILE="$TMPFILE.metrics"

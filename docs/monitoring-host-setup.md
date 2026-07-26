@@ -63,7 +63,7 @@ Go to **http://localhost:3000**
 
 Login: `admin` / value from `GRAFANA_ADMIN_PASSWORD` in `.env`
 
-The classic OpenWrt dashboards and the v2beta1 Operations dashboard load automatically from `grafana/provisioning/dashboards/`.
+The classic OpenWrt dashboards and the v2 Operations dashboard load automatically from `grafana/provisioning/dashboards/`.
 
 The Operations dashboard is also generated into `grafana-dashboard-exports/openwrt-operations-v2.json` as a manual-import copy.
 
@@ -86,7 +86,23 @@ The dashboards include variables for `router`, `wan_interface`, `wifi24_interfac
 | 3500 | Pyroscope | Profiling (unused for OpenWrt) |
 | 4317 | OTel Collector | OTLP gRPC |
 | 4318 | OTel Collector | OTLP HTTP |
-| 1234 | Alloy UI | Alloy debug/config UI |
+| 1234 | Alloy UI | Alloy debug/config UI (bound to `127.0.0.1` only) |
+
+Added by the optional `netflow` profile (`docker compose --profile netflow up -d`):
+
+| Port | Service | Purpose |
+|------|---------|---------|
+| 2055/UDP | Akvorado inlet | NetFlow v5/v9 from the routers. Bound on all interfaces |
+| 4739/UDP | Akvorado inlet | IPFIX. Bound on all interfaces |
+| 6343/UDP | Akvorado inlet | sFlow. Bound on all interfaces |
+| 8081 | Akvorado console | Flow explorer UI, **unauthenticated**, bound to `127.0.0.1` only |
+| 8123 | ClickHouse | HTTP interface for debugging, bound to `127.0.0.1` only |
+
+This profile also adds Kafka and ClickHouse and takes the stack from roughly
+1 GB to 5-6 GB of RAM. It is off by default. It requires the
+`grafana-clickhouse-datasource` Grafana plugin, which is installed at startup
+via `GF_PLUGINS_PREINSTALL` and needs outbound internet on first run. See
+[netflow-akvorado.md](netflow-akvorado.md).
 
 ---
 
@@ -97,6 +113,20 @@ All data (metrics, logs, dashboards) is stored in the `lgtm-data` Docker volume:
 ```sh
 docker volume inspect lgtm-data
 ```
+
+Alloy's `prometheus.remote_write` write-ahead log lives in a second volume,
+`alloy-data`, mounted at `/var/lib/alloy/data`:
+
+```sh
+docker volume inspect alloy-data
+```
+
+This volume is what keeps samples that have not yet been flushed to `otel-lgtm`
+across a container restart or recreation. Without it — and without the matching
+`--storage.path=/var/lib/alloy/data` flag in the `command:` block — Alloy writes
+its WAL to a working-directory-relative `data-alloy/` on the container's
+ephemeral filesystem, and every `docker compose up -d` or `restart` silently
+discards whatever had not been flushed yet.
 
 To reset everything (wipe all data):
 
@@ -140,6 +170,22 @@ Useful for:
 - Checking if targets are being scraped
 - Viewing pipeline component health
 - Debugging config issues
+
+The UI has **no authentication**, so the host side of the mapping is bound to
+loopback (`127.0.0.1:1234:12345`) and is not reachable from the rest of the
+network. To reach it from another machine, use an SSH tunnel rather than
+widening the binding:
+
+```sh
+ssh -L 1234:127.0.0.1:1234 <monitoring-host>
+```
+
+Note that Alloy's own default `--server.http.listen-addr` is
+`127.0.0.1:12345` — container-loopback, which no port mapping can reach. The
+`command:` block in `docker-compose.yml` passes
+`--server.http.listen-addr=0.0.0.0:12345` explicitly to make the UI reachable
+inside the container. Before that flag was added the UI was never reachable at
+all, despite the port mapping and this section.
 
 ---
 

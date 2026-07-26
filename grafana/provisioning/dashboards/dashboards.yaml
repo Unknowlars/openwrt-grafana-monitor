@@ -1,7 +1,7 @@
 apiVersion: 1
 
 providers:
-  - name: OpenWRT Dashboards
+  - name: OpenWrt Dashboards
     type: file
     disableDeletion: true
     updateIntervalSeconds: 30

@@ -1,0 +1,26 @@
+# Optional read-only traffic accounting for the OpenWrt Grafana Monitor.
+# The setup script substitutes __LAN_INTERFACE__ before installing this file.
+
+set openwrt_device_upload {
+	type ipv4_addr
+	flags dynamic, timeout
+	timeout 24h
+	counter
+}
+
+set openwrt_device_download {
+	type ipv4_addr
+	flags dynamic, timeout
+	timeout 24h
+	counter
+}
+
+chain openwrt_device_traffic {
+	type filter hook forward priority filter - 1; policy accept;
+
+	fib daddr type { broadcast, multicast } return
+	fib saddr type { broadcast, multicast } return
+
+	iifname "__LAN_INTERFACE__" ct state established update @openwrt_device_upload { ip saddr counter }
+	oifname "__LAN_INTERFACE__" ct state established update @openwrt_device_download { ip daddr counter }
+}

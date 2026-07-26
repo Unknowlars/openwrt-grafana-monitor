@@ -1,0 +1,18 @@
+<clickhouse>
+ <!-- Prometheus endpoint on the HTTP port (8123), scraped by Alloy as
+      job="clickhouse". See alloy/config.alloy. -->
+ <prometheus>
+  <endpoint>/metrics</endpoint>
+  <metrics>true</metrics>
+  <events>true</events>
+  <asynchronous_metrics>true</asynchronous_metrics>
+ </prometheus>
+ <!-- ClickHouse is very chatty at the default log level and this stack has no
+      log rotation in front of the container. Keep it to real problems. -->
+ <logger>
+   <level>warning</level>
+   <errorlog remove="1"></errorlog>
+   <console>1</console>
+   <console_log_level>warning</console_log_level>
+ </logger>
+</clickhouse>

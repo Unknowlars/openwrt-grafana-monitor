@@ -1,0 +1,21 @@
+{
+  "type": "agent_status",
+  "timestamp": 1784822400,
+  "stats": {
+    "devices": 4,
+    "total_flows": 137,
+    "flows_prev": 129,
+    "cpu_user": 1.4,
+    "maxrss_kb": 8192
+  },
+  "applications": [
+    {"name": "netify.https", "bytes": 88213771, "flows": 61},
+    {"name": "netify.dns", "bytes": 0, "flows": 12},
+    {"name": "netify.ntp", "bytes": 0, "flows": 3}
+  ],
+  "protocols": [
+    {"name": "tcp", "flows": 94},
+    {"name": "udp", "flows": 41},
+    {"name": "icmp", "flows": 2}
+  ]
+}

@@ -1,0 +1,18 @@
+softflowd[3141]: Accumulated statistics since 2025-01-01T00:00:00 UTC:
+Number of active flows: 412
+Packets processed: 9182734
+Fragments: 12
+Ignored packets: 5041 (4980 non-IP, 61 too short)
+Flows expired: 88213 (137 forced)
+Flows exported: 88104 (91220 records) in 7318 packets (9 failures)
+Packets received by libpcap: 9187890
+Packets dropped by libpcap: 231
+Packets dropped by interface: 0
+
+Expired flow statistics:  minimum       average       maximum
+  Flow bytes:                  42          8813       1481204
+  Flow packets:                 1            17          2214
+
+Per-protocol statistics:     Octets      Packets   Avg Life    Max Life
+           tcp (6):       612884113       811204       31.2      1801.0
+           udp (17):       31882014       210441        9.8       120.0

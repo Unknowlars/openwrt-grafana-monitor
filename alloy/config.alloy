@@ -1,35 +1,98 @@
 // ============================================================================
-// OpenWRT Grafana Monitor — Grafana Alloy Configuration
+// OpenWrt Grafana Monitor — Grafana Alloy Configuration
 // ============================================================================
 //
 // This config:
 //   1. Scrapes Prometheus metrics from prometheus-node-exporter-lua on the router
-//   2. Receives syslog from OpenWRT's logd over UDP/TCP on port 514
+//   2. Receives syslog from OpenWrt's logd over UDP/TCP on port 514
 //   3. Forwards metrics to Prometheus in the otel-lgtm container
 //   4. Forwards logs to Loki in the otel-lgtm container
 //
 // Environment variables (set via docker-compose):
-//   ROUTER_IP           — IP of the OpenWRT router
-//   ROUTER_NAME         — Label value for the router
+//   ROUTER_TARGETS      — Optional comma-separated scrape targets:
+//                         name=ip:port,name=ip:port
+//   ROUTER_IP           — IP of the OpenWrt router when ROUTER_TARGETS is unset
+//   ROUTER_NAME         — Label value when ROUTER_TARGETS is unset
 //   ROUTER_METRICS_PORT — Port of prometheus-node-exporter-lua
 //   SCRAPE_INTERVAL     — How often to scrape metrics
 // ============================================================================
 
-// ── Prometheus: scrape OpenWRT metrics ──────────────────────────────────────
+// ── Prometheus: scrape OpenWrt metrics ──────────────────────────────────────
+
+// docker-compose generates this Prometheus file-SD target file at container
+// startup. It contains either ROUTER_TARGETS entries or the legacy
+// ROUTER_IP/ROUTER_NAME single target, preserving the existing default path.
+discovery.file "openwrt_targets" {
+  files = ["/tmp/openwrt-targets.json"]
+}
 
 prometheus.scrape "openwrt" {
-  targets = [
-    {
-      __address__ = sys.env("ROUTER_IP") + ":" + sys.env("ROUTER_METRICS_PORT"),
-      router      = sys.env("ROUTER_NAME"),
-      job         = "openwrt",
-    },
-  ]
+  targets = discovery.file.openwrt_targets.targets
 
   scrape_interval = sys.env("SCRAPE_INTERVAL")
   metrics_path    = "/metrics"
 
+  forward_to = [prometheus.relabel.openwrt_bound_cardinality.receiver]
+}
+
+// ── Prometheus: drop unbounded series before they reach storage ────────────
+//
+// node_nat_traffic (from the required nat_traffic collector) is a full
+// src x dst cross product over the conntrack table with no bound of any
+// kind. It cannot be collapsed to a bounded per-src rollup at this layer:
+// Alloy's relabel actions operate per-sample, not as an aggregation, so
+// dropping the `dest` label would make same-timestamp samples for a single
+// src collide, and Prometheus silently keeps only the first and drops the
+// rest, which can silently undercount clients. Dropping the metric outright
+// is the only correct fix at this layer; the Devices/Client-Insights
+// dashboards use the traffic profile's per-device nftables counters
+// (openwrt_device_traffic_bytes_total) instead.
+prometheus.relabel "openwrt_bound_cardinality" {
   forward_to = [prometheus.remote_write.lgtm.receiver]
+
+  rule {
+    source_labels = ["__name__"]
+    regex         = "node_nat_traffic"
+    action        = "drop"
+  }
+
+  // Upstream collectors (wifi_stations, hostapd_stations, dnsmasq,
+  // uci_dhcp_host) emit MAC addresses uppercase; every collector in this
+  // repository emits them lowercase. The two cannot be joined in PromQL --
+  // there is no tolower() in Prometheus, and the MetricsQL one is specific to
+  // VictoriaMetrics while the shipped stack is Prometheus. Normalising here
+  // is what lets the topology dashboard put wifi_station_signal_dbm on an
+  // association edge keyed by client:<mac>, and lets dhcp_lease join
+  // openwrt_client_info at all.
+  //
+  // Applied unconditionally rather than scoped by __name__: MAC addresses are
+  // case-insensitive by definition, so this is idempotent on the series that
+  // are already lowercase, and a metric with no such label concatenates to the
+  // empty string, which relabeling drops rather than setting. Scoping it would
+  // need a temp-label dance, because the lowercase action ignores `regex` and
+  // rejects `replacement` outright.
+  rule {
+    source_labels = ["mac"]
+    target_label  = "mac"
+    action        = "lowercase"
+  }
+
+  rule {
+    source_labels = ["bssid"]
+    target_label  = "bssid"
+    action        = "lowercase"
+  }
+
+  // `station` must be normalised together with `mac`, not left alone. The
+  // operations dashboard's WiFi Client Detail panel label_replaces
+  // openwrt_wifi_station_connected_seconds{station=...} into a `mac` field and
+  // joins it against wifi_station_signal_dbm; lowercasing one side only would
+  // silently empty that join. Both labels must be normalised together.
+  rule {
+    source_labels = ["station"]
+    target_label  = "station"
+    action        = "lowercase"
+  }
 }
 
 // ── Prometheus: forward to otel-lgtm ────────────────────────────────────────
@@ -45,21 +108,72 @@ prometheus.remote_write "lgtm" {
 // loki.source.syslog adds internal labels like __syslog_message_hostname,
 // __syslog_message_severity, etc. Those __-prefixed labels are removed unless
 // they are renamed through relabel_rules before forwarding.
+//
+// These renames are deliberately an explicit allowlist, not a
+// `labelmap` over `__syslog_(.+)`. The wildcard promoted *every* syslog field
+// to a Loki stream label, including __syslog_message_proc_id — which for
+// OpenWrt logd rfc3164 frames (`tag[pid]: message`) is the process PID. Every
+// restart of dnsmasq, hostapd, netifd, or odhcpd therefore minted a brand-new
+// Loki stream, and dnsmasq restarts on any DHCP or UCI change (setup.sh
+// restarts it too, so running the installer alone rotated the label). That is
+// unbounded stream cardinality on the log path — the same class of problem the
+// metrics path guards against in prometheus.relabel above. Stream churn
+// degrades ingestion and query performance and inflates Loki's index far more
+// than high-cardinality log *content* does. __syslog_message_msg_id had the
+// same problem in principle and was equally useless for stream selection.
+//
+// The label *names* below keep the `message_` prefix the wildcard produced,
+// because that is what the dashboards already select on — `message_severity`
+// and `message_app_name` appear in the dashboard generators under `scripts/`
+// and the generated provisioning JSON. Renaming them to bare
+// `severity`/`app_name` would silently return no data in every one of those
+// panels.
+//
+// Also intentionally no longer promoted: __syslog_message_hostname (redundant,
+// it already becomes `router` below) and __syslog_connection_* (set per TCP
+// connection, never queried).
 
 loki.relabel "openwrt_syslog" {
   forward_to = [loki.write.lgtm.receiver]
 
+  // regex "(.+)" on each rule so a frame missing the field does not get an
+  // empty-string label, matching the `router` rule's guard below.
   rule {
-    action = "labelmap"
-    regex  = "__syslog_(.+)"
+    source_labels = ["__syslog_message_severity"]
+    regex         = "(.+)"
+    target_label  = "message_severity"
+  }
+
+  rule {
+    source_labels = ["__syslog_message_facility"]
+    regex         = "(.+)"
+    target_label  = "message_facility"
+  }
+
+  rule {
+    source_labels = ["__syslog_message_app_name"]
+    regex         = "(.+)"
+    target_label  = "message_app_name"
+  }
+
+  // Prefer the sending device's own hostname over the single ROUTER_NAME
+  // static default below, so logs from a second AP in ROUTER_TARGETS
+  // label correctly instead of all being attributed to the first router.
+  // regex requires a non-empty match so a listener without a hostname field
+  // falls back to the static `router` label set below rather than being
+  // overwritten with an empty string.
+  rule {
+    source_labels = ["__syslog_message_hostname"]
+    regex         = "(.+)"
+    target_label  = "router"
   }
 }
 
-// ── Loki: receive syslog from OpenWRT logd ──────────────────────────────────
+// ── Loki: receive syslog from OpenWrt logd ──────────────────────────────────
 //
-// Alloy defaults syslog_format to rfc5424.
-// OpenWRT remote syslog in your case is behaving like rfc3164,
-// which is why Alloy complained about a missing RFC5424 version field.
+// Alloy defaults syslog_format to rfc5424. OpenWrt's remote syslog (logd)
+// sends rfc3164 instead, so this is set explicitly; otherwise Alloy rejects
+// the frames for missing an RFC5424 version field.
 
 loki.source.syslog "openwrt" {
   listener {
@@ -108,6 +222,49 @@ prometheus.exporter.self "alloy" {}
 
 prometheus.scrape "alloy_self" {
   targets         = prometheus.exporter.self.alloy.targets
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.lgtm.receiver]
+}
+
+// ── Akvorado / NetFlow health (optional, `--profile netflow`) ───────────────
+//
+// These are operational metrics ABOUT the flow pipeline — packets received,
+// flows forwarded, flows dropped for missing interface metadata. The flow
+// records themselves live in ClickHouse and are queried by Grafana directly;
+// nothing here carries per-flow data into Prometheus.
+//
+// job is deliberately "akvorado"/"clickhouse", NOT "openwrt": every existing
+// dashboard filters on job="openwrt", and reusing it would inject these series
+// into router panels.
+//
+// When the netflow profile is down these hostnames do not resolve and the
+// scrapes fail. That is expected — Alloy logs a resolution error per interval
+// and carries on; no other pipeline is affected. Remove these blocks if you
+// have decided against NetFlow and want the log noise gone.
+
+prometheus.scrape "akvorado_inlet" {
+  targets = [
+    {"__address__" = "akvorado-inlet:8080", "job" = "akvorado", "component" = "inlet"},
+  ]
+  metrics_path    = "/api/v0/inlet/metrics"
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.lgtm.receiver]
+}
+
+prometheus.scrape "akvorado_outlet" {
+  targets = [
+    {"__address__" = "akvorado-outlet:8080", "job" = "akvorado", "component" = "outlet"},
+  ]
+  metrics_path    = "/api/v0/outlet/metrics"
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.lgtm.receiver]
+}
+
+prometheus.scrape "clickhouse" {
+  targets = [
+    {"__address__" = "clickhouse:8123", "job" = "clickhouse"},
+  ]
+  metrics_path    = "/metrics"
   scrape_interval = "30s"
   forward_to      = [prometheus.remote_write.lgtm.receiver]
 }

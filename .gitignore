@@ -1,6 +1,25 @@
-# Local agent/tooling state and private branch-collateral.
+# Local environment and private branch collateral.
 old/
+.env
+.env.*
+!.env.example
+CLAUDE.md
+AGENTS.md
+graphify-out/
 .agents/
 .claude/
 .codex/
+.opencode/
 claude/
+known_hosts
+akvorado/geoip/*.mmdb
+__pycache__/
+tests/__pycache__/
+skills/
+grafana_docs/
+screenshot/
+mcp_server/
+
+# Site-specific Akvorado interface metadata (router addresses + ifindexes).
+# Ship akvorado/exporters.yaml.example; keep the operator's copy local.
+akvorado/exporters.yaml
